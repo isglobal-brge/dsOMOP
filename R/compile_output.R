@@ -226,7 +226,7 @@
       numeric <- .numberOutputColumns(part$frame,part$fragment$columns,node,component,setdiff(names(co$components),co$reference_components),ctx$ir$options$number_spec,part$number_canonical,part$number_canonical_columns)
       part$number_canonical <- numeric$canonical; part$number_canonical_columns <- numeric$canonical_columns
       part$frame <- numeric$frame; part$fragment$columns <- numeric$columns
-      categories<-.categoryOutputColumns(part$frame,part$fragment$columns,node,component,names(co$components))
+      categories<-.categoryOutputColumns(ctx,part$frame,part$fragment$columns,node,component,names(co$components))
       part$frame<-categories$frame;part$fragment$columns<-categories$columns
       if(!is.null(node$columns)&&(length(node$number_columns)||length(node$category_columns))) {
         selected<-unlist(node$columns,use.names=FALSE)
@@ -1845,6 +1845,7 @@
     }
     columns[[paste0("exposed_", x)]] <- .numberGenerated(int(),"days",2L,available=!is.null(rows))
     columns[[paste0("active_", x)]] <- .numberGenerated(int(),"1",available=!is.null(rows))
+    attr(columns[[paste0("active_", x)]],"semantic_flag")<-TRUE
   }
   for (k in out_names) {
     rows <- outcomes[[k]]
@@ -1902,6 +1903,7 @@
         frame[[col]] <- if (a %in% c("mean", "last")) as.numeric(values) else as.integer(values)
         columns[[col]] <- if (a %in% c("mean", "last")) .fragmentColumn("numeric", TRUE, "measure") else int()
         columns[[col]] <- .numberGenerated(columns[[col]],if(a=="count")"count" else if(a=="binary")"1" else if(a=="exposed_days")"days" else .numberSourceUnit(ctx,list(source=list(event=idn$source$name))),if(a=="exposed_days")2L else 3L,available=!is.null(sel))
+        if(a=="binary")attr(columns[[col]],"semantic_flag")<-TRUE
         if (!single && !is.na(cid)) attr(columns[[col]], "concept_name") <- list(
           id = as.character(cid), prefix = paste0(idn$name, "_"), suffix = paste0("_", a), owner = idn$name, declared = TRUE)
       }
@@ -2392,7 +2394,7 @@
     for (v in vars) {
       vnode <- ir[["variables"]][[v]]
       rec <- .compileVariable(ctx, .irNamedNode(ir, "variable", v), pop$roster, bcons)
-      if ((!is.null(vnode[["reducer"]]) || (vnode$derived$kind %||% "") %in% c(.DATE_KINDS,.NUMBER_KINDS,"category_rows","category_indicators","repeated")) &&
+      if ((!is.null(vnode[["reducer"]]) || (vnode$derived$kind %||% "") %in% c(.DATE_KINDS,.NUMBER_KINDS,"category_rows","category_indicators","category_reduce","repeated")) &&
           !isTRUE(rec$event_grain) && !isTRUE(unlist(vnode[["broadcast"]]))) {
         .irReject(paste0("variable '", v, "' is scalar; a long output takes it only with broadcast = TRUE"),
                   field = paste0("/variables/", v, "/broadcast"))
@@ -2552,7 +2554,7 @@
                     end_days_from_index = .fragmentColumn("integer", TRUE, "measure")))
   for(v in .irOutputVariables(ctx$ir,name)) {
     vnode <- .irNamedNode(ctx$ir,"variable",v)
-    if(!(vnode$derived$kind %||% "") %in% c(.NUMBER_KINDS,"category_rows","category_indicators","repeated")) next
+    if(!(vnode$derived$kind %||% "") %in% c(.NUMBER_KINDS,"category_rows","category_indicators","category_reduce","repeated")) next
     rec <- .compileVariable(ctx,vnode,pop$roster,cons)
     if(!isTRUE(rec$event_grain)) .numberReject("Intervals require an event numeric projection; use reduced wide for scalar values.","number_dependency_invalid")
     if(any(vapply(srcs,function(s)!is.null(s$interval),logical(1)))) .numberReject("Numeric event columns cannot join back after interval collapse; use long event rows.","number_dependency_invalid")

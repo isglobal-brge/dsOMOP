@@ -12,7 +12,8 @@
     target<-.qualifyTable(handle,table,.resolveTableSchema(handle,table,"Vocabulary"))
     .executeQuery(handle,paste0("SELECT ",paste(fields,collapse=", ")," FROM ",target," WHERE ",where))
   }
-  domain<-sub("^concept:","",.categoryKeys(spec$domain,FALSE,TRUE))
+  domain<-if(is.list(spec$domain)&&!is.null(names(spec$domain)))as.character(.resolveConceptSetNode(handle,spec$domain)$ids) else sub("^concept:","",.categoryKeys(spec$domain,FALSE,TRUE))
+  if(!length(domain)) .categoryReject("Public rollup domain expands to no concepts.","category_domain_incompatible")
   concept<-function(ids) read("concept",c("concept_id","vocabulary_id","concept_class_id","invalid_reason"),paste0("concept_id IN (",.sqlIdList(ids),")"))
   inputs<-concept(domain);valid_input<-as.character(inputs$concept_id[is.na(inputs$invalid_reason)])
   relation<-setNames(rep(list(character()),length(domain)),domain)
@@ -84,6 +85,7 @@
   walk<-function(x) {
     if(!is.list(x))return(invisible(NULL))
     s<-.categoryEffective(x$category_spec,ir$options$category_spec)
+    if(identical(s$label_style,"source_code")) .categoryReject("Source-code presentation needs an independently admitted source-concept policy; use standard code.","category_source_forbidden")
     if(!is.null(s$rollup)&&s$rollup$kind!="none") .categoryRollupMap(handle,s$rollup)
     if(!is.null(s$missing)&&s$missing$unknown!="keep") {
       labels<-.conceptMapOverlay(.conceptMap(ir$options$labels,"recipe",wire=TRUE),.conceptMap(x$labels,"variable",wire=TRUE))

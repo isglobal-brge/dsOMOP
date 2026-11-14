@@ -1,6 +1,6 @@
 # Pure A-30 identity resolution, shared with the client. Records supplied here
 # have already passed the existing controlled factor-metadata protocol.
-.categoryResolveRecords <- function(records) {
+.categoryResolveRecords <- function(records,complete=TRUE) {
   if (!length(records)) .categoryReject("Missing category contract.", "category_domain_incompatible")
   contracts <- lapply(records, function(r) r$category)
   if (length(unique(vapply(contracts,.jcsCanonical,""))) != 1L)
@@ -90,8 +90,8 @@
     required <- union(ids[!is.na(keys) & !grepl("^special:",ids) & keys==ids],domain)
     merged <- which(!is.na(keys) & keys!=ids & mergeable)
     required <- union(required,ids[merged])
-    if(!setequal(order,required)) .categoryReject("Explicit order must cover the complete permitted domain; supply a complete public order.","category_domain_incompatible")
-    mapped <- order; mapped[order %in% ids] <- keys[match(order[order %in% ids],ids)]
+    if((complete&&!setequal(order,required))||!all(required %in% order)) .categoryReject("Explicit order must cover the complete permitted domain; supply a complete public order.","category_domain_incompatible")
+    mapped <- if(complete)order else intersect(order,union(ids,domain)); mapped[mapped %in% ids] <- keys[match(mapped[mapped %in% ids],ids)]
     runs <- rle(mapped)$values
     if(anyDuplicated(runs)) .categoryReject("Merged category members must be contiguous in explicit order.")
     domain <- unique(mapped[!is.na(mapped)])
@@ -99,7 +99,7 @@
   reference <- s$reference
   if(!is.null(reference) && reference %in% ids) reference <- keys[match(reference,ids)]
   if(is.null(reference)) reference <- domain[!grepl("^special:",domain)][1L]
-  if(length(reference) && !is.na(reference) && !reference %in% domain) .categoryReject("Reference must identify an effective category.")
+  if(complete && length(reference) && !is.na(reference) && !reference %in% domain) .categoryReject("Reference must identify an effective category.")
   ordered <- s$ordered %||% if(!is.null(recode) && length(recode$map))recode$ordered else isTRUE(contract$producer_ordered)
   list(kind="category",category=contract,ids=ids,labels=unname(effective_labels[keys]),
     levels=unname(effective_labels[domain]),keys=domain,aliases=setNames(keys,ids),ordered=ordered,
@@ -137,7 +137,7 @@
      !identical(names(aliases),ids) || !all(aliases[!is.na(aliases)] %in% keys) ||
      !identical(unname(levels[match(aliases,keys)]),labels))
     .categoryReject("Incomplete shared category coverage.","category_domain_incompatible")
-  local <- .categoryResolveRecords(unname(records))
+  local <- .categoryResolveRecords(unname(records),complete=FALSE)
   expected_alias <- .categoryNullableStrings(local$aliases)
   if(!identical(unname(aliases[names(expected_alias)]),unname(expected_alias)) ||
      !identical(isTRUE(shared$ordered),isTRUE(local$ordered)))

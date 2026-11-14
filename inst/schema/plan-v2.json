@@ -5674,11 +5674,18 @@
           "minLength": 1
         },
         "domain": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/category_key"
-          },
-          "uniqueItems": true
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/category_key"
+              },
+              "uniqueItems": true
+            },
+            {
+              "$ref": "#/$defs/concept_set"
+            }
+          ]
         },
         "multiple": {
           "enum": [

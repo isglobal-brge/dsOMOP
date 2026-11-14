@@ -420,7 +420,7 @@
     return(union(intersect(as.character(unlist(cols, use.names = FALSE)), vars), intersect(c(.numberColumnDependencies(node$number_columns),.categoryColumnDependencies(node$category_columns)),vars)))
   }
   if (isTRUE(node[["format"]] %in% c("survival", "long", "intervals", "membership",
-                                      "dictionary", "joined"))) {
+                                      "dictionary", "joined", "sparse", "temporal_covariates", "person_period"))) {
     return(character(0))
   }
   vars

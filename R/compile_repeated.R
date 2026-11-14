@@ -36,7 +36,7 @@
         .categoryReject("Repeated values do not have identical source-qualified rows.","repeated_grain_incompatible")
       aligned[[k]]<-frames[[k]][[names(records[[k]]$columns)[1L]]][at]
     }
-    missing<-vapply(aligned,is.na,logical(nrow(rows)))
+    missing<-vapply(aligned,function(x)attr(x,"category_canonical_missing") %||% is.na(x),logical(nrow(rows)))
     if(!is.matrix(missing))missing<-matrix(missing,ncol=length(aligned))
     keep<-if(d$missing=="skip_any")rowSums(missing)==0L else if(d$missing=="skip_all")rowSums(!missing)>0L else rep(TRUE,nrow(rows))
     rows$.candidate<-seq_len(nrow(rows));rows<-rows[keep&!is.na(rows$start_date),,drop=FALSE]
@@ -63,6 +63,7 @@
       }
     } else {
       visits<-.reduceStreamRows(ctx,cons,visit_stream,d$visits$window,"repeated visits")$rows
+      defined<-.reduceBoundsR(ctx,cons,d$visits$window,"visit window")$defined
       visits<-visits[!is.na(visits$start_date),,drop=FALSE]
       vid<-identity(visits)
       if(anyDuplicated(vid)) {
@@ -82,6 +83,13 @@
       }
     }
     out[[name]]<-aligned[[d$value]][chosen]
+    indicator<-values[[d$value]]$derived
+    if(identical(indicator$kind,"category_indicators")) {
+      empty<-is.na(chosen)&defined
+      spec<-.categoryEffective(indicator$variable$category_spec,ctx$ir$options$category_spec)
+      if(identical(spec$missing$na,"level"))out[[name]][empty]<-as.integer(indicator$key=="special:missing")
+      else if(indicator$missing=="zero")out[[name]][empty]<-0L
+    }
     # Preserve unavailable/undefined target independently of ordinary no-row NA.
     out[[name]]<-.categoryValue(out[[name]],defined)
     out

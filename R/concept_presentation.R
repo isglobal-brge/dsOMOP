@@ -88,7 +88,11 @@
     }
   }
   frame <- .numberCapture(frame, columns)
-  if (!.reduceTranslate(ctx)) return(.categoryPresent(ctx,frame,columns))
+  if (!.reduceTranslate(ctx)) {
+    frame<-.categoryPresent(ctx,frame,columns)
+    if(length(.categoryCapabilities(ctx$ir)))attr(frame,"omop_codebook_schema")<-.categoryReleaseSchema(ctx,frame,columns)
+    return(frame)
+  }
   contracts <- attr(frame, "omop_concepts") %||% list()
   for (col in intersect(names(columns), names(frame))) {
     if (!.conceptColumn(columns[[col]])) next

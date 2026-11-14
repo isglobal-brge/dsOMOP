@@ -58,11 +58,12 @@
         as.integer(key %in% effective)
       },1L)
       if(!isTRUE(rec$available))v[]<-NA_integer_
-      out<-rows[setdiff(names(rows),cn)];out[[name]]<-v;return(out)
+      out<-rows[setdiff(names(rows),cn)];out[[name]]<-.categoryValue(v,rep(isTRUE(rec$available),length(v)));attr(out[[name]],"category_canonical_missing")<-is.na(raw);return(out)
     }
     # An isolated private context prevents outer defaults from changing the
     # explicitly requested identity test on the input.
     local<-list2env(as.list(ctx,all.names=TRUE),parent=parent.env(ctx));local$ir<-ctx$ir;local$ir$options$category_spec<-NULL
+    if(is.null(input$category_spec))input$category_spec<-list(order=list(kind="category_order",metadata="producer"))
     local$ir$variables[[dep]]<-input
     cols<-rec$columns;attr(cols[[cn]],"concept_owner")<-dep
     numeric<-.numberOutputColumns(rows,cols,list(format="long"),"input","input",recipe=NULL)
@@ -83,7 +84,7 @@
     v<-as.integer(identities==key)
     if(d$missing=="zero"&&isTRUE(rec$available))v[is.na(v)]<-0L
     if(!isTRUE(rec$available))v[]<-NA_integer_
-    out<-rows[setdiff(names(rows),cn)];out[[name]]<-v;out
+    out<-rows[setdiff(names(rows),cn)];out[[name]]<-.categoryValue(v,rep(isTRUE(rec$available),length(v)));attr(out[[name]],"category_canonical_missing")<-attr(rows[[cn]],"category_canonical_missing") %||% is.na(rows[[cn]]);out
   }
   list(stream=rec$stream,reducer=NULL,declared_empty_value=NA,columns=setNames(list(column),name),
     evaluate=evaluate,available=rec$available,event_grain=rec$event_grain,event_source=rec$event_source)
@@ -98,6 +99,7 @@
   for(k in c("reference_date","agg","p"))if(!is.null(r[[k]])) .categoryReject("Inapplicable category reducer argument.")
   if(!is.null(r$unit)&&!identical(r$unit,"day")) .categoryReject("Category reducers do not convert units.")
   input_column<-rec$columns[[1L]];flag<-.categoryFlag(input,input_column)
+  if(flag&&!r$fn %in% c("any","all","sum","count","n_distinct")) .categoryReject("Semantic flags support any/all/sum/count/n_distinct; keep a categorical sibling for selectors.")
   if(r$fn %in% c("any","all","sum")&&!flag) .categoryReject("any/all/sum require explicit semantic indicators.")
   numeric<-r$fn %in% c("count","n_distinct","any","all","sum")
   column<-.fragmentColumn(if(numeric)"integer" else "text",TRUE,"measure")
@@ -120,7 +122,12 @@
       if(length(person_key))presented[[person_key[1L]]]<-roster_support[[person_key[1L]]][match(rows$row_key,roster_support$cohort_row_id)]
       upstream_safe<-isTRUE(.conceptAssess(presented,cn,contract)$safe)
     }
-    if(flag)keys<-as.integer(rows[[cn]]) else {
+    if(flag) {
+      keys<-if(is.factor(presented[[cn]])) {
+        identity<-.categoryNullableStrings(contract$resolved$aliases)[contract$ids]
+        ifelse(identity=="flag:0",0L,ifelse(identity=="flag:1",1L,NA_integer_))
+      } else as.integer(presented[[cn]])
+    } else {
       if(is.null(contract)) .categoryReject("Category reduction requires a declared categorical producer, not a quantity.")
       if(identical(contract$kind,"category"))keys<-unname(unlist(contract$resolved$aliases,use.names=TRUE)[contract$ids])
       else {
@@ -153,7 +160,9 @@
     for(i in seq_along(columns)) {
       value<-.reduceCoerce(result[[i]],if(numeric)"integer" else "text")
       if(!numeric&&r$fn!="mode")value<-identity_domain[as.integer(value)]
-      value[!bounds$defined|!isTRUE(rec$available)]<-NA
+      defined<-bounds$defined & isTRUE(rec$available)
+      if(r$fn=="closest_value")defined<-defined & !is.na(anchor)
+      value[!defined]<-NA
       if(!numeric) {
         # Carry already-consumed identity semantics; no automatic second recode.
         if(identical(contract$kind,"category")) {
@@ -171,7 +180,7 @@
         value<-.categoryFactor(c$resolved$labels[match(value,c$resolved$ids)],c$resolved)
         attr(value,"category_consumed")<-c
       }
-      out[[names(columns)[i]]]<-value
+      out[[names(columns)[i]]]<-.categoryValue(value,defined)
     }
     out
   }

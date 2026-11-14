@@ -4,6 +4,7 @@
   flag <- isTRUE(attr(column,"semantic_flag")) || (node$reducer$fn %||% "") %in% c("binary","any","all","abnormal_high","abnormal_low") ||
     identical(node$derived$kind,"died")
   pipeline <- attr(column,"number_contract")$pipeline
+  if(is.null(pipeline)&&!is.null(node$number_spec))pipeline<-.numberEffective(node$number_spec)$pipeline
   for(p in pipeline %||% list()) {
     if(p$kind %in% c("flag","present","missing")) flag <- TRUE
     else if(!(p$kind=="transform" && p$method=="identity" ||
@@ -73,7 +74,7 @@
       producer_order<-if(is.null(c$kind) || identical(c$kind,"date"))character() else lev;producer_ordered<-is.ordered(frame[[n]])
       if(is.null(c$kind)) {
         if(isFALSE(ctx$ir$options$translate_concepts)) .categoryReject("Enable translate_concepts for concept presentation.")
-        extra<-setdiff(unlist(s$levels,use.names=FALSE),lev)
+        extra<-if(!length(s$recode$map))setdiff(unlist(s$levels,use.names=FALSE),lev) else character()
         if(length(extra)) {
           .categoryKeys(extra,concept=TRUE)
           rr<-.conceptVocabulary(ctx$handle,sub("^concept:","",extra))
@@ -129,7 +130,8 @@
       declared<-union(declared,target_levels)
     }
     records<-lapply(records,function(r){r$kind<-"category";r$category<-contract;r})
-    resolved<-.categoryResolveRecords(unname(records))
+    resolved<-.categoryResolveRecords(unname(records),complete=FALSE)
+    if(!is.null(explicit$levels) && (producer$kind!="concept" || length(s$recode$map)) && !setequal(unlist(explicit$levels,use.names=FALSE),resolved$keys)) .categoryReject("Declare the complete existing output domain; new literal levels require an explicit producer or recode label.","category_domain_incompatible")
     values<-resolved$labels[match(ids,resolved$ids)]
     values[!available]<-NA_character_
     frame[[n]]<-.categoryFactor(values,resolved)
@@ -137,6 +139,14 @@
       declared=declared,resolved=resolved,owner=owner)
   }
   if(length(contracts))attr(frame,"omop_concepts")<-contracts
+  for(n in names(frame)) {
+    attr(frame[[n]],"category_defined")<-NULL
+    attr(frame[[n]],"category_canonical_missing")<-NULL
+    if(inherits(frame[[n]],"dsomop_category_value")) {
+      cl<-setdiff(class(frame[[n]]),"dsomop_category_value")
+      class(frame[[n]])<-if(identical(cl,typeof(frame[[n]])))NULL else cl
+    }
+  }
   frame
 }
 .categoryVocabularyLabels <- function(handle,records,s) {

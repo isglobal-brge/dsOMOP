@@ -889,6 +889,7 @@
   record <- .numberRecord(record, node, ctx, name, cons)
   for (col in names(record$columns)) {
     attr(record$columns[[col]], "concept_owner") <- name
+    if(.categoryFlag(node,record$columns[[col]]))attr(record$columns[[col]],"semantic_flag")<-TRUE
     attr(record$columns[[col]], "category_available") <- record$available
   }
   record
@@ -1042,11 +1043,13 @@
     vals <- kernel(rows, keys, anchors)
     selected <- if(paired) .numberRangeSelection(rows,keys,r,ordering,anchors) else NULL
     defined <- got$bounds$defined
+    if(anchor_needed)defined<-defined & !is.na(anchors)
     out <- data.frame(row_key = keys, stringsAsFactors = FALSE)
     for (j in seq_along(columns)) {
       x <- .reduceCoerce(vals[[j]], columns[[j]]$type)
       x[!defined %in% TRUE] <- .reduceTypedNA(columns[[j]]$type, 1L)
       if(paired) {at<-as.integer(selected[[j]]);x<-.numberRangeValue(x,rows$range_low[at],rows$range_high[at])}
+      if(length(.categoryCapabilities(ctx$ir)))x<-.categoryValue(x,defined)
       out[[names(columns)[[j]]]] <- x
     }
     out

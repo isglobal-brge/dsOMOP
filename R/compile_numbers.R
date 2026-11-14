@@ -42,8 +42,10 @@
     frame<-evaluate()
     for(col in numeric_columns) {
       defined<-attr(frame[[col]],"category_defined")
+      canonical_missing<-attr(frame[[col]],"category_canonical_missing")
       frame[[col]]<-.numberMaterialize(frame[[col]],record$columns[[col]]$type)
       if(!is.null(defined))frame[[col]]<-.categoryValue(frame[[col]],defined)
+      if(!is.null(canonical_missing))attr(frame[[col]],"category_canonical_missing")<-canonical_missing
       if(identical(node$reducer$fn,"cv"))frame[[col]]<-frame[[col]]/100
     }
     frame

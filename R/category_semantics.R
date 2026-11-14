@@ -71,6 +71,24 @@
   .categoryBool(x$ordered); .categoryChoice(x$unmatched, c("keep", "missing"))
   invisible(x)
 }
+.categoryDomainCheck <- function(x,depth=0L) {
+  if(inherits(x,"omop_concept_set")) {
+    x<-list(concepts=x$concepts,include_descendants=x$descendants,include_mapped=x$mapped,exclude=x$exclude)
+    x<-x[!vapply(x,is.null,logical(1))]
+  }
+  if(!is.list(x)||is.null(names(x)))return(.categoryKeys(x,FALSE,TRUE))
+  if(depth>16L) .categoryReject("Concept domain exclusions exceed the nesting bound.")
+  x<-x[!vapply(x,is.null,logical(1))]
+  .categoryObject(x,c("concepts","include_descendants","include_mapped","exclude"),"concepts")
+  ids<-unlist(x$concepts,use.names=FALSE)
+  if(!is.numeric(ids)||!length(ids)||anyNA(ids)||any(ids<0|ids>2147483647|ids!=trunc(ids))||anyDuplicated(ids)) .categoryReject("Use a nonempty public concept-set domain.")
+  for(n in intersect(names(x),c("include_descendants","include_mapped"))) .categoryBool(x[[n]])
+  if(!is.null(x$exclude)) {
+    if(is.list(x$exclude)&&!is.null(names(x$exclude))||inherits(x$exclude,"omop_concept_set")) .categoryDomainCheck(x$exclude,depth+1L)
+    else {ids<-unlist(x$exclude,use.names=FALSE);if(!is.numeric(ids)||anyNA(ids)||any(ids<0|ids>2147483647|ids!=trunc(ids))) .categoryReject("Invalid domain exclusion IDs.")}
+  }
+  invisible(x)
+}
 .categoryRollupCheck <- function(x) {
   .categoryObject(x, c("kind", "level", "ancestors", "separation", "distance", "vocabulary", "domain", "multiple", "priority", "unmatched"), "kind")
   kind <- .categoryChoice(x$kind, c("none", "atc", "icd10", "snomed", "ancestors"))
@@ -78,7 +96,7 @@
     if (length(x) != 1L) .categoryReject("rollup none has no other fields.")
     return(invisible(x))
   }
-  .categoryKeys(x$domain, FALSE, TRUE)
+  .categoryDomainCheck(x$domain)
   .categoryChoice(x$multiple, c("error", "priority", "all"))
   .categoryChoice(x$unmatched, c("keep", "missing"))
   if (kind == "atc") {
@@ -156,7 +174,30 @@
   walk <- function(x) {
     if (!is.list(x)) return(invisible(NULL))
     if (!is.null(x$category_spec)) .categorySpecCheck(x$category_spec)
-    for (v in x[setdiff(names(x), "category_spec")]) if (is.list(v)) walk(v)
+    d<-x$derived
+    if(identical(d$kind,"repeated")&&!inherits(plan,"omop_recipe")) {
+      if(is.null(d$timepoints)==is.null(d$visits)) .categoryReject("Choose exactly timepoints or visits.","repeated_spec_invalid")
+      if(!length(d$values)) .categoryReject("Repeated values cannot be empty.","repeated_spec_invalid")
+      names<-vapply(d$values,function(e)e$name,"");.categoryStrings(names,TRUE,FALSE)
+      if(!d$value %in% names) .categoryReject("Unknown repeated value.","repeated_spec_invalid")
+      .categoryChoice(d$missing,c("keep","skip_all","skip_any"))
+      if(!is.null(d$timepoints)) {
+        .categoryBool(d$timepoints$reuse)
+        points<-d$timepoints$points;names<-vapply(points,function(e)e$name,"");.categoryStrings(names,TRUE,FALSE)
+        if(!d$point %in% names) .categoryReject("Unknown repeated point.","repeated_spec_invalid")
+        for(entry in points) {
+          p<-entry$point;.categoryChoice(p$unit,c("days","weeks","months","years"));.categoryChoice(p$select,c("closest","first","last"))
+          if(!is.numeric(p$offset)||length(p$offset)!=1L||!is.finite(p$offset)||p$offset!=trunc(p$offset)||abs(p$offset)>.Machine$integer.max) .categoryReject("Invalid repeated offset.","repeated_spec_invalid")
+          tolerance<-unlist(p$tolerance,use.names=FALSE)
+          if(!is.numeric(tolerance)||length(tolerance)!=2L||any(!is.finite(tolerance))||any(tolerance!=trunc(tolerance))||tolerance[1]>0||tolerance[2]<0) .categoryReject("Invalid inclusive target tolerance.","repeated_spec_invalid")
+        }
+      } else {
+        numbers<-unlist(d$visits$numbers,use.names=FALSE)
+        if(!is.numeric(numbers)||!length(numbers)||anyNA(numbers)||any(!is.finite(numbers))||any(numbers<1|numbers!=trunc(numbers))||anyDuplicated(numbers)||!d$point %in% paste0("visit_",numbers)) .categoryReject("Invalid visit ordinals.","repeated_spec_invalid")
+        .categoryChoice(d$visits$select,c("first","last","closest"))
+      }
+    }
+    for (v in x) if (is.list(v)) walk(v)
   }
   walk(plan$variables); walk(plan$outputs)
   invisible(plan)
@@ -183,5 +224,5 @@
 # JSON null array members must retain their identity positions.
 .categoryNullableStrings <- function(x) {
   if(is.list(x))return(vapply(x,function(v)if(is.null(v))NA_character_ else as.character(v),""))
-  as.character(x)
+  setNames(as.character(x),names(x))
 }
