@@ -155,7 +155,7 @@
     upstream_version="unknown",verified_export_versions="5.5.2",contract_version="physical-results-1",
     table="cm_result",required_columns=.ohdsiCmInlineExportColumns(),
     identity=identities$cm_result,relationships=list(unique_row=identities$cm_result,
-      references=.ohdsiCmInlineReferences("cm_result"),database="one exact database identity",estimator="ate"),
+      references=.ohdsiCmInlineReferences("cm_result"),database="one exact database identity",estimator="ate or att, interpreted with the associated cm_analysis definition"),
     public_release="existing cm_result projection and coupled protection",status="supported",
     evidence="tests/fixtures/ohdsi-audit/physical-exports.json")
   out$cm_lookup <- list(family = "cohort_method", layout_id = "cm-target-comparator-lookup-1",

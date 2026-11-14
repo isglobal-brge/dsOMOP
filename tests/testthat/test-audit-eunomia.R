@@ -1,0 +1,38 @@
+test_that("Q35 actual pinned Eunomia GiBleed 5.3 runs the normal publication gate", {
+  archive<-Sys.getenv("DSOMOP_EUNOMIA_ARCHIVE")
+  skip_if(!nzchar(archive),"explicit pinned upstream fixture lane")
+  expect_identical(as.character(utils::packageVersion("Eunomia")),"2.2.0")
+  con<-file(archive,"rb");hash<-paste(openssl::sha256(con));close(con)
+  expect_identical(hash,"081b82e84c90e2904e02c26546e46412b01cce566071c77e0c4a355c2d0612f9")
+  path<-tempfile(fileext=".sqlite");on.exit(unlink(path),add=TRUE)
+  Eunomia::getDatabaseFile("GiBleed",cdmVersion="5.3",pathToData=dirname(archive),databaseFile=path,verbose=FALSE)
+  conn<-DBI::dbConnect(RSQLite::SQLite(),path);on.exit(DBI::dbDisconnect(conn),add=TRUE,after=FALSE)
+  h<-.ws4_handle_on(conn,"sqlite","sqlite",NULL);.ws7_keys(list(h))
+  source<-DBI::dbReadTable(conn,"cdm_source")
+  expect_true(all(grepl("5[.]3",source$cdm_version)))
+  people<-DBI::dbReadTable(conn,"person")
+  expect_gt(nrow(people),1000L)
+  p<-dsOMOPClient::recipe_to_plan(dsOMOPClient::omop_recipe(variables=list(age=dsOMOPClient::omop_age_at("2020-01-01"))),version=2)
+  for(mode in c("memory","staged"))local({
+    run<-.ws7_ctx(h,p,mode=mode);on.exit(.ws7_close(run))
+    got<-.ws7_publish(run,NULL)
+    expect_identical(got$status$status,"ok")
+    f<-got$values$output$output
+    expect_equal(nrow(f),nrow(people))
+    # Independent completed-calendar-years reference, no source dates printed.
+    expected<-2020L-people$year_of_birth-ifelse(people$month_of_birth>1L|people$day_of_birth>1L,1L,0L)
+    expect_equal(sort(f$age),sort(expected))
+    expect_identical(attr(f,"omop_numbers")$age$privacy_class,2L)
+  })
+  # A study's small public cohort definition over the same upstream source
+  # still refuses; no support option or direct data-returning bypass is used.
+  p$populations$base<-list(kind="index",index=list(source=list(cohort_definition_id=1L),select="all",end=list(strategy="event_end")))
+  local({
+    run<-.ws7_ctx(h,p);on.exit(.ws7_close(run))
+    pop<-.ws7_population(run,"base",.ws7_scenario_frame(people$person_id[1:4]))
+    got<-.ws7_publish(run,list(base=pop))
+    expect_identical(got$status$status,"refused")
+    expect_length(got$values,0L)
+  })
+  cat("\nUPSTREAM_FIXTURE Eunomia=2.2.0 dataset=GiBleed CDM=5.3 archive_sha256=",hash,"\n",sep="")
+})

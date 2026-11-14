@@ -49,6 +49,7 @@ test_that("actual upstream export fixtures match pinned immutable archive manife
   manifests<-jsonlite::fromJSON(test_path("..","fixtures","ohdsi-audit","physical-exports.json"),simplifyVector=FALSE)
   for(m in manifests)for(name in names(m$files)) {
     path<-test_path("..","fixtures","ohdsi-audit",paste0("cm-",m$package_version),name)
-    expect_identical(paste(openssl::sha256(file(path,"rb"))),m$files[[name]])
+    con<-file(path,"rb");hash<-paste(openssl::sha256(con));close(con)
+    expect_identical(hash,m$files[[name]])
   }
 })

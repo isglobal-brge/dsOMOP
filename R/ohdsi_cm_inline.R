@@ -47,12 +47,12 @@
       paste0("SELECT TOP 1 1 AS invalid FROM ",table," GROUP BY ",paste(k,collapse=",")," HAVING COUNT(*) > 1"),
       paste0("SELECT TOP 1 1 AS invalid FROM ",physical$qualified_name," r WHERE NOT EXISTS (SELECT 1 FROM ",table," a WHERE ",paste0("a.",k," = r.",k,collapse=" AND "),")"))
   }
-  # This reader's single-database identity and ATE interpretation are closed.
+  # This reader's single-database identity and upstream estimator tokens are closed.
   # A new estimator or combined-database dimension needs a versioned adapter.
   checks<-c(checks,paste0("SELECT TOP 1 1 AS invalid FROM ",physical$qualified_name,
-    " WHERE database_id IS NULL OR database_id = '' OR target_estimator IS NULL OR target_estimator <> 'ate'"),
+    " WHERE database_id IS NULL OR database_id = '' OR target_estimator IS NULL OR target_estimator NOT IN ('ate','att')"),
     paste0("SELECT MAX(1) AS invalid FROM ",physical$qualified_name," HAVING COUNT(DISTINCT database_id) > 1"))
   bad<-tryCatch(any(vapply(checks,function(sql)nrow(.executeQuery(handle,.sql_translate(sql,handle$target_dialect)))>0L,logical(1))),error=function(e)TRUE)
-  if(bad)stop("results_schema_integrity: /results/references; use a unique, associated single-database ATE export with complete inline reference identities.",call.=FALSE)
+  if(bad)stop("results_schema_integrity: /results/references; use a unique, associated single-database export with a documented ATE/ATT analysis with complete inline reference identities.",call.=FALSE)
   invisible(NULL)
 }
