@@ -1,0 +1,29 @@
+{
+  "checked_utc": "2026-11-12T17:44:22.244997+00:00",
+  "packages": {
+    "dsOMOP": {
+      "head": "35318226db115acc548a7cb92dd334ce381f5dac",
+      "integration": "abc81631b7392d26f195009cb3abb6865ebad836",
+      "integration_ancestor": true,
+      "tracked_files_verified": 1364,
+      "local_changed": [],
+      "remote_matches_manifest": true,
+      "version": "2.10.2"
+    },
+    "dsOMOPClient": {
+      "head": "b69ed1c9845c691c0d49b5ac89c2f865959e3cd7",
+      "integration": "ef91ee332ce48fdb4a6b33ff844947b047b06eeb",
+      "integration_ancestor": true,
+      "tracked_files_verified": 1172,
+      "local_changed": [],
+      "remote_matches_manifest": true,
+      "version": "2.10.2"
+    }
+  },
+  "free_bytes": 10695192576,
+  "total_source_files_verified": 2536,
+  "shared_normalizers_identical": true,
+  "native_wire_schema_sha256": "b762bed6aa93b64ee174e17a852bc6b873b8b939bb95dd3a73e65b0cdad529aa",
+  "contracts": "all contract checks passed; contracts-final.log",
+  "B1": "Unimplemented pending required dual reviewer endorsement of CR-27."
+}

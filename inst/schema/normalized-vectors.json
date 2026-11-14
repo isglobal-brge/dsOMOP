@@ -5,104 +5,110 @@
     {
       "label": "plan-v2-example-A",
       "source": "examples/plan-v2-example-A.json",
-      "normalized_sha256": "369d78794ec3e68472e24d571e580bba3cd9bb4223ebc0d6dfd0919e61ea086d",
-      "digest_sha256": "6953697b4281d5756d0bb8ac61461a4530440525ef19dbb8109f6b70d01bb940"
+      "normalized_sha256": "4bd68b5cb956c7e3a10a6a6d8b97562fe225ec1f57906a88d61e19c949290ddd",
+      "digest_sha256": "8eb20ff422f47f9c948a289157751b100ef36298364a46f61ff9f8376656c80c"
     },
     {
       "label": "plan-v2-example-B",
       "source": "examples/plan-v2-example-B.json",
-      "normalized_sha256": "7eaacc5e0d3992cc465daaeb93bf0beeaa1a7e1d1bd8dc5cc022808112abdd87",
-      "digest_sha256": "d91d9b3c989517debb8fd92b3402dc24299fa1f7c8eaebe1c902cb984b501c01"
+      "normalized_sha256": "f997cb8276c154cdc6cd2a8916e43560650e744584eb2799f90a0d85bd53ce87",
+      "digest_sha256": "648616a5164eeb22694a762823997049dad6e00cbbc7110ed01b2536b5912dd0"
     },
     {
       "label": "acceptance-01-characterisation",
       "source": "../plans/acceptance/01-characterisation/plan.json",
-      "normalized_sha256": "930ea094e1a6abb09ee1137513dbbe1ccc8b3b9f7327ea1b78d71d0b5e63172e",
-      "digest_sha256": "f1ecef0af97773294218aa00e7b34247168f4619361bd772b080f1b5f8a59b73"
+      "normalized_sha256": "b577c8ee6df55c8def0a70f920aca90ed75d677d31f5acb00650e0e07345a9d2",
+      "digest_sha256": "9d634e6614d10680aa381c48567a9f519f511d009c2fed0da28b859acf47096c"
     },
     {
       "label": "acceptance-02-active-comparator",
       "source": "../plans/acceptance/02-active-comparator/plan.json",
-      "normalized_sha256": "f7e5b77f83e5d14dc5d77d5709e7b42b85dd18d6ad9fee4a18fa66671a934160",
-      "digest_sha256": "472236d55a2751b20216003c5dffde0a8af742aeff9b2f21a591b62263930bcb"
+      "normalized_sha256": "4695c184a4f9bb314d12ae8c3b477308768a427d8734cc0cde8933102bcfc4ae",
+      "digest_sha256": "6034f2eb02d5c106471bc05121c88116a7a0af745eebfe4ae4a07312a6e24680"
     },
     {
       "label": "acceptance-03-distinct-days",
       "source": "../plans/acceptance/03-distinct-days/plan.json",
-      "normalized_sha256": "b268f890956f73e0e4a013f422b53594f787c9949de2ad9412a4822df72b935e",
-      "digest_sha256": "8d503c041d9d1698f722b5aff28e0cf8bc688fac9be92f14c70769247534366f"
+      "normalized_sha256": "d9cf22842f2c363e8281f942b992aab92936704d5fdca23e5eb08336546cf75a",
+      "digest_sha256": "bf0f32c4bcf5505ba117487a034f7e9a212da217299a3cc0191ff3f9706ceb44"
     },
     {
       "label": "acceptance-04-units-censored",
       "source": "../plans/acceptance/04-units-censored/plan.json",
-      "normalized_sha256": "8d3f4fb90dd02b97132c2135d2fe354d29ceff1b44d1ec9a19afe4d6b560965e",
-      "digest_sha256": "1c1c630fc288c7927f898bd47fcd59b7dd43df824b828f1e0679731f9a21d010"
+      "normalized_sha256": "8a667a4882d4ca089fe857e1941ee63787e02e19ce932ef6fc26fc9322ba34ac",
+      "digest_sha256": "081447f69193d8715fc405f5bcc0c8d53752cc4796e4c6b5c248507852288c74"
     },
     {
       "label": "acceptance-05-same-day-same-visit",
       "source": "../plans/acceptance/05-same-day-same-visit/plan.json",
-      "normalized_sha256": "82334621923fac4de8cb24a05d01e9314c2fa15dab07ee77a1d19f0c44f6e9a2",
-      "digest_sha256": "a632a4e0a34652c908ac42135e89586fefa3d8cbc0a3396fee6dcc05dfce64f3"
+      "normalized_sha256": "c97a148940026538ae02b7eea815c7614bb07772388794d7cb43c91a87ba34db",
+      "digest_sha256": "8091accc5912c4d5f56334b0611d8848470aad63fc5fa9051f6f49d8098f8c8c"
     },
     {
       "label": "acceptance-06-coverage-persistence",
       "source": "../plans/acceptance/06-coverage-persistence/plan.json",
-      "normalized_sha256": "b33ae8dcbf7696990a5343939a181781027e1f2629bf00d88d0e14ee74d08516",
-      "digest_sha256": "c8fcb8e953512dcf1513165168666650a6d44126b324daad2a51ef59523c3685"
+      "normalized_sha256": "4cab1f0e570a71732f4a67553080b5cb4aed59128b3ab2a70bfa5323275443df",
+      "digest_sha256": "4d0224fb5c8079ed67e05e1e405519ccd7dec04064cc8549bc40e36946b60de8"
     },
     {
       "label": "acceptance-07-monthly-panel",
       "source": "../plans/acceptance/07-monthly-panel/plan.json",
-      "normalized_sha256": "96b75c6fbac932c9ec4ec97464a2e607512822b0300c41bd074c453c3ff55631",
-      "digest_sha256": "11ac81afaaf982e7d7cdbb04cbd1c382065f8491764d7aefc3c8860b92bccdc3"
+      "normalized_sha256": "1ac8ca91f4faa0b2c23c16c1bb27318bade4eea25d99ea49d60d3d70fb5fbc58",
+      "digest_sha256": "646303f6401e7ae1a76a9045d60e6ce9bb1d0c8b994ac3b01326eb809b33cda2"
     },
     {
       "label": "acceptance-08-sccs-matrix",
       "source": "../plans/acceptance/08-sccs-matrix/plan.json",
-      "normalized_sha256": "2027ca8258ce25557a275a43f271b7c9df144781b6e3a6e7f83b5004fb15ad9f",
-      "digest_sha256": "fb097d1767a227cdbcb5ae310d9d45f952127b84e64ec2382da9db17e6ca0577"
+      "normalized_sha256": "ba1e699b38893800a80f87bc4dfcebdc9f73504a17db1a63576011d883500d6b",
+      "digest_sha256": "ecb0dd5b2d5556e2bb0ccf6579246f550b7531038903b20816ae12045c2df289"
     },
     {
       "label": "acceptance-09-recurrent-events",
       "source": "../plans/acceptance/09-recurrent-events/plan.json",
-      "normalized_sha256": "904b04c04cf82923c13ff36fef8f7d3bd72b96520a74b264bf1077bbade460c1",
-      "digest_sha256": "e630c249ad076de8b2d307c1dc56cde3272d4162b3011dd4b32058a3c383d0d9"
+      "normalized_sha256": "63b7ed50f772c68d99378e1241834b8036a7eb1b6c2a20db8deebd886f778324",
+      "digest_sha256": "c77cc80f8397c0f35bd5b76400512a36373cc7902ff1fc8b71ebf5bb455f3641"
     },
     {
       "label": "acceptance-10-matching",
       "source": "../plans/acceptance/10-matching/plan.json",
-      "normalized_sha256": "a647e68fe1700ea65fe3a4be827d4b67be917efeed6ba8370440f375b46b1eb1",
-      "digest_sha256": "0ead784e605afd8511379bfcf99d88e98c976d3ddec9ae3efaa9fcd86c59c702"
+      "normalized_sha256": "a0d8998c19371bad9e7843f4182c3cc099726990c9de55eaca0211c091af0470",
+      "digest_sha256": "0e572377569cbf845a35bbce8cd54ded3518c7549fd74d369e7e3a5ee50b1777"
     },
     {
       "label": "acceptance-11-incidence-years",
       "source": "../plans/acceptance/11-incidence-years/plan.json",
-      "normalized_sha256": "6e204cb46f1333c05c0081bf865ae802b779e01ea3c90557b8af2e6d32ac45f3",
-      "digest_sha256": "40e394f0298142660a3e9969f8c177e151a41f327223b38f4284eee073c12a7a"
+      "normalized_sha256": "1118bf7167fc335f38f127d34005633c1df293e2ac51c671462ebac49e410d9e",
+      "digest_sha256": "14e7a28b16545e1ff1c7f7fc31a21065841700ad4566ec03a783d7e8e6ef47c9"
     },
     {
       "label": "acceptance-12-circe-baseline",
       "source": "../plans/acceptance/12-circe-baseline/plan.json",
-      "normalized_sha256": "1f33fdf8592324fbe4f4ce337dec92614dbcfd650e735c0501208665e9d07844",
-      "digest_sha256": "f0dc6dbc0c93ad905fb358835989b326ddd61e227bf4cf33d8c4c5b1034f7e7e"
+      "normalized_sha256": "ffd3255ab332308cb9f176bb2312e28b4e49239a03d8ffc0a5bf3028849ea208",
+      "digest_sha256": "747ef9497344488a5b0605db843d8bea2f41ba428339320db31334054e654684"
     },
     {
       "label": "acceptance-13-parametrised",
       "source": "../plans/acceptance/13-parametrised/plan.json",
-      "normalized_sha256": "b268f890956f73e0e4a013f422b53594f787c9949de2ad9412a4822df72b935e",
-      "digest_sha256": "8d503c041d9d1698f722b5aff28e0cf8bc688fac9be92f14c70769247534366f"
+      "normalized_sha256": "d9cf22842f2c363e8281f942b992aab92936704d5fdca23e5eb08336546cf75a",
+      "digest_sha256": "bf0f32c4bcf5505ba117487a034f7e9a212da217299a3cc0191ff3f9706ceb44"
     },
     {
       "label": "acceptance-14-oncology-episodes",
       "source": "../plans/acceptance/14-oncology-episodes/plan.json",
-      "normalized_sha256": "02de738d398b8ef9fc1a020ab31513b9bce100fac69984fec3f47814f513ee6a",
-      "digest_sha256": "71026dc09fb488bfc2d825113440f6b8f4153542e31da71c4effde28f014acee"
+      "normalized_sha256": "1f6f6dd6d27ec964e9c05cc4306c5e40b83fb8a787d2916c390e413fd3794ca2",
+      "digest_sha256": "7fb3467a55b6be0776abe3b89e69ff802c344197718c582109b1cb1d649c9fbb"
     },
     {
       "label": "acceptance-15-costs-adherence",
       "source": "../plans/acceptance/15-costs-adherence/plan.json",
-      "normalized_sha256": "af1b5b53228f315a34952ee7947de8b3a9ce5e558e630d33472631718abeee77",
-      "digest_sha256": "bb26ed1e17bdea35ddcbd98291b7f471d7f66bf4301a6ce4fbdfa4fe4a87a0fd"
+      "normalized_sha256": "64fb943a2f36001239a6dc6812e6a751c2a35bf674b1e4cb23f91ea169ef92ce",
+      "digest_sha256": "f662747f0f56f2fb0873e38aa1d37e75271e06fb88e70c1c7b8df03d95a51f9c"
+    },
+    {
+      "label": "plan-v2-dates",
+      "source": "examples/plan-v2-dates.json",
+      "normalized_sha256": "3c2941259ab3d87ebee95013ead360e0332338a949a39c82dae29e9e040158cb",
+      "digest_sha256": "d0b9bb2a29b07e47341f234ecfdbddae6d27296fb927aa31128a87810aae1e15"
     }
   ]
 }

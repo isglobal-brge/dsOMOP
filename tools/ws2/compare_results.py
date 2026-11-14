@@ -1,37 +1,50 @@
 #!/usr/bin/env python3
 r"""WS-2 tooling (dsOMOP 2.10.3), review B10: result fidelity of the v1 corpus.
 
-Four subcommands (paths absolute or relative to the working directory). The full
-current-side re-run on the final commits is:
+Six subcommands (paths absolute or relative to the working directory). The
+baseline captures, the pins and the full current-side re-run on the final
+commits are (A19 = the A-19 evidence test and the open-item (i) probe, copied
+into every snapshot so that one pair of baseline captures pins everything):
 
-  W=<scratch>/b10      # holds the two baseline captures base-a and base-b
-  python3 tools/ws2/compare_results.py capture --side current --label cur --work $W
-  python3 tools/ws2/compare_results.py capture --side hybrid  --label hyb --work $W
-  python3 tools/ws2/compare_results.py compare --work $W --baseline base-a \
-      --baseline-repeat base-b --current cur --current hyb --out $W/report
-  python3 tools/ws2/compare_results.py validate --side current --label val-cur --work $W
+  W=<scratch>/b10
+  A19="--add-tests tests/testthat/test-ir-results-a19.R --add-tests tools/ws2/test-b10-probe-setop.R"
+  python3 tools/ws2/compare_results.py capture --side baseline --label b17-a --work $W $A19
+  python3 tools/ws2/compare_results.py capture --side baseline --label b17-b --work $W $A19
+  python3 tools/ws2/compare_results.py pin     --work $W --baseline b17-a --baseline-repeat b17-b
+  python3 tools/ws2/compare_results.py pin-a19 --work $W --baseline b17-a --baseline-repeat b17-b
+  python3 tools/ws2/compare_results.py capture --side current --label cur --work $W $A19
+  python3 tools/ws2/compare_results.py capture --side hybrid  --label hyb --work $W $A19
+  python3 tools/ws2/compare_results.py compare --work $W --baseline b17-a \
+      --baseline-repeat b17-b --current cur --current hyb --out $W/report
+  python3 tools/ws2/compare_results.py validate --side baseline --label val-base --work $W
+  python3 tools/ws2/compare_results.py validate --side current  --label val-cur  --work $W
 
 (--server-commit / --client-commit select other commits than HEAD.)
 
   capture  snapshot both packages (git archive of the commits), copy
            tools/ws2/capture_results.R into each snapshot's tests/testthat/ as
-           helper-zzz-b10-capture.R, run the suites on the test pod through
+           helper-zzz-b10-capture.R (and every --add-tests FILE of this worktree,
+           under its own name; a test-ir-results*.R file brings this worktree's
+           fixtures/ir-v1-results*.json along), run the suites on the test pod through
            tools/rtest.sh (server suite with RTEST_WITH=<client snapshot>, client
            suite with RTEST_WITH=<server snapshot>; no vendor-database variables)
            and fetch the JSON-lines captures into <work>/caps/<label>/ (meta.json
-           records commits, helper hash and suite results). --side baseline takes
-           the commits pinned in tools/ws0/corpus_baseline.json; --side current
-           defaults to HEAD of --server-repo / --client-repo (defaults: the worktree
-           holding this script and its sibling dsOMOPClient); --side hybrid runs the
-           PINNED 2.10.2 tests/ against the current package code (the frozen classes
-           describe exactly those blocks, CR-7). --suites server,client (default
-           both), --filter REGEX, --timeout SECONDS. Pod output: /root/rt/ws2b-b10/
-           caps/<label>/; rtest.sh mirrors a snapshot at /root/rt/<local path>.
+           records commits, helper hash, added tests and suite results). --side
+           baseline takes the commits pinned in tools/ws0/corpus_baseline.json;
+           --side current defaults to HEAD of --server-repo / --client-repo
+           (defaults: the worktree holding this script and its sibling
+           dsOMOPClient); --side hybrid runs the PINNED 2.10.2 tests/ against the
+           current package code (the frozen classes describe exactly those blocks,
+           CR-7). --suites server,client (default both), --filter REGEX, --timeout
+           SECONDS. Pod output: /root/rt/ws2b-b10/caps/<label>/; rtest.sh mirrors a
+           snapshot at /root/rt/<local path>; the snapshot is deleted after the
+           capture unless --keep-snapshot.
 
   compare  pair the TOP-LEVEL records of a baseline capture with those of each
            current / hybrid capture (a .planExecute() or .planResolvePopulations()
-           call made by a test, or an omopPlanExecuteDS() call; calls nested in
-           another captured call are diagnostics only). Pairs share the test block
+           call made by a test, or an omopPlanExecuteDS() / omopDpPlanExecuteDS()
+           call; calls nested in another captured call are diagnostics only).
+           Doubles are compared losslessly (17 significant digits). Pairs share the test block
            key, the function and the plan hash (the ir-v1-corpus.json form), first
            with the same complete input (output mode, requested symbols, server
            options, DSOMOP_* environment, fixture data), in call order; then, for
@@ -42,23 +55,41 @@ current-side re-run on the final commits is:
            output and aspect that differs) / refused at baseline only / refused
            currently only / both refused (same message or not). A second baseline
            capture (--baseline-repeat) detects nondeterministic records, which are
-           excluded. The JSON + Markdown report adds per-class counts (calls and
+           excluded; a record that agrees once the DP provenance fields keyed by a
+           per-run random noise root (dataset_id, lineage_id, mac) are masked is
+           compared with them masked, and listed. The JSON + Markdown report adds per-class counts (calls and
            blocks, incl. blocks not executed), the documented class outcomes, the
            ir-v1-corpus.json entries executed at baseline and what the unexecuted
-           blocks call (WS-0 inventory of the pinned baseline).
+           blocks call (WS-0 inventory of the pinned baseline). Records of the A-19
+           evidence test (test-ir-results-a19.R) are reported per A-19 item, with
+           the expectation the test asserts, and the open-item (i) probe records
+           (test-b10-probe-setop.R) with the refusing call chain they print.
 
-  pin      write tests/testthat/fixtures/ir-v1-results.json from the BASELINE
-           captures: safe-class .planExecute() calls made directly by a test on an
-           unmodified default create_test_handle() fixture, memory mode, identical
-           in both baseline captures (selection rules recorded in the fixture);
-           tests/testthat/test-ir-results.R replays them.
+  pin      write tests/testthat/fixtures/ir-v1-results.json and
+           ir-v1-results-staged.json from the BASELINE captures. Memory pins:
+           safe-class .planExecute() calls made directly by a test on an unmodified
+           default create_test_handle() fixture, memory mode. Staged pins:
+           safe-class .planExecute() / omopPlanExecuteDS() calls made directly by a
+           test in staged mode with at least one requested root, on an ADMISSIBLE
+           fixture (every staged component with a person column holds >=
+           nfilter.subset distinct persons) that the replay can rebuild exactly
+           (the recorded person-key handle fields and changed-table rows; no TEMP
+           tables, no other handle change). Both: succeeded without warnings, no
+           data frame inside the plan, identical in both baseline captures
+           (selection rules recorded in the fixtures); tests/testthat/
+           test-ir-results.R replays them.
 
-             python3 tools/ws2/compare_results.py pin --work $W --baseline base-a \
-                 --baseline-repeat base-b
+  pin-a19  write tests/testthat/fixtures/ir-v1-results-a19.json: the BASELINE
+           records of tests/testthat/test-ir-results-a19.R (every top-level captured
+           call of each test block, in call order), identical in both baseline
+           captures; that test replays them with the expectation of each A-19 item.
 
-  validate run tests/testthat/test-ir-results.R and its fixture (copied from this
-           worktree) on a fresh snapshot: --side baseline must pass (the pins
+  validate run tests/testthat/test-ir-results*.R and their fixtures (copied from
+           this worktree) on a fresh snapshot: --side baseline must pass (the pins
            reproduce 2.10.2 itself); --side current is the B10 check of the code.
+
+  check    the shared `b10-canonical` block of capture_results.R and its verbatim
+           copies in tests/testthat/test-ir-results*.R agree.
 
 The canonical result form and the volatile-field rules are documented in
 tools/ws2/capture_results.R.
@@ -108,6 +139,51 @@ def snapshot(repo, commit, dest):
         raise SystemExit("git archive failed for %s %s" % (repo, commit))
 
 
+def rtest_name(pkg_dir):
+    """rtest.sh's NAME of a package directory (the path without /workspace/dsomop/; a path
+    outside it keeps its leading slash)."""
+    return pkg_dir[len("/workspace/dsomop/"):] if pkg_dir.startswith("/workspace/dsomop/") else pkg_dir
+
+
+def pod_name(pkg_dir):
+    """The path rtest.sh mirrors a package directory at, below /root/rt/."""
+    return rtest_name(pkg_dir).lstrip("/")
+
+
+def drop_snapshot(snap, pkg_dirs):
+    """Remove a snapshot locally and its rtest.sh mirrors / private libraries on the pod."""
+    for d in pkg_dirs:
+        lib = "/root/rt/lib/" + rtest_name(d).replace("/", "_")
+        ssh("rm -rf '/root/rt/%s' '%s' '%s.install.log'" % (pod_name(d), lib, lib))
+    ssh("rmdir '/root/rt/%s' 2>/dev/null || true" % pod_name(snap))
+    shutil.rmtree(snap, ignore_errors=True)
+
+
+def add_tests(paths, s_dir):
+    """Copy test files of this worktree into a server snapshot's tests/testthat/ (a
+    test-ir-results*.R file brings this worktree's fixtures/ir-v1-results*.json along, so
+    that it asserts against its pins instead of skipping)."""
+    added = []
+    for p in paths or []:
+        src = p if os.path.isabs(p) else os.path.join(SERVER_ROOT, p)
+        if not os.path.isfile(src):
+            raise SystemExit("--add-tests: no such file " + src)
+        files = [src]
+        if os.path.basename(src).startswith("test-ir-results"):
+            files += sorted(glob.glob(os.path.join(SERVER_ROOT, "tests", "testthat", "fixtures", "ir-v1-results*.json")))
+            # Hybrid tests come from 2.10.2, before the class fixture existed.
+            # The added A-19 test checks the reviewed current dispositions.
+            files.append(os.path.join(SERVER_ROOT, "tests", "testthat", "fixtures", "v1-corpus-classes.csv"))
+        for f in files:
+            sub = "fixtures" if f != src else ""
+            dest = os.path.join(s_dir, "tests", "testthat", sub)
+            os.makedirs(dest, exist_ok=True)
+            shutil.copy(f, os.path.join(dest, os.path.basename(f)))
+            added.append(dict(path=os.path.relpath(f, SERVER_ROOT),
+                              sha256=hashlib.sha256(open(f, "rb").read()).hexdigest()))
+    return added
+
+
 def cmd_capture(a):
     work = os.path.abspath(a.work)
     srv_repo = os.path.abspath(a.server_repo)
@@ -136,12 +212,13 @@ def cmd_capture(a):
     helper = os.path.join(HERE, "capture_results.R")
     for d in (s_dir, c_dir):
         shutil.copy(helper, os.path.join(d, "tests", "testthat", "helper-zzz-b10-capture.R"))
+    added = add_tests(a.add_tests, s_dir)
     caps = os.path.join(work, "caps", label)
     if os.path.exists(caps):
         shutil.rmtree(caps)
     os.makedirs(caps)
     meta = dict(label=label, side=a.side, server_commit=s_commit, client_commit=c_commit, tests_from=tests_from,
-                server_repo=srv_repo, client_repo=cli_repo, snapshot=snap,
+                server_repo=srv_repo, client_repo=cli_repo, snapshot=snap, added_tests=added,
                 helper_sha256=hashlib.sha256(open(helper, "rb").read()).hexdigest(),
                 filter=a.filter, suites={}, started=datetime.datetime.utcnow().isoformat() + "Z")
     for suite in a.suites.split(","):
@@ -159,9 +236,11 @@ def cmd_capture(a):
         t1 = datetime.datetime.utcnow()
         local = os.path.join(caps, pkg)
         fetched = rsync_from_pod(remote, local)
-        name = pkg_dir[len("/workspace/dsomop/"):] if pkg_dir.startswith("/workspace/dsomop/") else pkg_dir
-        log = ssh("cat /root/rt/%s.last.log" % name.lstrip("/"))
+        name = pod_name(pkg_dir)
+        log = ssh("cat '/root/rt/%s.last.log' && rm -f '/root/rt/%s.last.log'" % (name, name))
         open(os.path.join(caps, pkg + ".log"), "w").write(log.stdout)
+        if fetched.returncode == 0:
+            ssh("rm -rf %s && rmdir %s/caps/%s 2>/dev/null || true" % (remote, POD_BASE, label))
         result = [l for l in run.stdout.splitlines() if l.startswith("RESULT")]
         meta["suites"][pkg] = dict(rtest_exit=run.returncode, result=result[-1] if result else None,
                                    seconds=(t1 - t0).total_seconds(), fetch_exit=fetched.returncode,
@@ -170,6 +249,8 @@ def cmd_capture(a):
         print("[%s] %s: %s (%.0f s)" % (label, pkg, meta["suites"][pkg]["result"], meta["suites"][pkg]["seconds"]))
     meta["finished"] = datetime.datetime.utcnow().isoformat() + "Z"
     json.dump(meta, open(os.path.join(caps, "meta.json"), "w"), indent=1)
+    if not a.keep_snapshot:
+        drop_snapshot(snap, (s_dir, c_dir))
 
 
 
@@ -204,7 +285,8 @@ def norm_volatile(x, pid):
         x = re.sub(r"stg_[0-9a-f]{32}", "<token>", x)
         x = re.sub(r"/tmp/Rtmp[A-Za-z0-9]+", "<tempdir>", x)
         x = re.sub(r"(/[^/<>\s]*?)[0-9a-f]{10,}(?=/|\b)", r"\1<rand>", x)
-        return re.sub(r"(?<![0-9])%d(?![0-9])" % pid, "<pid>", x) if pid else x
+        # the capture helper's rule: a `_<pid>` suffix of a test symbol
+        return re.sub(r"(?<=_)%d(?![0-9A-Za-z])" % pid, "<pid>", x) if pid else x
     if isinstance(x, dict):
         return {k: norm_volatile(v, pid) for k, v in x.items()}
     if isinstance(x, list):
@@ -217,7 +299,7 @@ def call_context(r, with_db=True):
     symbols, server options, DSOMOP_* environment and (with_db) the fixture data."""
     call = r.get("call") or {}
     opts = r.get("options") or {}
-    plan_level = r["fn"] in (".planExecute", "omopPlanExecuteDS")
+    plan_level = r["fn"] in PLAN_FNS
     ctx = dict(mode=call.get("output_mode") or ("memory" if plan_level else None),
                symbols=call.get("out_symbols") or call.get("out"),
                options=opts.get("options"), env=opts.get("env"), inputs=r.get("inputs"))
@@ -231,6 +313,8 @@ def _ctx_hash(r, with_db):
 
 
 EXECUTOR_FNS = (".cohortCreate", ".cohortCombine", ".extractTable", ".toFeatures")
+ASSIGN_FNS = ("omopPlanExecuteDS", "omopDpPlanExecuteDS")
+PLAN_FNS = (".planExecute",) + ASSIGN_FNS
 TABLE_ARGS = ("cohort_table", "cohort_table_a", "cohort_table_b", "new_name")
 _RAND_SUFFIX = re.compile(r"_(?:[0-9a-f]{8,}|[0-9]{5,}|<rand>)$")
 
@@ -358,6 +442,9 @@ def diff_nodes(a, b, path, out):
                                                              _short((b or {}).get("kind") if isinstance(b, dict) else b, 60)),
                         baseline=_short(a, 300), current=_short(b, 300)))
         return
+    # Classification must never call unequal canonical trees identical, even
+    # when a new payload field is absent from the human-readable diff below.
+    before = len(out)
     k = a["kind"]
     if k == "data.frame":
         if a.get("class") != b.get("class"):
@@ -374,7 +461,7 @@ def diff_nodes(a, b, path, out):
             if _col_type(ca[n]) != _col_type(cb[n]):
                 out.append(dict(path=path + "." + n, aspect="types",
                                 detail="%s -> %s" % (_short(_col_type(ca[n]), 120), _short(_col_type(cb[n]), 120))))
-            for f in ("names", "attrs"):
+            for f in ("names", "attrs", "numeric_payload"):
                 if ca[n].get(f) != cb[n].get(f):
                     out.append(dict(path=path + "." + n, aspect="column_" + f,
                                     detail="%s -> %s" % (_short(ca[n].get(f), 100), _short(cb[n].get(f), 100))))
@@ -401,6 +488,9 @@ def diff_nodes(a, b, path, out):
                             detail="%s -> %s" % (_short(a.get("row_names"), 80), _short(b.get("row_names"), 80))))
         if a.get("attrs") != b.get("attrs"):
             diff_attrs(a.get("attrs"), b.get("attrs"), path, out)
+        if len(out) == before:
+            out.append(dict(path=path, aspect="canonical_payload",
+                            detail="complete canonical forms differ beyond the displayed fields"))
         return
     if k == "list":
         if a.get("class") != b.get("class"):
@@ -416,6 +506,9 @@ def diff_nodes(a, b, path, out):
                 diff_nodes(item, ib[n], path + "." + n, out)
         if a.get("attrs") != b.get("attrs"):
             diff_attrs(a.get("attrs"), b.get("attrs"), path, out)
+        if len(out) == before:
+            out.append(dict(path=path, aspect="canonical_payload",
+                            detail="complete canonical forms differ beyond the displayed fields"))
         return
     aspect = "value"
     if path.endswith(".descriptor") or ".descriptor." in path:
@@ -451,7 +544,7 @@ def effective(r):
     o = r["outcome"]
     if o["status"] != "ok":
         return "error", o.get("message"), o.get("code")
-    if r["fn"] == "omopPlanExecuteDS":
+    if r["fn"] in ASSIGN_FNS:
         res = r.get("result") or {}
         if "dsomop_plan_status" in (res.get("class") or []):
             st = _list_get(res, "status")
@@ -468,8 +561,9 @@ def effective(r):
 
 def result_node(r):
     """The compared value of a top-level record: .planExecute's return value, or
-    omopPlanExecuteDS's created/replaced bindings (its return value is reported apart)."""
-    if r["fn"] == "omopPlanExecuteDS":
+    omopPlanExecuteDS's / omopDpPlanExecuteDS's created/replaced bindings (their return
+    value is reported apart)."""
+    if r["fn"] in ASSIGN_FNS:
         return (r.get("assigned") or {}).get("values")
     return r.get("result")
 
@@ -487,18 +581,33 @@ def norm_msg(m):
     return re.sub(r"(/[^/<>\s]*?)[0-9a-f]{10,}(?=/|\b)", r"\1<rand>", m)
 
 
+def result_differences(a, b, mask_dp=False):
+    """Complete result values plus the raw pseudonym hash, not linkage alone."""
+    left, right = result_node(a), result_node(b)
+    if mask_dp:
+        left, right = mask_keyed_dp(left), mask_keyed_dp(right)
+    differences = []
+    diff_nodes(left, right, "result", differences)
+    field = "assigned_volatile" if a["fn"] in ASSIGN_FNS else "volatile"
+    raw_a = (a.get(field) or {}).get("raw_token_sha256")
+    raw_b = (b.get(field) or {}).get("raw_token_sha256")
+    if raw_a != raw_b:
+        differences.append(dict(path="result", aspect="raw_person_tokens",
+                                detail="raw person-token SHA256 differs: %s -> %s" % (raw_a, raw_b)))
+    return differences
+
+
 def compare_pair(b, c):
     (sb, mb, _), (sc, mc, _) = effective(b), effective(c)
     rec = dict(outcome=None, diffs=[], notes=[])
     if sb == "ok" and sc == "ok":
-        sub = []
-        diff_nodes(result_node(b), result_node(c), "result", sub)
+        sub = result_differences(b, c)
         rec["diffs"] = sub
         rec["outcome"] = "identical" if not sub else "different"
         st = _list_get(c.get("result") or {}, "status")
-        if b["fn"] == "omopPlanExecuteDS" and st and (st.get("values") or [None])[0] == "partial":
+        if b["fn"] in ASSIGN_FNS and st and (st.get("values") or [None])[0] == "partial":
             rec["notes"].append("current plan status partial (some roots rejected)")
-        if b["fn"] == "omopPlanExecuteDS" and b.get("result") != c.get("result"):
+        if b["fn"] in ASSIGN_FNS and b.get("result") != c.get("result"):
             rec["notes"].append("return value differs (not compared): %s -> %s" % (
                 _short((b.get("result") or {}).get("class"), 60), _short((c.get("result") or {}).get("class"), 60)))
     elif sb == "error" and sc == "ok":
@@ -571,21 +680,55 @@ def match_records(base, cur):
     return pairs, base_only, cur_only
 
 
-def join_runs(base, cur, nondet):
+# DP provenance capsule fields keyed by the DP noise root: a test that creates a fresh
+# random root per run (test-privacy-dp.R's .dp_local_state()) makes them differ between
+# two runs of the same code while every value is identical.
+KEYED_DP_FIELDS = ("dataset_id", "lineage_id", "mac")
+
+
+def mask_keyed_dp(node):
+    """A copy of a canonical tree with the keyed fields of every dsomop_dp_provenance capsule masked."""
+    if isinstance(node, list):
+        return [mask_keyed_dp(v) for v in node]
+    if not isinstance(node, dict):
+        return node
+    out = {k: mask_keyed_dp(v) for k, v in node.items()}
+    cap = (out.get("attrs") or {}).get("dsomop_dp_provenance") if isinstance(out.get("attrs"), dict) else None
+    if isinstance(cap, dict) and cap.get("kind") == "list" and cap.get("names"):
+        cap["items"] = [{"kind": "masked"} if n in KEYED_DP_FIELDS else it for n, it in zip(cap["names"], cap["items"])]
+    return out
+
+
+def masked_record(r):
+    r = dict(r)
+    for f in ("result", "assigned"):
+        if r.get(f) is not None:
+            r[f] = mask_keyed_dp(r[f])
+    return r
+
+
+def join_runs(base, cur, nondet, masked=None):
     joined = []
+    masked = masked or {}
     pairs, base_only, cur_only = match_records(base, cur)
     for b, c, fixture_differs in pairs:
-        pair = compare_pair(b, c)
+        if b["_join"] in masked:
+            pair = compare_pair(masked_record(b), masked_record(c))
+            pair["notes"].append("keyed DP provenance fields (%s) masked: per-run noise root" % ", ".join(KEYED_DP_FIELDS))
+        else:
+            pair = compare_pair(b, c)
         pair.update(b=b, c=c, key=b["_key"], join=b["_join"], excluded=b["_join"] in nondet,
-                    fixture_differs=fixture_differs)
+                    fixture_differs=fixture_differs, masked=b["_join"] in masked)
         if fixture_differs and pair["outcome"] != "identical":
             pair["outcome"] += "_fixture_differs"
         joined.append(pair)
     return joined, base_only, cur_only
 
 
-def determinism(a, b):
-    """Top-level records of two runs of the same side: keys whose outcome or result differ."""
+def determinism(a, b, masked=None):
+    """Top-level records of two runs of the same side: keys whose outcome or result differ.
+    With `masked` (a dict), records that agree once the keyed DP provenance fields are masked
+    go there instead (compared later under that weaker guarantee)."""
     bad = {}
     pairs, a_only, b_only = match_records(a, b)
     for r in a_only:
@@ -598,8 +741,12 @@ def determinism(a, b):
             bad[k] = "outcome %s / %s" % (effective(ra)[0], effective(rb)[0])
             continue
         if ra["outcome"]["status"] == "ok":
-            sub = []
-            diff_nodes(result_node(ra), result_node(rb), "result", sub)
+            sub = result_differences(ra, rb)
+            if sub and masked is not None:
+                rest = result_differences(ra, rb, mask_dp=True)
+                if not rest:
+                    masked[k] = "; ".join("%s %s" % (d["path"], d["aspect"]) for d in sub)
+                    continue
             if sub:
                 bad[k] = "; ".join("%s %s: %s" % (d["path"], d["aspect"], d["detail"]) for d in sub[:3])
         elif norm_msg(ra["outcome"].get("message")) != norm_msg(rb["outcome"].get("message")):
@@ -612,6 +759,8 @@ def corpus_check(corpus, base):
     .planExecute() (ok / refused) or .planResolvePopulations() at baseline (any depth)?"""
     seen = collections.defaultdict(collections.Counter)
     for r in base.calls:
+        if is_evidence(r):
+            continue
         if r["fn"] in (".planExecute", ".planResolvePopulations") and r.get("_hash"):
             seen[(r["fn"], r["_hash"])][r["outcome"]["status"]] += 1
 
@@ -730,6 +879,15 @@ def describe_pair(p, by_block):
     b, c = p["b"], p["c"]
     ctx = b.get("context") or {}
     bind = binding(by_block, p["key"])
+    def compared_hash(record):
+        if effective(record)[0] != "ok":
+            return None
+        node = result_node(record)
+        if p.get("masked"):
+            node = mask_keyed_dp(node)
+        volatile = "assigned_volatile" if record["fn"] in ASSIGN_FNS else "volatile"
+        payload = dict(result=node, raw_token_sha256=(record.get(volatile) or {}).get("raw_token_sha256"))
+        return hashlib.sha256(canon_json(payload).encode()).hexdigest()
     return dict(key=p["key"], fn=b["fn"], plan_sha256=b["_hash"], occurrence=p["join"][-1], cls=bind["label"],
                 mixed=bind["mixed"], file=ctx.get("file"), line=ctx.get("line"), output_mode=(b.get("call") or {}).get("output_mode"),
                 default_fixture=(b.get("handle") or {}).get("default_fixture"),
@@ -737,11 +895,24 @@ def describe_pair(p, by_block):
                 baseline_error=effective(b)[1] if effective(b)[0] == "error" else None,
                 current_error=effective(c)[1] if effective(c)[0] == "error" else None,
                 current_error_code=effective(c)[2] if effective(c)[0] == "error" else None,
+                baseline_compared_result_sha256=compared_hash(b),
+                current_compared_result_sha256=compared_hash(c),
+                masked_dp_provenance=bool(p.get("masked")),
                 baseline_id=b["id"], current_id=c["id"])
 
 
+def describe_unmatched(record, by_block):
+    return dict(key=record["_key"], fn=record["fn"], status=effective(record)[0],
+                plan_sha256=record["_hash"], cls=binding(by_block, record["_key"])["label"],
+                record_id=record["id"], occurrence=record["_join"][-1],
+                context_sha256=record["_ctx"],
+                output_mode=(record.get("call") or {}).get("output_mode"),
+                error=effective(record)[1] if effective(record)[0] == "error" else None)
+
+
 def check_canonical_copies():
-    """The canonical serialiser in capture_results.R and test-ir-results.R must be identical."""
+    """The shared `b10-canonical` block of capture_results.R and its verbatim copies in
+    tests/testthat/test-ir-results*.R must be identical (comment lines and indentation aside)."""
     def block(path):
         if not os.path.exists(path):
             return None
@@ -751,13 +922,67 @@ def check_canonical_copies():
             return None
         return "\n".join(l.strip() for l in m.group(1).splitlines() if l.strip() and not l.strip().startswith("#"))
     a = block(os.path.join(HERE, "capture_results.R"))
-    b = block(os.path.join(SERVER_ROOT, "tests", "testthat", "test-ir-results.R"))
-    return dict(capture=a is not None, test=b is not None, identical=(a is not None and a == b))
+    copies = {}
+    for f in sorted(glob.glob(os.path.join(SERVER_ROOT, "tests", "testthat", "test-ir-results*.R"))):
+        b = block(f)
+        copies[os.path.basename(f)] = "missing" if b is None else ("identical" if a is not None and a == b else "DIFFERENT")
+    return dict(capture=a is not None, copies=copies,
+                identical=a is not None and bool(copies) and all(v == "identical" for v in copies.values()))
 
 
-def comparison(work, base_label, cur_label, by_block, nondet, title):
+def is_evidence(r):
+    """A record of the A-19 evidence test or of the open-item (i) probe (not corpus blocks)."""
+    return (r.get("context") or {}).get("file") in EVIDENCE_FILES
+
+
+def a19_item(key):
+    m = re.search(r":A-19 item (\d+)", key or "")
+    return int(m.group(1)) if m else None
+
+
+def evidence_section(base, cur, joined, base_only, cur_only):
+    """A-19 evidence blocks: every call of test-ir-results-a19.R, baseline vs current, and the
+    open-item (i) probe lines of both suite logs."""
+    rows = []
+    index = {}
+    for key, recs in a19_blocks(base).items():
+        for i, r in enumerate(recs, 1):
+            index[id(r)] = i
+    for p in joined:
+        if (p["b"].get("context") or {}).get("file") != A19_FILE:
+            continue
+        b, c = p["b"], p["c"]
+        rows.append(dict(item=a19_item(p["key"]), key=p["key"], fn=b["fn"], occurrence=index.get(id(b)),
+                         outcome=p["outcome"],
+                         baseline="%s %s" % (effective(b)[0], _short(effective(b)[1] or "", 140)),
+                         current="%s %s" % (effective(c)[0], _short(effective(c)[1] or "", 140)),
+                         baseline_warnings=warnings_of(b), current_warnings=warnings_of(c),
+                         diffs=["%s %s: %s" % (d["aspect"], d["path"], _short(d["detail"], 160)) for d in p["diffs"][:8]],
+                         notes=p["notes"]))
+    for side, recs in (("baseline only", base_only), ("current only", cur_only)):
+        for r in recs:
+            if (r.get("context") or {}).get("file") == A19_FILE:
+                rows.append(dict(item=a19_item(r["_key"]), key=r["_key"], fn=r["fn"], occurrence=None,
+                                 outcome=side, baseline="", current="", diffs=[], notes=[]))
+    rows.sort(key=lambda x: (x["item"] or 0, x["key"], x["occurrence"] or 0))
+
+    def probe_lines(run):
+        f = os.path.join(run.dir, "dsOMOP.log")
+        if not os.path.exists(f):
+            return []
+        return [l.split("[b10-probe] ", 1)[1].strip() for l in open(f, encoding="utf-8", errors="replace")
+                if "[b10-probe] " in l]
+    return dict(a19=rows, probe=dict(baseline=probe_lines(base), current=probe_lines(cur)))
+
+
+def comparison(work, base_label, cur_label, by_block, nondet, title, masked=None):
     base, cur = Run(work, base_label), Run(work, cur_label)
-    joined, base_only, cur_only = join_runs(base, cur, nondet)
+    joined_all, base_only_all, cur_only_all = join_runs(base, cur, nondet, masked)
+    evidence = evidence_section(base, cur, joined_all, base_only_all, cur_only_all)
+    # the corpus tables cover the frozen blocks only
+    joined = [p for p in joined_all if not is_evidence(p["b"])]
+    base_only = [r for r in base_only_all if not is_evidence(r)]
+    cur_only = [r for r in cur_only_all if not is_evidence(r)]
     tables = class_tables(by_block, joined, base_only, cur_only, base)
     safe_issues = []
     for p in joined:
@@ -791,6 +1016,7 @@ def comparison(work, base_label, cur_label, by_block, nondet, title):
         by_fn[r["fn"]]["current_only_unmatched"] += 1
     by_fn = [dict(fn=f, calls={o: by_fn[f].get(o, 0) for o in OUTCOMES}) for f in sorted(by_fn)]
     return dict(title=title, baseline=base.meta, current=cur.meta, expectations=expectations, by_function=by_fn,
+                evidence=evidence,
                 processes=dict(baseline=base.processes, current=cur.processes),
                 records=dict(baseline_top=len(base.top), current_top=len(cur.top), baseline_calls=len(base.calls),
                              current_calls=len(cur.calls), joined=len(joined), baseline_only=len(base_only),
@@ -798,10 +1024,8 @@ def comparison(work, base_label, cur_label, by_block, nondet, title):
                              bad_lines=[base.bad_lines, cur.bad_lines]),
                 classes=tables, safe_issues=safe_issues, safe_unmatched=unmatched_safe, leaks=leaks,
                 pairs=[describe_pair(p, by_block) for p in joined],
-                baseline_only=[dict(key=r["_key"], fn=r["fn"], status=effective(r)[0], plan_sha256=r["_hash"],
-                                    cls=binding(by_block, r["_key"])["label"]) for r in base_only],
-                current_only=[dict(key=r["_key"], fn=r["fn"], status=effective(r)[0], plan_sha256=r["_hash"],
-                                   cls=binding(by_block, r["_key"])["label"]) for r in cur_only])
+                baseline_only=[describe_unmatched(r, by_block) for r in base_only],
+                current_only=[describe_unmatched(r, by_block) for r in cur_only])
 
 
 def md_table(rows, cols):
@@ -825,15 +1049,21 @@ def write_markdown(rep, path):
                                          client_suite=(m["suites"].get("dsOMOPClient") or {}).get("result"))
                                     for m in rep["runs"]],
                                    ["label", "side", "server", "client", "tests", "server_suite", "client_suite"]), ""]
-    L += ["## Determinism (%s vs %s)" % (d["runs"][0], d["runs"][1]), "",
+    L += ["## Determinism (%s vs %s, 17 significant digits)" % (d["runs"][0], d["runs"][1]), "",
           "%d top-level records compared; %d nondeterministic (excluded from every comparison):" % (d["compared"], len(d["nondeterministic"])), ""]
     for x in d["nondeterministic"]:
         L.append("- `%s` %s (occurrence %s): %s" % (x["key"], x["fn"], x["occurrence"], x["reason"]))
+    if d.get("masked"):
+        L += ["", "%d record(s) deterministic only with the keyed DP provenance fields (%s) masked -- the test draws a "
+              "fresh random DP noise root per run; compared below under that weaker guarantee (every value and every "
+              "other capsule field exact):" % (len(d["masked"]), ", ".join(KEYED_DP_FIELDS)), ""]
+        for x in d["masked"]:
+            L.append("- `%s` %s (occurrence %s): %s" % (x["key"], x["fn"], x["occurrence"], x["differing"]))
     L.append("")
     for cmp in rep["comparisons"]:
         L += ["## %s" % cmp["title"], "", "Records: %s" % json.dumps(cmp["records"]), "",
-              "Per class, top-level calls (a `.planExecute()` call made directly by a test, or an `omopPlanExecuteDS()` call; "
-              "nested `.planExecute()` calls under `omopPlanExecuteDS()` are not counted). `blocks` counts classification rows "
+              "Per class, top-level calls (a `.planExecute()` call made directly by a test, or an `omopPlanExecuteDS()` / "
+              "`omopDpPlanExecuteDS()` call; calls nested in them are not counted). `blocks` counts classification rows "
               "per block (mixed `#sub` blocks under their combined label), `not_executed` = no captured call at baseline; "
               "`block_<o>` = the worst outcome among a block's calls.", ""]
         rows = []
@@ -844,7 +1074,7 @@ def write_markdown(rep, path):
             r["block outcomes"] = ", ".join("%s=%d" % (k[6:], v) for k, v in sorted(t["blocks"].items()) if k.startswith("block_"))
             rows.append(r)
         L += [md_table(rows, ["cls"] + OUTCOMES + ["blocks", "executed_at_baseline", "not_executed", "block outcomes"]), ""]
-        L += ["Per function (plan level: `.planExecute`, `omopPlanExecuteDS`; internal: population resolution and the "
+        L += ["Per function (plan level: `.planExecute`, `omopPlanExecuteDS`, `omopDpPlanExecuteDS`; internal: population resolution and the "
               "executor entry points called directly by tests):", ""]
         frows = []
         for t in cmp["by_function"]:
@@ -904,6 +1134,27 @@ def write_markdown(rep, path):
             L += ["", "### Internal-name strings found in compared values (%d)" % len(cmp["leaks"]), ""]
             for x in cmp["leaks"][:50]:
                 L.append("- `%s` %s %s: %s" % (x["key"], x["side"], x["path"], x["value"]))
+        ev = cmp.get("evidence") or {}
+        if ev.get("a19"):
+            L += ["", "### A-19 evidence (tests/testthat/test-ir-results-a19.R; declared fixtures)", "",
+                  "Each call of the evidence test, baseline vs this capture. The test itself asserts each item's "
+                  "reviewed disposition; `different` / `refused_*` here are the documented changes of items 3, 4, 5 "
+                  "and 8 (see the test header), `identical` the preserved results.", ""]
+            for x in ev["a19"]:
+                L.append("- item %s **%s** `%s` [%s, call %s]: baseline %s; current %s" % (
+                    x["item"], x["outcome"], x["key"].split(":", 2)[-1], x["fn"], x["occurrence"],
+                    x["baseline"].strip() or "-", x["current"].strip() or "-"))
+                for d in x["diffs"]:
+                    L.append("  - %s" % d)
+                for w in (x.get("baseline_warnings") or [])[:2]:
+                    L.append("  - baseline warning: %s" % _short(w, 200))
+                for w in (x.get("current_warnings") or [])[:2]:
+                    L.append("  - current warning: %s" % _short(w, 200))
+        if ev.get("probe") and (ev["probe"].get("baseline") or ev["probe"].get("current")):
+            L += ["", "### Open item (i): set-op below nfilter (tools/ws2/test-b10-probe-setop.R, evidence only)", ""]
+            for side in ("baseline", "current"):
+                for l in ev["probe"].get(side) or []:
+                    L.append("- %s: %s" % (side, l))
         L.append("")
     cc = rep["corpus"]
     L += ["## ir-v1-corpus.json entries vs the baseline capture", "",
@@ -980,18 +1231,20 @@ def cmd_compare(a):
     work = os.path.abspath(a.work)
     rows, by_block = load_classes(a.classes)
     base = Run(work, a.baseline)
-    nondet = {}
-    det = dict(runs=[a.baseline, a.baseline_repeat], compared=0, nondeterministic=[])
+    nondet, masked = {}, {}
+    det = dict(runs=[a.baseline, a.baseline_repeat], compared=0, nondeterministic=[], masked=[])
     if a.baseline_repeat:
         rep_run = Run(work, a.baseline_repeat)
-        nondet = determinism(base, rep_run)
+        nondet = determinism(base, rep_run, masked)
         det["compared"] = len(base.top)
         det["nondeterministic"] = [dict(key=k[1], fn=k[0], plan_sha256=k[2], context=k[3], occurrence=k[4], reason=v,
                                         cls=binding(by_block, k[1])["label"]) for k, v in nondet.items()]
+        det["masked"] = [dict(key=k[1], fn=k[0], occurrence=k[4], differing=v, cls=binding(by_block, k[1])["label"])
+                         for k, v in masked.items()]
     comps = []
     for lab in a.current:
         comps.append(comparison(work, a.baseline, lab, by_block, nondet,
-                                "Baseline %s vs %s (%s)" % (a.baseline, lab, Run(work, lab).meta["side"])))
+                                "Baseline %s vs %s (%s)" % (a.baseline, lab, Run(work, lab).meta["side"]), masked))
     helpers = sorted({Run(work, l).meta.get("helper_sha256") for l in
                       [a.baseline] + ([a.baseline_repeat] if a.baseline_repeat else []) + list(a.current)})
     if len(helpers) != 1:
@@ -1017,21 +1270,36 @@ def cmd_compare(a):
 
 
 OPTION_PATTERN = r"^(default\.)?(nfilter|dsomop|dsstaging|datashield)\."
+CANONICAL_DIGITS = 17
+CORE_FIELDS = ("dbms", "target_dialect", "cdm_schema", "vocab_schema", "results_schema",
+               "temp_schema", "resource_client", "config", "temp_tables")
+A19_FILE = "test-ir-results-a19.R"
+PROBE_FILE = "test-b10-probe-setop.R"
+EVIDENCE_FILES = (A19_FILE, PROBE_FILE)
 
 # A mixed block (#sub rows) is classified per row, but calls are bound per block.
 # A successful call of a mixed block is pinned only with a reviewed attribution to
-# its safe row (from the 2.10.2 test code and the frozen rows).
+# its safe (or reviewed corrected) row (from the 2.10.2 test code and the frozen rows).
 MIXED_ATTRIBUTION = {
     "dsOMOP:test-output-contracts.R:baseline output produces one row per cohort member":
-        "the block's only call; row #2 (safe: one row per cohort member with age_group, same) is its "
-        "result contract; row #1 (newly_permitted, F-25: year_of_birth returned when requested) concerns "
-        "a column this plan does not request, so it leaves this call's documented result unchanged",
+        "the block's only call; row #2 (one row per cohort member with age_group: safe, corrected by "
+        "F-26 after A-19 item 1) is its result contract; row #1 (newly_permitted, F-25: year_of_birth "
+        "returned when requested) concerns a column this plan does not request, so it leaves this "
+        "call's documented result unchanged",
     "dsOMOP:test-output-contracts.R:baseline accepts only a public common age-grid coarsening":
         "the .planExecute() call with the public common grid is row #1 (safe: accepted); row #2 "
         "(newly_permitted: off-grid grid) is a .planValidate() call, not executed and not pinned",
     "dsOMOP:test-output-contracts.R:cohort_membership absolute dates require explicit authorization":
         "the call with dsomop.allow_absolute_dates = TRUE is row #2 (safe); the unauthorised call is "
         "row #1 (unchanged_invalid), refused at baseline and not pinned",
+}
+# Reviewed corrections the replay applies (tests/testthat/test-ir-results.R
+# .B10_CORRECTIONS): a block corrected by them stays pinnable.
+REVIEWED_CORRECTIONS = {
+    "dsOMOP:test-output-contracts.R:baseline output produces one row per cohort member":
+        "F-26 demo.age_group (A-19 item 1)",
+    "dsOMOP:test-output-contracts.R:single plan with all output types executes successfully":
+        "F-26 demo.age_group (A-19 item 1)",
 }
 
 
@@ -1050,18 +1318,43 @@ def output_types(plan_exact):
     return types
 
 
+def pinnable_class(by_block, key):
+    """A block whose call may be pinned: class safe, or corrected by a reviewed correction
+    (replayed with .B10_CORRECTIONS); a mixed block needs a reviewed attribution."""
+    bind = binding(by_block, key)
+    cls = set(bind["classes"])
+    if not ("safe" in cls or ("corrected" in cls and key in REVIEWED_CORRECTIONS)):
+        return "class " + bind["label"]
+    if bind["mixed"] and len(cls) > 1 and key not in MIXED_ATTRIBUTION:
+        return "mixed block without a reviewed attribution to its safe row: " + bind["label"]
+    return None
+
+
+def deterministic(r, rep):
+    """The repeat baseline run has the same outcome, value and raw person tokens for r."""
+    if rep is None:
+        return True
+    o = rep.top.get(r["_join"])
+    if o is None or o["outcome"]["status"] != r["outcome"]["status"]:
+        return False
+    if canon_json(result_node(o)) != canon_json(result_node(r)):
+        return False
+    for f in ("volatile", "assigned_volatile"):
+        if ((o.get(f) or {}).get("raw_token_sha256")) != ((r.get(f) or {}).get("raw_token_sha256")):
+            return False
+    return True
+
+
 def pin_candidates(base, rep, by_block):
     pins, rejected = [], collections.Counter()
     for k, r in base.top.items():
-        if r["_suite"] != "dsOMOP" or r["fn"] != ".planExecute":
+        if r["_suite"] != "dsOMOP" or r["fn"] != ".planExecute" or is_evidence(r):
             continue
-        bind = binding(by_block, r["_key"])
-        cls = set(bind["classes"])
-        why = None
-        if "safe" not in cls:
-            why = "class " + bind["label"]
-        elif bind["mixed"] and len(cls) > 1 and r["_key"] not in MIXED_ATTRIBUTION:
-            why = "mixed block without a reviewed attribution to its safe row: " + bind["label"]
+        if ((r.get("call") or {}).get("output_mode") or "memory") == "staged":
+            continue   # staged_candidates()
+        why = pinnable_class(by_block, r["_key"])
+        if why:
+            pass
         elif r["outcome"]["status"] != "ok":
             why = "refused at baseline"
         elif r.get("warnings"):
@@ -1074,15 +1367,146 @@ def pin_candidates(base, rep, by_block):
             why = "plan carries data frames"
         elif not r.get("plan_exact") or not (r.get("call") or {}).get("out_symbols"):
             why = "no exact plan form"
-        elif rep is not None:
-            o = rep.top.get(k)
-            if o is None or o["outcome"]["status"] != "ok" or canon_json(result_node(o)) != canon_json(result_node(r)):
-                why = "nondeterministic across the two baseline runs"
+        elif not deterministic(r, rep):
+            why = "nondeterministic across the two baseline runs"
         if why:
             rejected[why.split(":")[0]] += 1
             continue
         pins.append(r)
     return pins, rejected
+
+
+def staged_components(node, path="result", out=None):
+    """Every staged descriptor of a canonical tree: path, file state, rows, distinct persons."""
+    out = [] if out is None else out
+    if not isinstance(node, dict):
+        return out
+    if node.get("kind") == "list" and "b10_staged" in (node.get("class") or []):
+        sf = _list_get(node, "staged_file") or {}
+        content = _list_get(sf, "content")
+        persons = None
+        if isinstance(content, dict) and content.get("kind") == "data.frame":
+            for n, c in zip(content["names"], content["columns"]):
+                if n.lower() in ("person_id", "subject_id"):
+                    persons = len(set(v for v in c.get("values") or [] if v is not None))
+        out.append(dict(path=path, state=((_list_get(sf, "state") or {}).get("values") or [None])[0],
+                        rows=content.get("nrow") if isinstance(content, dict) else None, persons=persons))
+        return out
+    if node.get("kind") == "list":
+        names = node.get("names") or [str(i + 1) for i in range(len(node.get("items") or []))]
+        for n, it in zip(names, node.get("items") or []):
+            staged_components(it, path + "." + str(n), out)
+    return out
+
+
+def scalar_option(r, name, default=None):
+    o = ((r.get("options") or {}).get("options") or {}).get(name)
+    if isinstance(o, dict) and o.get("values"):
+        try:
+            return float(o["values"][0])
+        except (TypeError, ValueError):
+            return default
+    return default
+
+
+def rebuildable_fixture(h):
+    """None when a replay can rebuild the call's fixture exactly from the record (changed-table
+    rows, person-key fields), else the reason."""
+    diffs = list(h.get("diffs") or [])
+    content, exact = h.get("table_content") or {}, h.get("exact_fields") or {}
+    for d in diffs:
+        if d.startswith("table:"):
+            c = content.get(d[6:])
+            if not c or c.get("kind") == "unrecordable":
+                return "changed table %s not recorded (%s)" % (d[6:], (c or {}).get("reason"))
+        elif d.startswith("field:"):
+            f = d[6:]
+            if f in CORE_FIELDS or f == "blueprint":
+                return "handle field " + f
+            if not exact.get(f) or exact[f].get("kind") == "unrecordable":
+                return "handle field %s not recorded" % f
+        else:
+            return d
+    return None
+
+
+TMP_PATH = re.compile(r"^/tmp/Rtmp[A-Za-z0-9]+/")
+
+
+def fresh_tempfile_options(r):
+    """Options naming a temporary path of the baseline session: the replay gives them a fresh
+    tempfile() with the same prefix."""
+    out = {}
+    for n, v in ((r.get("options") or {}).get("options") or {}).items():
+        vals = v.get("values") if isinstance(v, dict) else None
+        if v.get("type") == "character" and vals and len(vals) == 1 and isinstance(vals[0], str) and TMP_PATH.match(vals[0]):
+            out[n] = re.sub(r"[0-9a-f]{10,}$", "", os.path.basename(vals[0].rstrip("/")))
+    return out
+
+
+def staged_candidates(base, rep, by_block):
+    pins, rejected, admissibility = [], collections.Counter(), []
+    for k, r in base.top.items():
+        if r["_suite"] != "dsOMOP" or r["fn"] not in (".planExecute", "omopPlanExecuteDS") or is_evidence(r):
+            continue
+        call = r.get("call") or {}
+        if (call.get("output_mode") or "memory") != "staged":
+            continue
+        h = r.get("handle") or {}
+        ok = r["outcome"]["status"] == "ok"
+        comps = staged_components(result_node(r)) if ok else []
+        k_subset = scalar_option(r, "nfilter.subset", scalar_option(r, "default.nfilter.subset", 3.0))
+        roots = call.get("out_symbols") if r["fn"] == ".planExecute" else call.get("out")
+        reasons = []
+        why = pinnable_class(by_block, r["_key"])
+        if why:
+            reasons.append(why)
+        if not ok:
+            reasons.append("refused at baseline")
+        if r.get("warnings"):
+            reasons.append("warnings at baseline")
+        if ok and (not roots or not ((roots.get("items") if roots.get("kind") == "list" else roots.get("values")) or [])):
+            reasons.append("no requested root (A-19 item 4: 2.10.3 publishes nothing)")
+        if r.get("scope_frames"):
+            reasons.append("plan carries data frames")
+        if not r.get("plan_exact"):
+            reasons.append("no exact plan form")
+        if rebuildable_fixture(h):
+            reasons.append("fixture not rebuildable: " + rebuildable_fixture(h))
+        if any(isinstance(v, str) and TMP_PATH.match(v) for v in ((r.get("options") or {}).get("env") or {}).values()):
+            reasons.append("environment names a session temporary path")
+        if ok and (not comps or any(c["state"] != "read" for c in comps)):
+            reasons.append("staged file not readable")
+        if any(c["persons"] is not None and c["persons"] < k_subset for c in comps):
+            reasons.append("not admissible: a component below nfilter.subset (%s)" % ", ".join(
+                "%s=%s" % (c["path"].split(".")[-1], c["persons"]) for c in comps if c["persons"] is not None))
+        if not reasons and not deterministic(r, rep):
+            reasons.append("nondeterministic across the two baseline runs")
+        admissibility.append(dict(key=r["_key"], fn=r["fn"], nfilter_subset=k_subset, components=comps,
+                                  pinned=not reasons, reasons=reasons))
+        if reasons:
+            rejected[reasons[0].split(":")[0]] += 1
+            continue
+        pins.append(r)
+    return pins, rejected, admissibility
+
+
+def _pin_common(i, prefix, r, by_block, corpus):
+    ctx = r.get("context") or {}
+    return dict(id="%s%03d" % (prefix, i), key=r["_key"], cls=binding(by_block, r["_key"])["label"],
+                line=ctx.get("line"), occurrence=r["_join"][-1], also=[],
+                attribution={r["_key"]: MIXED_ATTRIBUTION[r["_key"]]} if r["_key"] in MIXED_ATTRIBUTION else {},
+                correction=REVIEWED_CORRECTIONS.get(r["_key"]),
+                corpus_id=corpus.get(r["_hash"]), plan_sha256=r["_hash"],
+                output_types=output_types(r["plan_exact"]), fn=r["fn"],
+                plan=r["plan_exact"], options=(r.get("options") or {}).get("options") or {},
+                env=(r.get("options") or {}).get("env") or {})
+
+
+def _write_fixture(fx, out):
+    txt = json.dumps(fx, indent=None, separators=(",", ":"), sort_keys=False)
+    open(out, "w", encoding="utf-8").write(txt + "\n")
+    return len(txt)
 
 
 def cmd_pin(a):
@@ -1092,9 +1516,20 @@ def cmd_pin(a):
     rep = Run(work, a.baseline_repeat) if a.baseline_repeat else None
     if base.meta["side"] != "baseline" or (rep and rep.meta["side"] != "baseline"):
         raise SystemExit("pins come from BASELINE captures only")
-    cands, rejected = pin_candidates(base, rep, by_block)
     corpus = {e["sha256"]: e["id"] for e in json.load(open(a.corpus, encoding="utf-8"))}
     ref = next((o["reference"] for o in base.other if o.get("kind") == "reference" and o.get("pkg") == "dsOMOP"), {})
+    provenance = dict(dsOMOP=base.meta["server_commit"], dsOMOPClient=base.meta["client_commit"],
+                      captures=[base.label] + ([rep.label] if rep else []),
+                      capture_helper_sha256=base.meta.get("helper_sha256"))
+    common_rules = ["block class safe in v1-corpus-classes.csv, or corrected by a reviewed correction replayed "
+                    "by test-ir-results.R (.B10_CORRECTIONS; tools/ws2/compare_results.py REVIEWED_CORRECTIONS); "
+                    "a mixed block only with a reviewed attribution of the call to that row (`attribution`; "
+                    "MIXED_ATTRIBUTION)",
+                    "succeeded at baseline without warnings, with no data frame inside the plan",
+                    "identical in two independent baseline runs at 17 significant digits (values, raw person "
+                    "tokens); duplicates (same plan, symbols, options, environment) pinned once"]
+    # memory pins
+    cands, rejected = pin_candidates(base, rep, by_block)
     groups = collections.OrderedDict()
     for r in cands:
         sig = canon_json([r["plan_exact"], r["call"]["out_symbols"], (r.get("options") or {}).get("options"),
@@ -1107,45 +1542,185 @@ def cmd_pin(a):
         for o in rs[1:]:
             if canon_json(o["result"]) != canon_json(res):
                 raise SystemExit("same plan and options, different baseline results: %s / %s" % (r["_key"], o["_key"]))
-        ctx = r.get("context") or {}
-        pins.append(dict(
-            id="r%03d" % i, key=r["_key"], cls=binding(by_block, r["_key"])["label"], line=ctx.get("line"),
-            occurrence=r["_join"][-1], also=[dict(key=o["_key"], occurrence=o["_join"][-1]) for o in rs[1:]],
-            attribution={o["_key"]: MIXED_ATTRIBUTION[o["_key"]] for o in rs if o["_key"] in MIXED_ATTRIBUTION},
-            corpus_id=corpus.get(r["_hash"]), plan_sha256=r["_hash"], output_types=output_types(r["plan_exact"]),
-            output_mode="memory", plan=r["plan_exact"], out_symbols=r["call"]["out_symbols"],
-            options=(r.get("options") or {}).get("options") or {}, env=(r.get("options") or {}).get("env") or {},
-            result_sha256=hashlib.sha256(canon_json(res).encode()).hexdigest(), result=res))
+        p = _pin_common(i, "r", r, by_block, corpus)
+        p["also"] = [dict(key=o["_key"], occurrence=o["_join"][-1]) for o in rs[1:]]
+        p["attribution"] = {o["_key"]: MIXED_ATTRIBUTION[o["_key"]] for o in rs if o["_key"] in MIXED_ATTRIBUTION}
+        p.update(output_mode="memory", out_symbols=r["call"]["out_symbols"],
+                 fresh_tempfile_options=fresh_tempfile_options(r),
+                 result_sha256=hashlib.sha256(canon_json(res).encode()).hexdigest(), result=res,
+                 volatile=r.get("volatile"))
+        pins.append(p)
     fx = dict(
-        version=1,
+        version=2, canonical_digits=CANONICAL_DIGITS,
         description=("BASELINE (dsOMOP 2.10.2) canonical results of safe-class v1 plans, re-executed by "
-                     "tests/testthat/test-ir-results.R with the current code (review B10)."),
+                     "tests/testthat/test-ir-results.R with the current code (review B10); doubles at 17 "
+                     "significant digits (lossless)."),
         generated_by="tools/ws2/compare_results.py pin (capture: tools/ws2/capture_results.R)",
-        baseline=dict(dsOMOP=base.meta["server_commit"], dsOMOPClient=base.meta["client_commit"],
-                      captures=[base.label] + ([rep.label] if rep else []), capture_helper_sha256=base.meta.get("helper_sha256")),
-        selection=["a .planExecute() call made directly by a test block of the 2.10.2 dsOMOP suite",
-                   "block class safe in v1-corpus-classes.csv, or a mixed block with a safe row and a reviewed attribution of "
-                   "the call to that row (`attribution`; tools/ws2/compare_results.py MIXED_ATTRIBUTION)",
-                   "succeeded at baseline without warnings, in memory mode, with no data frame inside the plan",
-                   "on an unmodified default create_test_handle() fixture (data, TEMP schema and handle fields equal to a fresh one)",
-                   "identical in two independent baseline runs; duplicates (same plan, symbols, options, environment) pinned once"],
-        option_pattern=OPTION_PATTERN,
-        reference_fixture_db_sha256=ref.get("db_sha256"),
-        rejected_candidates=dict(rejected),
-        pins=pins)
+        baseline=provenance,
+        selection=["a .planExecute() call made directly by a test block of the 2.10.2 dsOMOP suite, in memory mode"] +
+                  common_rules +
+                  ["on an unmodified default create_test_handle() fixture (data, TEMP schema and handle fields equal to a fresh one)"],
+        option_pattern=OPTION_PATTERN, reference_fixture_db_sha256=ref.get("db_sha256"),
+        rejected_candidates=dict(rejected), pins=pins)
     out = a.out or os.path.join(SERVER_ROOT, "tests", "testthat", "fixtures", "ir-v1-results.json")
-    txt = json.dumps(fx, indent=None, separators=(",", ":"), sort_keys=False)
-    open(out, "w", encoding="utf-8").write(txt + "\n")
+    size = _write_fixture(fx, out)
     types = collections.Counter(t for p in pins for t in p["output_types"])
-    print("%d pins (%d candidate calls) -> %s (%.0f KB)" % (len(pins), len(cands), out, len(txt) / 1024.0))
-    print("output types:", dict(types))
-    print("rejected:", dict(rejected))
+    print("%d memory pins (%d candidate calls) -> %s (%.0f KB)" % (len(pins), len(cands), out, size / 1024.0))
+    print("  output types:", dict(types))
+    print("  rejected:", dict(rejected))
+    # staged pins
+    scands, srejected, admissibility = staged_candidates(base, rep, by_block)
+    spins = []
+    for i, r in enumerate(scands, 1):
+        p = _pin_common(i, "s", r, by_block, corpus)
+        call = r["call"]
+        h = r.get("handle") or {}
+        p.update(output_mode="staged", fresh_tempfile_options=fresh_tempfile_options(r),
+                 fixture=dict(db_sha256=(h.get("db") or {}).get("sha256"), diffs=h.get("diffs"),
+                              exact_fields=h.get("exact_fields") or {}, table_content=h.get("table_content") or {}),
+                 support=dict(nfilter_subset=scalar_option(r, "nfilter.subset", scalar_option(r, "default.nfilter.subset", 3.0)),
+                              components=staged_components(result_node(r))))
+        if r["fn"] == ".planExecute":
+            p.update(out_symbols=call["out_symbols"], result=r["result"], volatile=r.get("volatile"),
+                     result_sha256=hashlib.sha256(canon_json(r["result"]).encode()).hexdigest())
+        else:
+            asg = r.get("assigned") or {}
+            p.update(omop_symbol=call.get("omop_symbol"), out=call.get("out"),
+                     assigned=dict(created=asg.get("created"), values=asg.get("values")),
+                     assigned_volatile=r.get("assigned_volatile"),
+                     result_sha256=hashlib.sha256(canon_json(asg.get("values")).encode()).hexdigest())
+        spins.append(p)
+    sfx = dict(
+        version=1, canonical_digits=CANONICAL_DIGITS,
+        description=("BASELINE (dsOMOP 2.10.2) canonical STAGED results of safe-class v1 plans with requested "
+                     "roots on admissible fixtures, re-executed by tests/testthat/test-ir-results.R with the "
+                     "current code (review B10, Astra R5)."),
+        generated_by="tools/ws2/compare_results.py pin (capture: tools/ws2/capture_results.R)",
+        baseline=provenance,
+        selection=["a .planExecute() or omopPlanExecuteDS() call made directly by a test block of the 2.10.2 dsOMOP "
+                   "suite, in staged mode, with at least one requested root"] + common_rules +
+                  ["admissible: every staged component with a person column holds >= nfilter.subset distinct "
+                   "persons (`support`)",
+                   "a fixture the replay rebuilds exactly: a fresh create_test_handle() with the recorded rows of "
+                   "every changed table and the recorded non-core handle fields (person key); no TEMP tables, no "
+                   "core field change; the rebuilt content hash must equal `fixture$db_sha256`",
+                   "options naming a temporary directory of the baseline session (`fresh_tempfile_options`) get a "
+                   "fresh tempfile() in the replay"],
+        compared=("the complete canonical form of the returned value (.planExecute) or of the assigned bindings "
+                  "(omopPlanExecuteDS): descriptors field by field and the staged file content and byte hash; "
+                  "excluded volatile parts only: staging tokens, the session tempdir and tempfile hex of "
+                  "metadata$file, expires_at; person tokens by linkage plus raw_token_sha256"),
+        option_pattern=OPTION_PATTERN, rejected_candidates=dict(srejected), admissibility=admissibility,
+        pins=spins)
+    sout = a.out_staged or os.path.join(SERVER_ROOT, "tests", "testthat", "fixtures", "ir-v1-results-staged.json")
+    size = _write_fixture(sfx, sout)
+    print("%d staged pins -> %s (%.0f KB)" % (len(spins), sout, size / 1024.0))
+    print("  rejected:", dict(srejected))
+    for x in admissibility:
+        print("  %s %s %s: %s" % ("PIN " if x["pinned"] else "skip", x["fn"], x["key"][:90], "; ".join(x["reasons"]) or
+                                  ", ".join("%s persons=%s rows=%s" % (c["path"], c["persons"], c["rows"]) for c in x["components"])))
+
+
+def a19_blocks(run, file=A19_FILE):
+    out = collections.OrderedDict()
+    for r in sorted((r for r in run.calls if r["_top"] and (r.get("context") or {}).get("file") == file),
+                    key=lambda r: r["_order"]):
+        out.setdefault(r["_key"], []).append(r)
+    return out
+
+
+def a19_pin_record(r):
+    o = r["outcome"]
+    outcome = dict(status=o["status"])
+    if o["status"] != "ok":
+        outcome.update({k: o.get(k) for k in ("class", "message", "code")})
+    rec = dict(fn=r["fn"], entry=r.get("entry"), line=(r.get("context") or {}).get("line"),
+               plan_sha256=r["_hash"], plan=r.get("plan_exact"), call=r.get("call"),
+               db_sha256=((r.get("handle") or {}).get("db") or {}).get("sha256"),
+               outcome=outcome, warnings=[w.get("message") for w in r.get("warnings") or []],
+               result=r.get("result"), volatile=r.get("volatile"))
+    if r["fn"] in ASSIGN_FNS:
+        asg = r.get("assigned") or {}
+        rec["assigned"] = dict(created=sorted(set((asg.get("created") or []) + (asg.get("replaced") or []))),
+                               values=asg.get("values"))
+        rec["assigned_volatile"] = r.get("assigned_volatile")
+    return rec
+
+
+def a19_differences(ra, rb):
+    """Why two baseline records of the same A-19 call differ (empty when deterministic)."""
+    bad = []
+    if ra["fn"] != rb["fn"]:
+        bad.append("function")
+    if ra["outcome"]["status"] != rb["outcome"]["status"]:
+        bad.append("outcome")
+    if norm_msg(ra["outcome"].get("message")) != norm_msg(rb["outcome"].get("message")):
+        bad.append("message")
+    if warnings_of(ra) != warnings_of(rb):
+        bad.append("warnings")
+    sub = []
+    diff_nodes(result_node(ra), result_node(rb), "result", sub)
+    bad += ["%s %s" % (d["aspect"], d["path"]) for d in sub[:5]]
+    for f in ("volatile", "assigned_volatile"):
+        if (ra.get(f) or {}).get("raw_token_sha256") != (rb.get(f) or {}).get("raw_token_sha256"):
+            bad.append(f + ".raw_token_sha256")
+    if ((ra.get("handle") or {}).get("db") or {}).get("sha256") != ((rb.get("handle") or {}).get("db") or {}).get("sha256"):
+        bad.append("fixture content")
+    return bad
+
+
+def cmd_pin_a19(a):
+    work = os.path.abspath(a.work)
+    base = Run(work, a.baseline)
+    rep = Run(work, a.baseline_repeat) if a.baseline_repeat else None
+    if base.meta["side"] != "baseline" or (rep and rep.meta["side"] != "baseline"):
+        raise SystemExit("pins come from BASELINE captures only")
+    bb = a19_blocks(base)
+    rb = a19_blocks(rep) if rep else {}
+    pins, nondet = collections.OrderedDict(), {}
+    for key, recs in bb.items():
+        if rep is not None:
+            other = rb.get(key) or []
+            problems = [] if len(other) == len(recs) else ["%d / %d calls" % (len(recs), len(other))]
+            for i, (ra, rr) in enumerate(zip(recs, other), 1):
+                problems += ["call %d: %s" % (i, d) for d in a19_differences(ra, rr)]
+            if problems:
+                nondet[key] = problems
+                continue
+        pins[key] = [a19_pin_record(r) for r in recs]
+    fx = dict(
+        version=1, canonical_digits=CANONICAL_DIGITS,
+        description=("BASELINE (dsOMOP 2.10.2) records of the A-19 evidence calls of "
+                     "tests/testthat/test-ir-results-a19.R (declared deterministic fixtures), replayed by that "
+                     "test with the expectation of each A-19 item (review B10, CR-19)."),
+        generated_by="tools/ws2/compare_results.py pin-a19 (capture: tools/ws2/capture_results.R with "
+                     "--add-tests tests/testthat/test-ir-results-a19.R)",
+        baseline=dict(dsOMOP=base.meta["server_commit"], dsOMOPClient=base.meta["client_commit"],
+                      captures=[base.label] + ([rep.label] if rep else []),
+                      capture_helper_sha256=base.meta.get("helper_sha256"),
+                      a19_test=[t for t in base.meta.get("added_tests") or [] if t["path"].endswith(A19_FILE)]),
+        selection=["every top-level captured call of a test block of test-ir-results-a19.R, in call order",
+                   "identical in two independent baseline runs at 17 significant digits (outcome, message, "
+                   "warnings, values, raw person tokens, fixture content)"],
+        nondeterministic=nondet, pins=pins)
+    out = a.out or os.path.join(SERVER_ROOT, "tests", "testthat", "fixtures", "ir-v1-results-a19.json")
+    size = _write_fixture(fx, out)
+    print("%d A-19 blocks (%d calls) -> %s (%.0f KB); nondeterministic: %d" % (
+        len(pins), sum(len(v) for v in pins.values()), out, size / 1024.0, len(nondet)))
+    for k, v in pins.items():
+        print("  %s: %s" % (k.split(":", 2)[-1], ", ".join("%s %s" % (c["fn"], c["outcome"]["status"]) for c in v)))
+    for k, v in nondet.items():
+        print("  NONDETERMINISTIC %s: %s" % (k, "; ".join(v[:4])))
+
+
+def cmd_check(a):
+    print(json.dumps(check_canonical_copies(), indent=1))
 
 
 def cmd_validate(a):
-    """Run tests/testthat/test-ir-results.R (+ its fixture) from this worktree against a
+    """Run tests/testthat/test-ir-results*.R (+ their fixtures) from this worktree against a
     snapshot: --side baseline must pass (the pins reproduce 2.10.2 itself); --side current
-    is the B10 check of the current code."""
+    is the B10 check of the code."""
     work = os.path.abspath(a.work)
     srv_repo, cli_repo = os.path.abspath(a.server_repo), os.path.abspath(a.client_repo)
     pins = json.load(open(os.path.join(srv_repo, "tools", "ws0", "corpus_baseline.json")))
@@ -1159,7 +1734,8 @@ def cmd_validate(a):
     snapshot(cli_repo, c_commit, c_dir)
     tt = os.path.join(s_dir, "tests", "testthat")
     os.makedirs(os.path.join(tt, "fixtures"), exist_ok=True)
-    shutil.copy(os.path.join(SERVER_ROOT, "tests", "testthat", "test-ir-results.R"), tt)
+    for f in glob.glob(os.path.join(SERVER_ROOT, "tests", "testthat", "test-ir-results*.R")):
+        shutil.copy(f, tt)
     for f in glob.glob(os.path.join(SERVER_ROOT, "tests", "testthat", "fixtures", "ir-v1-results*.json")):
         shutil.copy(f, os.path.join(tt, "fixtures"))
     classes = os.path.join(tt, "fixtures", "v1-corpus-classes.csv")
@@ -1168,17 +1744,20 @@ def cmd_validate(a):
     env = dict(os.environ)
     env["RTEST_WITH"] = c_dir
     t0 = datetime.datetime.utcnow()
-    run = subprocess.run([RTEST, s_dir, "^ir-results$", str(a.timeout)], env=env, capture_output=True, text=True)
+    run = subprocess.run([RTEST, s_dir, "^ir-results", str(a.timeout)], env=env, capture_output=True, text=True)
     secs = (datetime.datetime.utcnow() - t0).total_seconds()
-    name = s_dir.lstrip("/") if not s_dir.startswith("/workspace/dsomop/") else s_dir[len("/workspace/dsomop/"):]
-    log = ssh("cat /root/rt/%s.last.log" % name).stdout
+    name = pod_name(s_dir)
+    log = ssh("cat '/root/rt/%s.last.log' && rm -f '/root/rt/%s.last.log'" % (name, name)).stdout
     out = os.path.join(work, "validate-%s.log" % a.label)
     open(out, "w").write(log)
     res = [l for l in run.stdout.splitlines() if l.startswith("RESULT")]
     print("[validate %s] server %s client %s: %s (%.0f s); log %s" % (
         a.side, s_commit[:12], c_commit[:12], res[-1] if res else run.stdout[-2000:], secs, out))
-    if run.stdout and not res:
-        print(run.stdout[-3000:])
+    if run.stdout and (not res or not res[-1].startswith("RESULT failed: 0 errors: 0")):
+        print(run.stdout[-6000:])
+    if not a.keep_snapshot:
+        drop_snapshot(snap, (s_dir, c_dir))
+
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1194,6 +1773,9 @@ def main():
     c.add_argument("--suites", default="server,client")
     c.add_argument("--filter", default="")
     c.add_argument("--timeout", type=int, default=5400)
+    c.add_argument("--add-tests", action="append", default=[],
+                   help="a test file of this worktree to copy into the server snapshot's tests/testthat/")
+    c.add_argument("--keep-snapshot", action="store_true")
     m = sub.add_parser("compare")
     m.add_argument("--work", required=True)
     m.add_argument("--baseline", required=True, help="label of the baseline capture")
@@ -1211,6 +1793,12 @@ def main():
     q.add_argument("--classes", default=os.path.join(SERVER_ROOT, "tests", "testthat", "fixtures", "v1-corpus-classes.csv"))
     q.add_argument("--corpus", default=os.path.join(SERVER_ROOT, "tests", "testthat", "fixtures", "ir-v1-corpus.json"))
     q.add_argument("--out", default=None)
+    q.add_argument("--out-staged", default=None)
+    q2 = sub.add_parser("pin-a19")
+    q2.add_argument("--work", required=True)
+    q2.add_argument("--baseline", required=True)
+    q2.add_argument("--baseline-repeat", default=None)
+    q2.add_argument("--out", default=None)
     v = sub.add_parser("validate")
     v.add_argument("--side", choices=["baseline", "current"], required=True)
     v.add_argument("--label", required=True)
@@ -1220,8 +1808,11 @@ def main():
     v.add_argument("--server-commit", default="HEAD")
     v.add_argument("--client-commit", default="HEAD")
     v.add_argument("--timeout", type=int, default=1500)
+    v.add_argument("--keep-snapshot", action="store_true")
+    sub.add_parser("check", help="check that the b10-canonical copies agree")
     a = ap.parse_args()
-    {"capture": cmd_capture, "compare": cmd_compare, "pin": cmd_pin, "validate": cmd_validate}[a.cmd](a)
+    {"capture": cmd_capture, "compare": cmd_compare, "pin": cmd_pin, "pin-a19": cmd_pin_a19,
+     "validate": cmd_validate, "check": cmd_check}[a.cmd](a)
 
 
 if __name__ == "__main__":

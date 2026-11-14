@@ -192,7 +192,12 @@ person-level interval relation for a parent/visit consumer.
 Resolve anchors through `.anchorExpr()` and windows through
 `.compileWindow()`, carrying their returned joins/dependencies. Source
 anchors used by criteria and final outputs have different candidate/final
-identities and compile in each phase. WS-7 still owns declaring its bounds
+identities and compile in each phase. Matching strata windows also support
+source anchors and nested search windows: the index context is the case time,
+with each anchor resolved for that side's person. Their definitions belong to
+the cases population's final inventory and the controls template's candidate
+inventory (A-20(b)); missing anchors yield UNKNOWN strata and follow
+`missing_strata`. WS-7 still owns declaring its bounds
 and stream identities and passing allocated `names =` to reducer helpers.
 
 ## Exact matching and output responsibilities
@@ -211,6 +216,15 @@ deduplicating physical members shared by episodes. Ordinary episode rosters
 retain parent scoping and fail closed on missing required provenance.
 One template cannot also be an ordinary roster or serve a second matching
 node in the same plan.
+
+Matching strata use the complete declared window, including source anchors
+and nested search windows (A-20(b)). An omitted anchor remains case-time
+relative. Source anchors have separate identities on the cases' final
+roster and the controls template's candidate roster; both sides resolve
+against their own person and row key. Template-only criterion anchors do
+not become case-side anchors. Undefined anchors retain UNKNOWN strata and
+the requested `missing_strata` policy. Built-in and unbounded windows keep
+their ordinary semantics.
 
 Eligibility requires actual recorded coverage at case time, survival to that
 time, the declared outcome-history and strata rules, and TRUE template

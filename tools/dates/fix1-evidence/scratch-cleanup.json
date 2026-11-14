@@ -1,0 +1,6 @@
+{
+  "local_deleted": "/workspace/dsomop/wt/dates/dsOMOP/tools/dates/fix1-probes",
+  "local_file_bytes": 4809,
+  "pod_deleted_du_bytes": "4951\t/root/rt/wt/dates/dsOMOP/tools/dates/fix1-probes\n16205536\t/root/rt/lib/wt_dates_dsOMOP_tools_dates_fix1-probes\n",
+  "reason": "Remove this job's temporary unchanged review harness and its test library after retaining evidence."
+}

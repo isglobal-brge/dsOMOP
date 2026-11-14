@@ -1,0 +1,12 @@
+FAILURES BY FILE
+                       file blocks failed errors
+ test-date-system-outputs.R      2      0      2
+      test-compile-output.R      1      1      0
+
+FAILING TESTS
+test-compile-output.R | membership, dictionary, joined and date handling | failed=1 error=FALSE
+test-date-system-outputs.R | D23 D24 native unindexed reducers and event-relative date roles | failed=0 error=TRUE
+test-date-system-outputs.R | D38 paired invalid endpoints and D41 joined metadata remain typed | failed=0 error=TRUE
+
+RESULT failed: 1 errors: 2 skipped: 1 passed: 5943 
+RESULT failed: 1 errors: 2 skipped: 1 passed: 5943 

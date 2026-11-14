@@ -20,6 +20,7 @@
   ctx$staging_env <- new.env(parent = emptyenv())
   ctx$rosters <- new.env(parent = emptyenv())
   ctx$inventory <- list()
+  ctx$reference_outputs <- character(0)
   ctx$prepared <- list()
   ctx$rejected <- list()
   ctx$unavailable <- character(0)
@@ -65,7 +66,8 @@
 # entry, present only with validation_error: the section 11 adapter refusals
 # and (A-20 (j)) the bounded realisations of the interval helpers.
 .REJECTION_REASONS <- c("adapter_person_mismatch", "cost_currency_mixed",
-                        "stockpile_row_cap", "reducer_row_cap")
+                        "stockpile_row_cap", "reducer_row_cap", "date_spec_invalid", "date_source_invalid",
+                        "date_pattern_invalid", "date_policy_conflict", "date_parts_names")
 
 # The bounded status entry for a dsomop_plan_rejection condition: {code,
 # message} with the constant message per code, plus `reason` only when the
@@ -105,9 +107,16 @@
   if (nrow(frame) == 0L) return(character(0))
   values <- lapply(frame[columns], function(x) {
     if (is.numeric(x) && !inherits(x, "integer64")) {
-      # Format separately so a fractional neighbour cannot add trailing zeros
-      # to an integral key, and never coerce integer64 through a double.
-      vapply(x, format, character(1L), scientific = FALSE, trim = TRUE, digits = 15L)
+      # Ordinary integer keys have exactly the same scalar decimal spelling.
+      # Vectorise them: formatting each row separately dominated large panels.
+      if (all(is.finite(x) & x == trunc(x) & abs(x) <= .Machine$integer.max)) {
+        return(as.character(as.integer(x)))
+      }
+      # Format remaining distinct values separately so fractional neighbours
+      # cannot add trailing zeros. Never coerce integer64 through a double.
+      distinct <- unique(x)
+      rendered <- vapply(distinct, format, character(1L), scientific = FALSE, trim = TRUE, digits = 15L)
+      unname(rendered[match(x, distinct)])
     } else as.character(x)
   })
   if (!length(values)) .publishReject("lineage_malformed")
@@ -182,8 +191,10 @@
   if (id %in% names(ctx$prepared)) stop("Component prepared more than once.", call. = FALSE)
   if (is.null(value)) value <- get(id, ctx$staging_env, inherits = FALSE)
   support <- character(0)
+  rows <- 0
   threshold <- .omopDisclosureSettings()$nfilter_subset
   inspect <- function(frame) {
+    rows <<- rows + nrow(frame)
     persons <- .publishPersons(ctx, cand, frame)
     # Retain at most k identities, but continue validating every subsequent row.
     if (length(support) < threshold) support <<- head(unique(c(support, persons)), threshold)
@@ -200,22 +211,81 @@
   rm(support)
   .omopAuditLog("publication", list(output = cand$output, component = cand$component,
                                     passed = passed))
-  if (!passed) ctx$rejected[[cand$output]] <- list(
+  unavailable <- identical(cand$status, "unavailable")
+  # The support decision of a root whose sources are unavailable at this site
+  # is taken at commit, after its availability (.publishResolveAvailability()).
+  if (!passed && !unavailable) ctx$rejected[[cand$output]] <- list(
     code = "insufficient_support", message = .publishMessage("insufficient_support"))
-  if (identical(cand$status, "unavailable")) ctx$unavailable <- union(ctx$unavailable, cand$output)
+  if (unavailable) ctx$unavailable <- union(ctx$unavailable, cand$output)
   requested <- cand$requested_symbol %||% tools::file_path_sans_ext(basename(cand$requested_path))
   symbol <- .publishFreshSymbol(ctx, requested)
   ctx$inventory[[id]] <- list(symbol = symbol, grain = cand$grain,
                               n_columns = as.integer(length(setdiff(columns, cand$private_columns))))
   assign(id, value, ctx$staging_env)
   ctx$prepared[[id]] <- list(candidate = cand, passed = passed,
-                            already_tokenized = already_tokenized)
+                            already_tokenized = already_tokenized, rows = rows)
   invisible(passed)
+}
+
+#' Resolve availability before support (design 7.3; WS-1 review N11)
+#'
+#' A root whose sources this site cannot serve (\code{status =
+#' "unavailable"}, \code{on_missing_table = "unavailable"}) is decided as a
+#' family, before any support refusal: when one of its patient components
+#' materialised no row, the root is withheld -- reported in
+#' \code{unavailable} only, with no support refusal and no artefact (an empty
+#' component of an unavailable root is the unavailability itself, never "no
+#' events"). Otherwise its components are releasable patient data and keep
+#' the ordinary support rule: every component at or above
+#' \code{nfilter.subset} publishes the family, which stays reported in
+#' \code{unavailable} (its release lacks the unavailable sources); a
+#' component below it refuses the family with \code{insufficient_support}.
+#' The status sets are disjoint where they would contradict each other: a
+#' rejected root is never reported unavailable, a withheld root is never
+#' published or rejected.
+#'
+#' @param ctx Execution context with every candidate prepared.
+#' @return Invisibly, the withheld roots.
+#' @keywords internal
+.publishResolveAvailability <- function(ctx) {
+  stopifnot(.isPlanContext(ctx))
+  outputs <- vapply(ctx$prepared, function(p) p$candidate$output, "")
+  flagged <- vapply(ctx$prepared, function(p) identical(p$candidate$status, "unavailable"), logical(1))
+  withheld <- character(0)
+  for (root in unique(outputs[flagged])) {
+    ids <- names(ctx$prepared)[outputs == root]
+    patient <- ids[vapply(ctx$prepared[ids], function(p) p$candidate$lineage$mode != "reference", logical(1))]
+    if (any(vapply(ctx$prepared[patient], function(p) identical(p$rows, 0), logical(1)))) {
+      # A component prepared before the unavailable component may already
+      # have recorded a support refusal. Availability decides the whole
+      # family; it supersedes only support, never a technical rejection.
+      if (identical(ctx$rejected[[root]]$code, "insufficient_support")) {
+        ctx$rejected[[root]] <- NULL
+      }
+      for (id in ids) {
+        ctx$prepared[[id]]$withheld <- TRUE
+        ctx$inventory[[id]] <- NULL
+        if (exists(id, ctx$staging_env, inherits = FALSE)) rm(list = id, envir = ctx$staging_env)
+      }
+      ctx$unavailable <- union(ctx$unavailable, root)
+      withheld <- c(withheld, root)
+    } else if (!is.null(ctx$rejected[[root]]) ||
+               !all(vapply(ctx$prepared[ids], function(p) isTRUE(p$passed), logical(1)))) {
+      if (is.null(ctx$rejected[[root]])) {
+        ctx$rejected[[root]] <- list(code = "insufficient_support",
+                                     message = .publishMessage("insufficient_support"))
+      }
+    }
+  }
+  ctx$unavailable <- setdiff(ctx$unavailable, names(ctx$rejected))
+  invisible(withheld)
 }
 
 #' Read a private staged materialisation in bounded chunks
 #' @keywords internal
 .publishReadChunks <- function(descriptor, callback) {
+  consume <- callback
+  callback <- function(frame) consume(.conceptCollectChunk(.publishRestoreTypes(frame, descriptor), descriptor))
   path <- descriptor$metadata$file
   if (descriptor$metadata$format == "parquet") {
     reader <- arrow::ParquetFileReader$create(path)
@@ -236,6 +306,7 @@
         as.data.frame(stats::setNames(rep(list(character(0)), length(descriptor$metadata$columns)),
                                       descriptor$metadata$columns))
       })
+      chunk <- .stagedDecodeCsv(chunk, descriptor$metadata$csv_encoding)
       callback(chunk)
       if (nrow(chunk) < 50000L) break
     }
@@ -341,11 +412,14 @@
   stopifnot(.isPlanContext(ctx))
   completed <- FALSE
   on.exit({ if (!completed) .publishAbort(ctx) }, add = TRUE)
+  .publishResolveAvailability(ctx)
   strict <- isTRUE(.omopDisclosureSettings()$query_strict) || identical(ctx$commit_policy, "all_or_none")
   rejected <- names(ctx$rejected)
   technical <- vapply(ctx$rejected, function(x) x$code != "insufficient_support", logical(1))
   accepted <- if ((strict && length(rejected)) || any(technical)) character(0) else {
-    names(ctx$prepared)[!vapply(ctx$prepared, function(x) x$candidate$output %in% rejected, logical(1))]
+    names(ctx$prepared)[!vapply(ctx$prepared, function(x) {
+      x$candidate$output %in% rejected || isTRUE(x$withheld)
+    }, logical(1))]
   }
   ready <- list()
   published <- list()
@@ -358,6 +432,16 @@
       if (!isTRUE(ctx$prepared[[id]]$already_tokenized)) {
         value <- .pseudonymizeIdentifiers(value, .personKey(ctx$handle), .personKeyPublicContract(ctx$handle))
       }
+    }
+    if (is.data.frame(value)) {
+      translate <- .reduceTranslate(ctx)
+      attr(value, "omop_concept_reference") <- if (translate && identical(pc$grain, "none")) TRUE else NULL
+      columns <- attr(value, "omop_column_contract")
+      if (is.null(columns) && !.dsomopDpIsV2(ctx$ir)) columns <- .conceptLegacyColumns(ctx, value, pc$output, pc$component)
+      if (!is.null(columns)) value <- .conceptPresent(ctx, value, columns)
+    }
+    if (inherits(value, "FlowerDatasetDescriptor") && !.dsomopDpIsV2(ctx$ir)) {
+      value <- .conceptStagePresent(ctx, value, root = pc$output, component = pc$component, reference = identical(pc$grain, "none"))
     }
     .publishInject(ctx, "tokenize")
     if (is.function(ctx$seal)) value <- ctx$seal(value, pc)
@@ -627,7 +711,9 @@ omopStagedRevokeDS <- function(exec_symbol) {
       descriptor <- inherits(frame, "FlowerDatasetDescriptor")
       columns <- if (descriptor) frame$metadata$columns else names(frame)
       reference <- (composite && component %in% references) ||
-        (component == root && identical(ctx$ir$outputs[[root]]$type, "concept_dictionary"))
+        (component == root &&
+           (identical(ctx$ir$outputs[[root]]$type, "concept_dictionary") ||
+              root %in% ctx$reference_outputs))
       key <- intersect(.PERSON_KEY_COLS(), columns)
       lineage <- if (reference) .lineage("reference") else if (length(key)) {
         .lineage("direct", key[[1L]])
@@ -705,4 +791,30 @@ omopStagedRevokeDS <- function(exec_symbol) {
   if (!exists(symbol, ctx$target_env, inherits = FALSE)) stop("Replacement target is unavailable.", call. = FALSE)
   ctx$rollback[[symbol]] <- get(symbol, ctx$target_env, inherits = FALSE)
   invisible(symbol)
+}
+
+# CSV is a transport container. Restore its closed, manifest-bound column types
+# before releveling or feeding a private materialisation to downstream analysis.
+.publishRestoreTypes <- function(frame, descriptor) {
+  types <- unlist(descriptor$metadata$column_types, use.names = TRUE)
+  for (col in intersect(names(frame), names(types))) {
+    signature <- strsplit(types[[col]], "|", fixed = TRUE)[[1L]]
+    classes <- strsplit(signature[2L], "/", fixed = TRUE)[[1L]]
+    if ("factor" %in% classes) {
+      domains <- .ds_arg(descriptor$metadata$factor_domains %||% list())
+      domain <- domains[[col]]
+      if (!is.null(domain)) {
+        levels <- as.character(unlist(domain$levels, use.names = FALSE))
+        frame[[col]] <- if (isTRUE(domain$ordered)) .dateOrdered(as.character(frame[[col]]), levels) else
+          .conceptFactor(as.character(frame[[col]]), levels)
+      }
+      next # A-27/date columns are then restored with their reconciled contract.
+    }
+    x <- frame[[col]]
+    frame[[col]] <- if ("Date" %in% classes) as.Date(x) else
+      if ("integer64" %in% classes) bit64::as.integer64(x) else
+      switch(signature[1L], integer=as.integer(x), double=as.numeric(x),
+             logical=as.logical(x), character=as.character(x), x)
+  }
+  frame
 }

@@ -40,6 +40,19 @@ for _opt in ("options_temporal", "options_person_period"):
         "propertyNames": {"$ref": "#/$defs/name"},
         "additionalProperties": {"type": "array", "minItems": 1, "uniqueItems": True,
                                  "items": {"enum": ["binary", "count", "mean", "last", "exposed_days"]}}}
+# A-27 / CR-28: semantic concept presentation maps (never v1 wire fields).
+label_map = {"type": "object", "default": {},
+             "propertyNames": {"pattern": "^(0|[1-9][0-9]*)$"},
+             "additionalProperties": {"type": "string", "minLength": 1}}
+name_map = {"type": "object", "default": {},
+            "propertyNames": {"minLength": 1},
+            "additionalProperties": {"type": "string", "minLength": 1}}
+for node in [plan["properties"]["options"]] + plan["$defs"]["variable"]["oneOf"]:
+    node["properties"]["labels"] = copy.deepcopy(label_map)
+    node["properties"]["column_names"] = copy.deepcopy(name_map)
+# A-28 / CR-29: approved native date system.
+from date_schema import apply as apply_date_schema
+apply_date_schema(plan)
 mutate = by_id["https://isglobal-brge.github.io/dsOMOP/schema/mutate-v1.json"]
 examples = [b for b in blocks if b.get("version") == 2]
 assert len(examples) == 2, "expected the two canonical examples"
@@ -255,6 +268,27 @@ for _branch in D["population"]["oneOf"]:
                      "properties": {"parent": {"type": "null"}, "where": {"type": "null"},
                                     "cohort_definition_id": {"type": "null"},
                                     "legacy_episodes": {"const": "observation_periods"}}}})
+# A-25 (CR-25): historical handle-owned cohort names narrow only their declaring
+# population. This is a closed IR-only reference, never a native name or ID.
+for _branch in D["population"]["oneOf"]:
+    _kind = _branch["properties"]["kind"].get("const")
+    if _kind in ("criteria", "index"):
+        _branch["properties"]["legacy_cohort_table"] = {
+            "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.]*$",
+            "description": "the canonical historical cohort identifier owned by the handle; preserves case, dots and underscores without a length cap (A-25)"}
+        _named_requirements = {
+            "not": {"required": ["legacy_empty"]},
+            "properties": {"cohort_definition_id": {"type": "null"}}}
+        if _kind == "criteria":
+            _named_requirements["required"] = ["legacy_episodes"]
+            _named_requirements["properties"]["legacy_episodes"] = {"const": "observation_periods"}
+        _branch.setdefault("allOf", []).append({
+            "if": {"required": ["legacy_cohort_table"]}, "then": _named_requirements})
+# A-26: the effective root cohort ID labels every v1 membership output;
+# it never selects population membership and has no absent-value default.
+D["options_membership"]["properties"]["legacy_cohort_definition_id"] = {
+    "type": ["integer", "null"], "minimum": -2147483647, "maximum": 2147483647,
+    "description": "effective historical root cohort identifier used in the released membership column, independent of the output population; present only when supplied, coerced integer NA is present null, never defaulted"}
 D["legacy_spec"]["properties"]["cohort_definition_id"] = {
     "type": "integer", "minimum": 0,
     "description": "the v1 plan cohort's cohort_definition_id of an inline spec (names its temporary cohort, fills the cohort_membership id column); present only when supplied, never defaulted"}
@@ -443,6 +477,99 @@ ir_probe("I66", "legacy_empty cannot inherit a parent", R, A, lambda b: b["popul
 ir_probe("I67", "legacy_empty cannot reference a cohort", R, A, lambda b: b["populations"].__setitem__("nobody", {"kind": "criteria", "legacy_empty": True, "legacy_episodes": "observation_periods", "cohort_definition_id": 1}))
 ir_probe("I_A21_kind", "legacy_empty cannot mark an index population", R, A, lambda b: b["populations"]["new_users"].update({"legacy_empty": True, "legacy_episodes": "observation_periods"}))
 ir_probe("I_A21_named_cohort", "legacy_empty excludes legacy_cohort_table (A-25)", R, A, lambda b: b["populations"].__setitem__("nobody", {"kind": "criteria", "legacy_empty": True, "legacy_episodes": "observation_periods", "legacy_cohort_table": "owned_cohort"}))
+# A-25: compact complete documents keep the named-reference boundary explicit.
+_named_base = {"version": 2, "meta": copy.deepcopy(A["meta"]),
+               "events": {"events": {"table": "condition_occurrence"}},
+               "populations": {}, "outputs": {"result": {"rows": "named", "format": "wide"}}}
+def _named_population(kind="criteria", **extra):
+    pop = {"kind": kind, "legacy_cohort_table": "_Owned.Cohort_1"}
+    if kind == "criteria":
+        pop["legacy_episodes"] = "observation_periods"
+    elif kind == "index":
+        pop["index"] = {"source": {"event": "events"}, "select": "all"}
+    pop.update(extra)
+    return pop
+
+_named_cases = [
+    ("criteria reference preserves case, dots and underscores", OK, _named_population()),
+    ("index reference preserves recurrent event selection", OK, _named_population("index")),
+    ("criteria reference has no native name length cap", OK, _named_population(legacy_cohort_table="_" + "Cohort_" * 24)),
+    ("index reference has no native name length cap", OK, _named_population("index", legacy_cohort_table="_" + "Cohort_" * 24)),
+    ("criteria reference permits a null numeric reference", OK, _named_population(cohort_definition_id=None)),
+    ("criteria reference preserves its episode policy and scope anchor", OK, _named_population(episode_policy="all_episodes", legacy_index_anchor="scope_cohort")),
+    ("index reference preserves historical cohort-row episodes", OK, _named_population("index", legacy_episodes="cohort_rows", legacy_index_anchor="scope_cohort")),
+]
+for _kind in ("criteria", "index"):
+    for _label, _value in (("null", None), ("numeric", 1), ("object", {}), ("array", ["owned"]),
+                           ("empty", ""), ("whitespace-padded", " owned "), ("malformed", "bad-name"),
+                           ("digit-only", "1"), ("padded digit-only", " 1 "), ("signed numeric", "+1"),
+                           ("exponent numeric", "1e0"), ("decimal numeric", "1.0")):
+        _named_cases.append((f"{_kind} reference refuses {_label}", R,
+                             _named_population(_kind, legacy_cohort_table=_value)))
+    _named_cases.extend([
+        (f"{_kind} reference conflicts with a numeric population reference", R, _named_population(_kind, cohort_definition_id=1)),
+        (f"{_kind} reference conflicts with legacy_empty", R, _named_population(_kind, legacy_empty=True)),
+    ])
+_missing_episodes = _named_population(); _missing_episodes.pop("legacy_episodes")
+_named_cases.extend([
+    ("criteria reference requires legacy_episodes", R, _missing_episodes),
+    ("criteria reference refuses cohort-row episodes", R, _named_population(legacy_episodes="cohort_rows")),
+    ("criteria reference refuses null legacy_episodes", R, _named_population(legacy_episodes=None)),
+    ("index reference refuses episode_policy", R, _named_population("index", episode_policy="first_episode")),
+    ("index reference refuses even null episode_policy", R, _named_population("index", episode_policy=None)),
+    ("setop reference refuses the compatibility property", R, _named_population("setop", setop={"op": "union", "members": ["a", "b"]})),
+    ("match reference refuses the compatibility property", R, _named_population("match", match={"cases": "a", "controls": "b", "outcome": {"event": "events"}})),
+    ("legacy numeric cohort leaf still refuses names", R, {"kind": "criteria", "where": {"legacy": {"type": "cohort", "params": {"cohort_definition_id": "owned"}}}}),
+])
+for _i, (_label, _expect, _population) in enumerate(_named_cases, 68):
+    ir_probe(f"I{_i:02d}", f"{_label} (A-25)", _expect, _named_base,
+             lambda b, pop=_population: b["populations"].__setitem__("named", pop))
+
+# CR-27: an isolated membership output proves both the closed IR option
+# and native-wire refusal; no other compatibility field masks the boundary.
+_membership_base = {"version": 2, "meta": copy.deepcopy(A["meta"]),
+                    "populations": {"p": {"kind": "criteria"}},
+                    "outputs": {"members": {"rows": "p", "format": "membership", "options": {}}}}
+_membership_cases = [("positive identifier", OK, 1), ("zero identifier", OK, 0),
+                     ("null identifier", OK, None), ("negative identifier", OK, -1),
+                     ("fractional identifier", R, 1.5), ("string identifier", R, "1"),
+                     ("boolean identifier", R, True), ("array identifier", R, [1]),
+                     ("object identifier", R, {"value": 1})]
+for _i, (_label, _expect, _value) in enumerate(_membership_cases, 111):
+    ir_probe(f"I{_i:02d}", f"membership {_label} (CR-27)", _expect, _membership_base,
+             lambda b, value=_value: b["outputs"]["members"]["options"].__setitem__("legacy_cohort_definition_id", value))
+probe("P74", "membership identifier absent without default on native wire (CR-27)", OK,
+         _membership_base, lambda b: None)
+def _membership_wrong_format(b):
+    b["outputs"]["members"]["format"] = "wide"
+    b["outputs"]["members"]["options"]["legacy_cohort_definition_id"] = 1
+ir_probe("I120", "membership identifier refused on wide output (CR-27)", R,
+         _membership_base, _membership_wrong_format)
+probe("P73", "membership identifier refused on native wire (CR-27)", R,
+      _membership_base,
+      lambda b: b["outputs"]["members"]["options"].__setitem__("legacy_cohort_definition_id", 1))
+
+for _i, (_label, _expect, _value) in enumerate([
+        ("minimum integer", OK, -2147483647), ("maximum integer", OK, 2147483647),
+        ("below integer range", R, -2147483648), ("above integer range", R, 2147483648)], 121):
+    ir_probe(f"I{_i:02d}", f"membership {_label} (A-26)", _expect, _membership_base,
+             lambda b, value=_value: b["outputs"]["members"]["options"].__setitem__("legacy_cohort_definition_id", value))
+for _i, _value in enumerate([None, -1, 0], 75):
+    probe(f"P{_i:02d}", "membership compatibility label refused on native wire (A-26)", R,
+          _membership_base,
+          lambda b, value=_value: b["outputs"]["members"]["options"].__setitem__("legacy_cohort_definition_id", value))
+
+# Native probes isolate each unchanged boundary: no other legacy field is used.
+_native_named_cases = [
+    ("criteria legacy_cohort_table", {"kind": "criteria", "legacy_cohort_table": "owned"}),
+    ("index legacy_cohort_table", {"kind": "index", "index": {"source": {"event": "events"}}, "legacy_cohort_table": "owned"}),
+    ("named population cohort_definition_id", {"kind": "criteria", "cohort_definition_id": "owned"}),
+    ("named native cohort criterion", {"kind": "criteria", "where": {"cohort": {"cohort_definition_id": "owned"}}}),
+    ("named index cohort source", {"kind": "index", "index": {"source": {"cohort_definition_id": "owned"}}}),
+]
+for _i, (_label, _population) in enumerate(_native_named_cases, 68):
+    probe(f"P{_i:02d}", f"{_label} refused on the wire (A-25)", R, _named_base,
+          lambda b, pop=_population: b["populations"].__setitem__("named", pop))
 probe("P63", "temporal source_analyses with a count-only selection (A-14; a wire field, so valid under both schemas)", OK, A, lambda b: _tc(b, {"hba1c": ["count"]}))
 probe("P44", "censor conditioned on an index source (A-7)", OK, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("censor", ["observation_end", {"censor": {"source": {"interval": "metf_era"}, "which": "first_start_after_entry", "when_index_source": ["acei"]}}]))
 probe("P45", "censor when_index_source must be nonempty and unique", R, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("censor", ["observation_end", {"censor": {"source": {"interval": "metf_era"}, "when_index_source": ["acei", "acei"]}}]))
@@ -480,6 +607,24 @@ probes.append({"id": "P48", "label": "duplicate root member `version`", "schema"
 probes.append({"id": "P49", "label": "duplicate member inside a definition map (events.hba1c.table)", "schema": "plan-v2", "expect": R,
                "instance": None, "instance_text": base_text.replace('"hba1c": {"table": "measurement",', '"hba1c": {"table": "measurement", "table": "observation",', 1)})
 assert '"factor": 1e400' in probes[-3]["instance_text"] and '"version": "wrong"' in probes[-2]["instance_text"] and '"table": "observation"' in probes[-1]["instance_text"]
+probe("P_A27_1", "recipe concept recodes", OK, A, lambda b: b.setdefault("options", {}).__setitem__("labels", {"0": "unknown", "45000123": "yes"}))
+probe("P_A27_2", "array concept map refused", R, A, lambda b: b.setdefault("options", {}).__setitem__("labels", ["yes"]))
+probe("P_A27_3", "null concept map member refused", R, A, lambda b: b.setdefault("options", {}).__setitem__("labels", {"1": None}))
+probe("P_A27_4", "noncanonical concept key refused", R, A, lambda b: b.setdefault("options", {}).__setitem__("labels", {"01": "yes"}))
+probe("P_A27_5", "generated-name overrides", OK, A, lambda b: b.setdefault("options", {}).__setitem__("column_names", {"education_45000123": "educated"}))
+# A-28 closed-wire acceptance and refusal probes.
+date_example = {"version":2, "meta":{"language_version":"2.0","semantic_version":"2.0.0","generated_by":"A28 acceptance"},
+  "populations":{"base":{"kind":"criteria"}},
+  "variables":{"day":{"derived":{"kind":"calendar_date","reference":{"date":"0004-02-29"}}},
+    "age":{"derived":{"kind":"age_at","reference":{"date":"2024-06-01"},"bands":True}},
+    "part":{"derived":{"kind":"date_part","reference":{"kind":"date_components","year":{"kind":"integer","value":2024},"month":{"kind":"integer","value":2}},"part":"month"}}},
+  "outputs":{"o":{"rows":"base","format":"wide"}}}
+probe("A28-01", "native date sources, age and part", OK, date_example, lambda b:None)
+probe("A28-02", "unknown native date spec field", R, date_example, lambda b:b["variables"]["day"].update(date_spec={"sql":"now()"}))
+probe("A28-03", "unknown calendar precision", R, date_example, lambda b:b["variables"]["day"].update(date_spec={"precision":"hour"}))
+probe("A28-04", "no arbitrary component operand", R, date_example, lambda b:b["variables"]["part"]["derived"]["reference"].update(year={"kind":"sql","value":"year()"}))
+probe("A28-05", "native broadcast must be boolean", R, date_example, lambda b:b["variables"]["day"].update(broadcast=1))
+dump(date_example, os.path.join(OUT,"examples","plan-v2-dates.json"))
 dump(probes, os.path.join(OUT, "probes", "plan-v2-probes.json"))
 
 # the three ACTUAL v1 inputs of section 4.5 (WS-2 executes them through the corrected v1 validator;
@@ -601,6 +746,7 @@ if os.path.isdir(acceptance_dir):
         path = os.path.join(acceptance_dir, d, "plan.json")
         if os.path.exists(path):
             norm_fixtures.append(("acceptance-" + d, os.path.relpath(path, OUT), json.load(open(path))))
+norm_fixtures.append(("plan-v2-dates", "examples/plan-v2-dates.json", date_example))
 norm_vectors = []
 for label, source, obj in norm_fixtures:
     n = normalize(obj, plan)

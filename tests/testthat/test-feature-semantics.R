@@ -611,12 +611,11 @@ test_that("longitudinal outputs share one stable cohort episode identity", {
       handle, "episode_identity_cohort", cohort_definition_id = 42L,
       date_handling = "remove"
     )
-    survival <- .extractSurvival(
+    # defect F-6: the v1 survival adapter (legacy single-outcome shape)
+    survival <- .executeLongitudinalSurvivalSql(handle, .compilePlanSurvivalSql(
       handle, "episode_identity_cohort",
-      outcome = list(table = "condition_occurrence",
-                     concept_set = 888002L),
-      tar = list(start_offset = 0L, end_offset = 9L)
-    )
+      list(outcome = list(table = "condition_occurrence", concept_set = 888002L),
+           tar = list(start_offset = 0L, end_offset = 9L))))
     intervals <- .extractIntervalsLong(
       handle, "episode_identity_cohort", "condition_occurrence",
       concept_filter = list(condition_occurrence = 888001L)

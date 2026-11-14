@@ -1,0 +1,41 @@
+Terminated
+i /tmp/RtmpLsvajx/duckdb
+This is removed when the R session ends.
+* Extensions are re-downloaded each session.
+* Secrets are lost.
+i Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+i Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+i See ?duckdb_storage for details and alternatives.
+.................................................................................................................................................................................................................
+compile-anchor-inventory: duckdb keeps downloaded extensions and secrets in a temporary directory:
+i /tmp/RtmpLsvajx/duckdb
+This is removed when the R session ends.
+* Extensions are re-downloaded each session.
+* Secrets are lost.
+i Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+i Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+i See ?duckdb_storage for details and alternatives.
+.............................................
+[ws5 named anchor inventory backends] sqlite (SQLite 3.53.3); duckdb (DuckDB 2.0.0); postgresql (PostgreSQL 14.24); mysql (MariaDB 10.6.23); mysql (MySQL 8.4.11)
+
+compile-anchor: duckdb keeps downloaded extensions and secrets in a temporary directory:
+i /tmp/RtmpLsvajx/duckdb
+This is removed when the R session ends.
+* Extensions are re-downloaded each session.
+* Secrets are lost.
+i Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+i Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+i See ?duckdb_storage for details and alternatives.
+........................................................................................................................................................................................................................................................................................................................................................................................................................................................
+[ws5 anchor backends] sqlite (SQLite 3.53.3); duckdb (DuckDB 2.0.0); postgresql (PostgreSQL 14.24); mysql (MariaDB 10.6.23); mysql (MySQL 8.4.11)
+
+compile-column-classes: ...........................................................................................................................
+compile-concept: duckdb keeps downloaded extensions and secrets in a temporary directory:
+i /tmp/RtmpLsvajx/duckdb
+This is removed when the R session ends.
+* Extensions are re-downloaded each session.
+* Secrets are lost.
+i Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+i Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+i See ?duckdb_storage for details and alternatives.
+...............................................................................................................................

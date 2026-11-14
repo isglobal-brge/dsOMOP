@@ -1472,8 +1472,9 @@
 #' be an ordinary roster (output rows, parent, set-op member, match cases) or
 #' the template of a second match; the cases and the template of a match share
 #' one coverage policy (one observation semantics for the matched roster, as
-#' set-op members do); a strata window anchors at the case time (built-in or
-#' date anchors, never a source anchor); \code{episode_policy} applies to a
+#' set-op members do). Strata windows resolve against the cases' final roster
+#' and the controls' candidate roster, including source/search anchors under
+#' A-20(b). \code{episode_policy} applies to a
 #' criteria population seeded from a results cohort without a parent, and is
 #' required there when its criteria depend on the episode's index.
 #'
@@ -1501,15 +1502,6 @@
     tpl_policy <- tryCatch(.populationCoveragePolicy(ir, t), error = function(e) NULL)
     if (!is.null(cases_policy) && !is.null(tpl_policy) && !identical(cases_policy, tpl_policy)) {
       add(base, ": the cases and the controls template must share one coverage policy")
-    }
-    items <- .irItems(pops[[m]][["match"]][["match"]])
-    for (i in seq_along(items)) {
-      s <- items[[i]]
-      if (is.list(s) && !is.null(s[["strata"]]) &&
-          length(.irCollectAnchors(list(window = s[["strata"]][["window"]])))) {
-        add(base, "/match/", i - 1L, "/strata/window: a strata window anchors at the case time ",
-            "(built-in or date anchors); source anchors are not supported")
-      }
     }
   }
   for (p in names(pops)) {

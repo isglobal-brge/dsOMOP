@@ -109,7 +109,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "dm_rows": {
       "source": {
@@ -138,7 +140,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     }
   },
   "outputs": {
@@ -154,20 +158,22 @@
       ],
       "sources": [],
       "options": {
+        "time_window": null,
         "date_handling": {
           "mode": "relative",
           "reference": "index",
           "bin_width": null,
           "date_columns": null
-        },
-        "time_window": null
+        }
       }
     }
   },
   "options": {
     "translate_concepts": true,
     "block_sensitive": true,
-    "factor_concepts": true
+    "factor_concepts": true,
+    "labels": {},
+    "column_names": {}
   },
   "concept_sets": {},
   "intervals": {},

@@ -515,6 +515,15 @@
     )
   }
 
+  if (is.null(concepts)) {
+    covariate_ref$concept_support_sql <- paste0(
+      "SELECT conceptId, COUNT(DISTINCT person_id) AS n FROM (", binned_sql,
+      ") dsomop_support GROUP BY conceptId")
+    covariate_ref$concept_total_sql <- paste0(
+      "SELECT COUNT(DISTINCT person_id) AS n FROM (", observation$observed,
+      ") dsomop_support_roster")
+  }
+
   components <- list(
     temporalCovariates = .temporalSqlComponent(
       temporal_covariates_sql,

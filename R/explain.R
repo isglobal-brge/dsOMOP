@@ -3,7 +3,7 @@
 
 # The frozen operation and reducer vocabularies of section 4.4.
 .RECIPE_OPERATIONS <- c(
-  "concept_set", "event", "event.unit", "event.on_missing_table", "interval",
+  "date.presentation", "date.elapsed", "output.concept_labels", "concept_set", "event", "event.unit", "event.on_missing_table", "interval",
   "interval.ingredient", "interval.stockpile", "population.index",
   "population.first_eligible", "population.any_of", "population.criteria",
   "population.parent", "population.setop", "population.match",
@@ -124,7 +124,9 @@
 #' From the reducer's result type: an exact-date-preserving reducer is class
 #' 2; a reducer returning an observed value takes its value column's class
 #' (a physical column of the source table; the normalised \code{value} is
-#' class 3); counts, flags and statistics are class 3.
+#' class 3; the date columns of an event or an interval's course rows --
+#' \code{start_date}, \code{end_date}, \code{end_recorded} -- are exact
+#' dates, class 2); counts, flags and statistics are class 3.
 #' @keywords internal
 .irReducerClass <- function(ir, def, bp) {
   r <- def[["reducer"]]
@@ -132,6 +134,7 @@
   if (fn %in% .IR_DATE_REDUCERS) return(2L)
   if (fn %in% .IR_VALUE_REDUCERS) {
     value <- r[["value"]]
+    if (is.character(value) && value %in% c("start_date", "end_date", "end_recorded")) return(2L)
     src <- ir[["events"]][[def[["source"]][["event"]] %||% ""]]
     table <- src[["table"]]
     if (is.character(value) && !identical(value, "value") && is.character(table)) {
@@ -139,6 +142,105 @@
     }
   }
   3L
+}
+
+# Safe source columns before the output's date policy. Native sources share
+# the compiler's declared contract, including adapters without a table of
+# their own and interval courses (not their private construction rows).
+# Lowered v1 keeps its physical column projection instead.
+.irLongSourceClasses <- function(ir, source, node, handle, bp) {
+  name <- source[["event"]] %||% source[["interval"]]
+  event <- ir[["events"]][[source[["event"]] %||% ""]]
+  table <- event[["table"]]
+  col_df <- bp[["columns"]][[table %||% ""]]
+  legacy <- identical(attr(ir, "source_version"), 1L) && !is.null(table)
+  if (legacy) {
+    columns <- col_df[["column_name"]] %||% character(0)
+    if (!length(columns)) return(list())
+    if (!is.null(node[["legacy_columns"]])) {
+      requested <- as.character(unlist(node[["legacy_columns"]], use.names = FALSE))
+      mandatory <- "person_id"
+      if (!is.null(event[["concept_set"]])) {
+        mandatory <- c(mandatory, event[["concept_col"]] %||% .getDomainConceptColumn(bp, table))
+      }
+      columns <- intersect(columns, c(mandatory, requested))
+    }
+    columns <- setdiff(columns, setdiff(.identifierColumns(), "person_id"))
+    classes <- vapply(columns, .roleColumnClass, integer(1), col_df = col_df)
+    dates <- vapply(columns, function(column) {
+      isTRUE(col_df[["is_date"]][match(column, col_df[["column_name"]])]) ||
+        grepl("_date$|_datetime$", column)
+    }, logical(1))
+    origin <- table
+  } else {
+    if (!is.null(source[["interval"]])) {
+      spec <- .intervalCourseSpec("integer")
+      private <- c(.INTERVAL_PRIVATE_COLUMNS, "visit_id", "n_events", "era_key")
+      origin <- paste0("interval:", name)
+    } else {
+      kind <- if (!is.null(event[["episode_members"]])) "episode_members" else
+        if (!is.null(event[["cost"]])) "cost" else "table"
+      contract <- .eventKindContract(kind)
+      spec <- c(.eventColumnSpec(), contract[["extra"]])
+      private <- contract[["private"]]
+      origin <- paste0("event:", name)
+      if (identical(kind, "table") && !is.null(handle)) {
+        # This is metadata preparation only: no fragments, SQL or data reads.
+        plan <- tryCatch({
+          role <- .roleOf(handle, table)
+          if (!is.null(role)) .eventPlan(list(handle = handle), event, name, role, list(state = "all"))
+        }, error = function(e) NULL)
+        for (column in names(plan[["others"]])) {
+          spec[[column]] <- list(type = plan[["others"]][[column]])
+        }
+      }
+    }
+    columns <- setdiff(names(spec), private)
+    dates <- vapply(spec[columns], function(column) identical(column[["type"]], "date"), logical(1))
+    classes <- vapply(columns, .roleColumnClass, integer(1), col_df = col_df)
+    classes[dates] <- 2L
+  }
+  policy <- node[["options"]][["date_handling"]] %||% list(mode = "absolute")
+  selected <- policy[["date_columns"]]
+  treated <- dates & (is.null(selected) | columns %in% unlist(selected, use.names = FALSE))
+  keep <- classes >= 2L
+  if (identical(policy[["mode"]], "remove")) keep <- keep & !treated
+  # Relative day coordinates still preserve exact dates when the anchor is
+  # known, just as the date reducers do. Calendar bins no longer do so.
+  if (identical(policy[["mode"]], "binned")) classes[treated] <- 3L
+  out <- lapply(which(keep), function(i) {
+    list(source = paste0(origin, ".", columns[[i]]), class = unname(classes[[i]]))
+  })
+  if (length(out)) stats::setNames(out, paste0(name, ".", columns[keep])) else list()
+}
+
+# The common-schema event log replaces the source-specific projection;
+# requested derived coordinates and relation columns augment ordinary long
+# outputs. These columns are defined by the output, not its physical table.
+.irLongProjectionClasses <- function(node) {
+  options <- node[["options"]] %||% list()
+  if (isTRUE(options[["event_log"]])) {
+    columns <- c("source", "concept_id", "start_days", "end_days", "value",
+                 "unit_concept_id", "event_number")
+    dates <- c("start_days", "end_days")
+  } else {
+    columns <- as.character(unlist(options[["columns_derived"]], use.names = FALSE))
+    columns[columns == "unit"] <- "unit_concept_id"
+    if ("days_from_anchor" %in% columns) {
+      columns <- setdiff(columns, "days_from_anchor")
+      if (length(options[["anchors"]])) {
+        columns <- c(columns, paste0("days_from_", names(options[["anchors"]])))
+      }
+    }
+    if (length(options[["relations"]])) {
+      columns <- c(columns, paste0("days_to_", names(options[["relations"]])))
+    }
+    columns <- unique(columns)
+    dates <- grep("^days_from_", columns, value = TRUE)
+  }
+  stats::setNames(lapply(columns, function(column) {
+    list(source = paste0("projection:", column), class = if (column %in% dates) 2L else 3L)
+  }), columns)
 }
 
 # Columns each output projects, with their assignment class (section 7.6).
@@ -156,7 +258,7 @@
                           class = .roleColumnClass(def[["raw"]][["column"]], col_df))
       } else if (!is.null(def[["derived"]])) {
         kind <- def[["derived"]][["kind"]]
-        cls <- if (kind %in% c("age", "birth_year_band")) 2L else 3L
+        cls <- if (kind %in% c("age", "birth_year_band", .DATE_KINDS)) 2L else 3L
         cols[[v]] <- list(source = paste0("derived:", kind), class = cls)
       } else if (!is.null(def[["reducer"]])) {
         cols[[v]] <- list(source = paste0("reducer:", def[["reducer"]][["fn"]]),
@@ -166,19 +268,14 @@
       }
     }
     if (node[["format"]] %in% c("long", "intervals")) {
-      srcs <- .jsonArrayItems(node[["sources"]] %||% node[["options"]][["sources"]] %||% list())
-      for (s in srcs) {
-        ev <- ir[["events"]][[s[["event"]] %||% ""]]
-        table <- ev[["table"]]
-        if (is.null(table) || is.null(bp)) next
-        col_df <- bp[["columns"]][[table]]
-        if (is.null(col_df)) next
-        for (cn in col_df[["column_name"]]) {
-          cls <- .roleColumnClass(cn, col_df)
-          if (cls < 2L) next
-          cols[[paste0(s[["event"]], ".", cn)]] <- list(source = paste0(table, ".", cn), class = cls)
+      srcs <- node[["sources"]]
+      if (!length(srcs)) srcs <- node[["options"]][["sources"]]
+      if (!isTRUE(node[["options"]][["event_log"]])) {
+        for (s in .jsonArrayItems(srcs %||% list())) {
+          cols <- c(cols, .irLongSourceClasses(ir, s, node, handle, bp))
         }
       }
+      cols <- c(cols, .irLongProjectionClasses(node))
     }
     out[[o]] <- cols
   }
@@ -222,6 +319,8 @@
       entry[["event_order"]] <- opts[["event_order"]]
       entry[["tie_policy"]] <- opts[["tie_policy"]]
       entry[["cohort_end_cap"]] <- isTRUE(opts[["legacy_cohort_end_cap"]])
+      # defect A-14: the censoring in force, defaults and the v1 cap included
+      entry[["effective_censoring"]] <- .survivalEffectiveCensoring(opts)
     }
     if (identical(node[["format"]], "person_period")) entry[["representation"]] <- opts[["representation"]]
     outputs[[o]] <- entry
@@ -230,6 +329,9 @@
   for (v in names(ir[["variables"]])) {
     r <- ir[["variables"]][[v]][["reducer"]]
     if (is.list(r)) reducers[[v]] <- list(fn = r[["fn"]], missing = r[["missing"]])
+    # A-20 (g): the coverage policy of covered_days / supply_days
+    policy <- .reduceCoveragePolicy(ir, ir[["variables"]][[v]])
+    if (!is.null(policy)) reducers[[v]][["coverage_policy"]] <- policy
   }
   list(populations = populations, outputs = outputs, reducers = reducers)
 }
@@ -255,6 +357,10 @@
   roles <- list()
   dialect <- list(status = "not_checked")
   if (!is.null(handle)) {
+    for (p in names(ir[["populations"]])) {
+      .irCheckOwnedCohort(handle, ir[["populations"]][[p]][["legacy_cohort_table"]],
+                         paste0("/populations/", p, "/legacy_cohort_table"))
+    }
     if (!is.null(v1_plan)) {
       legacy <- tryCatch(.planV1SiteFindings(v1_plan, handle),
                          error = function(e) list(errors = conditionMessage(e)))
@@ -288,6 +394,8 @@
     defaults = .irEffectiveDefaults(ir),
     roles = roles,
     column_classes = .irOutputColumnClasses(ir, handle),
+    concept_presentation = .conceptExplain(ir),
+    concept_classes = .conceptExplainClasses(ir, handle),
     site_findings = site_findings,
     unavailable = unavailable,
     unavailable_outputs = unavailable_outputs,

@@ -1,6 +1,6 @@
 #!/bin/sh
 # dsOMOP post-install configuration script.
-# It prepares directory permissions only; deployments provision dependencies.
+# It prepares directory permissions and detects optional HMAC acceleration.
 
 # Prepare only runtime state directories; this install hook never creates keys.
 # Roots are created only by the first real dsOMOP service use, after runtime setup.
@@ -29,4 +29,31 @@ unset DSOMOP_CONFIG_STATE_ROOT DSOMOP_CONFIG_UID
 # System libraries and R dependencies are provisioned by the deployment image
 # and the package manager. A package configure script must not mutate the host,
 # contact package repositories, or silently install unaudited dependencies.
+if [ -d src ]; then
+    dsomop_r="${R_HOME:+${R_HOME}/bin/}R"
+# Optional acceleration: the R openssl dependency remains the portable fallback.
+cc=$("$dsomop_r" CMD config CC)
+cppflags=$("$dsomop_r" CMD config CPPFLAGS)
+cflags=$("$dsomop_r" CMD config CFLAGS)
+ldflags=$("$dsomop_r" CMD config LDFLAGS)
+crypto_cflags=""
+crypto_libs="-lcrypto"
+if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists libcrypto; then
+    crypto_cflags=$(pkg-config --cflags libcrypto)
+    crypto_libs=$(pkg-config --libs libcrypto)
+fi
+trap 'rm -f conftest.c conftest conftest.log' EXIT HUP INT TERM
+cat > conftest.c <<'C'
+#define OPENSSL_SUPPRESS_DEPRECATED
+#include <openssl/hmac.h>
+int main(void) { HMAC_CTX *ctx = HMAC_CTX_new(); HMAC_CTX_free(ctx); return 0; }
+C
+if $cc $cppflags $cflags $crypto_cflags conftest.c $ldflags $crypto_libs -o conftest >conftest.log 2>&1; then
+    printf 'PKG_CPPFLAGS = -DDSOMOP_HAVE_OPENSSL %s\nPKG_LIBS = %s\n' "$crypto_cflags" "$crypto_libs" > src/Makevars
+    echo 'dsOMOP: request-local OpenSSL HMAC acceleration enabled'
+else
+    printf '# Use the R openssl implementation.\n' > src/Makevars
+    echo 'dsOMOP: using portable R openssl HMAC implementation'
+fi
+fi
 exit 0

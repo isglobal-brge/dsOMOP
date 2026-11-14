@@ -25,6 +25,17 @@
 
 .irItems <- function(x) if (is.null(x)) list() else .jsonArrayItems(x)
 
+# A-25 ownership is a registry-only preflight, before even site metadata is
+# built. A named input is borrowed, never registered as execution-owned, and
+# membership says nothing about its support or authenticated DP lineage.
+.irCheckOwnedCohort <- function(handle, name, path) {
+  if (!is.null(name) && !name %in% (handle$temp_tables %||% character(0))) {
+    .irReject("named cohort reference must belong to this handle", field = path,
+              errors = paste0(path, ": named cohort reference must belong to this handle"))
+  }
+  invisible(TRUE)
+}
+
 # Does a node contain a negation (an object whose only key is `not`)?
 .irHasNot <- function(x) {
   if (!is.list(x)) return(FALSE)
@@ -48,6 +59,10 @@
   if (pid %in% seen) return(character(0))
   pop <- ir[["populations"]][[pid]]
   if (!is.list(pop)) return(character(0))
+  # The criteria-base parent is a membership seed, not inherited identity:
+  # observation-period episodes carry none of its event/source tags.
+  if (identical(pop[["kind"]], "criteria") &&
+      identical(pop[["legacy_episodes"]], "observation_periods")) return(character(0))
   seen <- c(seen, pid)
   switch(pop[["kind"]] %||% "",
     index = {
@@ -112,8 +127,12 @@
 }
 
 # Typing of one predicate leaf against its column name (dates take ISO
-# strings, concept columns integers) and ordered `between` bounds.
-.irCheckPredicateLeaf <- function(leaf, path, add) {
+# strings, concept columns integers) and ordered `between` bounds. The v1
+# envelope already runs the historical predicate validator; its admitted
+# literals retain the actual site's legacy SQL comparison semantics (A-19
+# item 7), including the database's own coercions and refusals.
+.irCheckPredicateLeaf <- function(leaf, path, add, legacy = FALSE) {
+  if (legacy) return(invisible(NULL))
   var <- leaf[["var"]]
   op <- leaf[["op"]]
   values <- switch(op,
@@ -278,7 +297,7 @@
       add("/events/", e, "/legacy_concept_scope/concept_set_ref: dangling concept set '", scope_ref, "'")
     }
   }
-  refs <- .irCollectRefs(ir[c("events", "intervals", "populations", "variables", "outputs")])
+  refs <- .irCollectRefs(ir[c("events", "intervals", "populations", "variables", "outputs", "options")])
   for (r in refs) {
     pool <- if (identical(r[["kind"]], "event")) names(ev) else names(iv)
     if (!r[["name"]] %in% pool) add(r[["path"]], ": dangling ", r[["kind"]], " reference '", r[["name"]], "'")
@@ -426,7 +445,7 @@
   # criteria person leaves, reducers) by column name; the site checks type
   # them against the actual columns ---------------------------------------------
   for (pr in .irPredicates(ir)) {
-    .irWalkPredicate(pr[["tree"]], function(l, lp) .irCheckPredicateLeaf(l, paste0(pr[["path"]], lp), add), "")
+    .irWalkPredicate(pr[["tree"]], function(l, lp) .irCheckPredicateLeaf(l, paste0(pr[["path"]], lp), add, legacy), "")
   }
 
   # 5. variables -----------------------------------------------------------------
@@ -606,18 +625,29 @@
   }
 
   # 7. caps --------------------------------------------------------------------
+  # Caps are wire limits on the predicates a client wrote. A lowered v1 plan's
+  # trees were capped as written by the v1 validators the closed envelope runs
+  # (.assertCustomFilterSafe(), .validateCohortFilterTree(), the same server
+  # options); the conjunctions the lowering adds around them are not counted
+  # again (re-review R3: an issued bin at the depth cap stays executable).
   max_depth <- .extractionCap("dsomop.max_filter_depth", 32L)
   max_nodes <- .extractionCap("dsomop.max_filter_nodes", 1024L)
   max_values <- .extractionCap("dsomop.max_filter_values", 10000L)
-  for (t in .irPredicateTrees(ir)) {
+  capped <- if (identical(attr(ir, "source_version"), 1L)) list() else .irPredicateTrees(ir)
+  for (t in capped) {
     st <- .irTreeStats(t[["tree"]])
     if (st[["depth"]] > max_depth) add(t[["path"]], ": predicate depth exceeds the server cap of ", max_depth)
     if (st[["nodes"]] > max_nodes) add(t[["path"]], ": predicate size exceeds the server cap of ", max_nodes)
     if (st[["values"]] > max_values) add(t[["path"]], ": predicate values exceed the server cap of ", max_values)
   }
+  # the node cap counts the nodes a language 2.0 client wrote; the nodes the v1
+  # lowering synthesises (one event and variable per feature, ...) are bounded
+  # by the v1 caps instead (outputs, feature specs, filter complexity)
   n_nodes <- length(cs) + length(ev) + length(iv) + length(pops) + length(vars) + length(outs)
   max_plan_nodes <- .extractionCap("dsomop.max_plan_nodes", 1000L)
-  if (n_nodes > max_plan_nodes) add("/: plan has more nodes than the server cap of ", max_plan_nodes)
+  if (!identical(attr(ir, "source_version"), 1L) && n_nodes > max_plan_nodes) {
+    add("/: plan has more nodes than the server cap of ", max_plan_nodes)
+  }
   if (length(outs) > .extractionCap("dsomop.max_plan_outputs", 100L)) {
     add("/outputs: plan exceeds the server max_plan_outputs cap")
   }
@@ -629,7 +659,10 @@
 #' Operations of section 4.4 a plan uses
 #' @keywords internal
 .irOperations <- function(ir) {
-  ops <- character(0)
+  ops <- if (.conceptNeedsPresentation(ir)) "output.concept_labels" else character(0)
+  date_vars <- ir$variables
+  if (!is.null(ir$options$date_spec) || any(vapply(date_vars, function(v) !is.null(v$date_spec) || (v$derived$kind %||% "") %in% c("calendar_date", "date_part"), logical(1)))) ops <- c(ops, "date.presentation")
+  if (any(vapply(date_vars, function(v) (v$derived$kind %||% "") %in% c("time_between", "age_at"), logical(1)))) ops <- c(ops, "date.elapsed")
   op <- function(...) ops <<- c(ops, ...)
   if (length(ir[["concept_sets"]]) || any(vapply(ir[["events"]] %||% list(), function(e) !is.null(e[["concept_set"]]), logical(1)))) op("concept_set")
   for (e in ir[["events"]] %||% list()) {
@@ -806,8 +839,14 @@
     NULL)
 }
 
-# One literal against a column type ("unknown": not typed).
-.irLiteralTypeOk <- function(v, type) {
+# One literal against a column type ("unknown": not typed). The legacy DSL
+# already checks literal shape and predicate safety. Preserve the actual
+# site's historical comparison semantics for v1 (A-19 item 7), rather than
+# requiring a literal to have identical coercion rules across all vendors.
+# Column existence and private-key exclusions are still checked separately.
+# Native v2 literals have the declared type without implicit SQL coercion.
+.irLiteralTypeOk <- function(v, type, legacy = FALSE) {
+  if (legacy) return(is.atomic(v) && length(v) == 1L && !is.na(v))
   switch(type,
     integer = is.numeric(v) && length(v) == 1L && !is.na(v) && v == round(v),
     numeric = is.numeric(v) && length(v) == 1L && !is.na(v),
@@ -819,7 +858,7 @@
 
 # Site typing of one predicate leaf: the column exists and is filterable for
 # this source, and every literal has the column's type.
-.irCheckSiteLeaf <- function(leaf, cols, path, add) {
+.irCheckSiteLeaf <- function(leaf, cols, path, add, legacy = FALSE) {
   var <- leaf[["var"]]
   hit <- match(var, cols[["name"]])
   if (is.na(hit)) {
@@ -833,11 +872,53 @@
     is_null =, not_null = list(),
     list(leaf[["value"]]))
   for (v in values) {
-    if (!.irLiteralTypeOk(v, type)) {
+    if (!.irLiteralTypeOk(v, type, legacy)) {
       add(path, ": column '", var, "' is of type ", type, "; the literal does not match")
       break
     }
   }
+}
+
+#' Predicate catalogue of an interval's course rows (design 6.7, 6.11)
+#'
+#' A reducer over an interval source reads the course relation
+#' \code{iv_<name>}: one row per era with the event column contract
+#' (WS-5, \code{R/compile_interval.R}). The columns an era actually carries
+#' are its dates and its group concept; its identity and grouping columns are
+#' private, and the value, unit, operator, range and supply columns of the
+#' contract are typed NULLs for an era (\code{.INTERVAL_COURSE_NULLS}), so a
+#' predicate over them is refused as a role the source does not have. Pure:
+#' the contract does not depend on the site.
+#'
+#' @param name Interval name.
+#' @return A \code{.predicateCatalogue()}.
+#' @keywords internal
+.irIntervalCatalogue <- function(name) {
+  columns <- list(start_date = list(type = "date"), end_date = list(type = "date"),
+                  end_recorded = list(type = "date"),
+                  concept_id = list(type = "integer", concept = TRUE))
+  private <- "an era's identity, grouping and record count are private"
+  no_role <- "an era has no value, unit, operator, range or supply role"
+  refused <- c(person_id = "a person identifier is never filterable",
+               event_id = "row identifiers are never filterable",
+               source_ns = "the source namespace is internal",
+               visit_id = "row identifiers are never filterable",
+               group_id = private, era_no = private, era_key = private, n_events = private,
+               value = no_role, value_source = no_role, unit_concept_id = no_role,
+               unit_source = no_role, unit_unknown = no_role, operator_concept_id = no_role,
+               range_low = no_role, range_high = no_role, range_low_source = no_role,
+               range_high_source = no_role, supply = no_role)
+  .predicateCatalogue(columns, character(0), refused, what = paste0("interval '", name, "'"))
+}
+
+# One column name resolved against a predicate catalogue: a finding, or none.
+.irResolveFinding <- function(catalogue, var, path) {
+  tryCatch({
+    .predicateResolve(catalogue, var, path)
+    character(0)
+  }, dsomop_plan_rejection = function(e) {
+    paste0(e[["field"]] %||% path, ": ", sub("^[a-z_]+: ", "", conditionMessage(e)))
+  })
 }
 
 #' Handle-dependent findings (design section 6.1)
@@ -925,19 +1006,12 @@
         site_missing("/visit", "visit_occurrence", node[["on_missing_table"]])
       }
       if (!native) {
+        # the v1 concept_col override is checked with the executors' own rules
+        # (.planV1ConceptColErrors(), A-19 item 7)
         cols <- role[["columns"]]
         col <- function(name) {
           k <- match(name, cols[["column_name"]])
           if (is.na(k) || !isTRUE(cols[["filterable"]][[k]])) NULL else cols[k, , drop = FALSE]
-        }
-        cc <- node[["concept_col"]]
-        if (!is.null(cc)) {
-          r <- col(cc)
-          if (is.null(r)) {
-            add(base, "/concept_col: '", cc, "' is not a filterable column of '", node[["table"]], "'")
-          } else if (!isTRUE(r[["is_concept"]])) {
-            add(base, "/concept_col: '", cc, "' is not a concept column of '", node[["table"]], "'")
-          }
         }
         vc <- node[["value"]][["column"]]
         if (!is.null(vc)) {
@@ -993,11 +1067,20 @@
   for (pr in .irPredicates(ir)) {
     context <- pr[["context"]]
     if (native) {
-      # event, adapter and reducer predicates over events were typed above
+      # event, adapter and reducer predicates over events were typed above;
+      # a reducer predicate over an interval is typed against the interval's
+      # own catalogue (its course rows), never left untyped
       if (!identical(context[["kind"]], "person")) {
-        src <- context[["source"]][["event"]]
-        if (!identical(context[["kind"]], "source") || (is.character(src) && length(src) == 1L)) next
-        cols <- .irPredicateColumns(ir, handle, bp, context)
+        interval <- context[["source"]][["interval"]]
+        if (identical(context[["kind"]], "source") && is.character(interval) && length(interval) == 1L) {
+          errors <- c(errors, tryCatch({
+            .predicateSql(h, pr[["tree"]], .irIntervalCatalogue(interval), "x", pr[["path"]])
+            NULL
+          }, dsomop_plan_rejection = function(e) {
+            paste0(e[["field"]] %||% pr[["path"]], ": ", sub("^[a-z_]+: ", "", conditionMessage(e)))
+          }))
+        }
+        next
       } else {
         if (is.null(person_catalogue)) {
           person_catalogue <- tryCatch(.predicateTableCatalogue(handle, "person", "the person table"),
@@ -1020,7 +1103,9 @@
       cols <- .irPredicateColumns(ir, handle, bp, context)
     }
     if (is.null(cols)) next
-    .irWalkPredicate(pr[["tree"]], function(l, lp) .irCheckSiteLeaf(l, cols, paste0(pr[["path"]], lp), add), "")
+    .irWalkPredicate(pr[["tree"]], function(l, lp) {
+      .irCheckSiteLeaf(l, cols, paste0(pr[["path"]], lp), add, legacy = !native)
+    }, "")
   }
   for (i in seq_along(vars)) {
     v <- names(vars)[[i]]
@@ -1034,13 +1119,24 @@
         add("/variables/", v, "/raw: column '", raw[["column"]], "' is never released (class 1)")
       }
     }
-    # a reducer reading a named column of a table event needs that column
+    # a reducer reading a named column needs that column on its source:
+    # resolved like a predicate variable (existence, private keys, the roles
+    # the source has) against the source's own catalogue
     value <- node[["reducer"]][["value"]]
     src <- node[["source"]][["event"]]
-    if (is.character(value) && !identical(value, "value") && is.character(src)) {
-      cols <- .irPredicateColumns(ir, handle, bp, list(kind = "event", event = src))
-      if (!is.null(cols) && !value %in% cols[["name"]]) {
-        add("/variables/", v, "/reducer/value: column '", value, "' is not a filterable column of the source")
+    interval <- node[["source"]][["interval"]]
+    path <- paste0("/variables/", v, "/reducer/value")
+    if (is.character(value) && length(value) == 1L) {
+      if (native && is.character(interval)) {
+        errors <- c(errors, .irResolveFinding(.irIntervalCatalogue(interval), value, path))
+      } else if (native && is.character(src) && !src %in% unavailable) {
+        catalogue <- tryCatch(.eventSiteCatalogue(handle, ir, src), dsomop_plan_rejection = function(e) NULL)
+        if (!is.null(catalogue)) errors <- c(errors, .irResolveFinding(catalogue, value, path))
+      } else if (!native && !identical(value, "value") && is.character(src)) {
+        cols <- .irPredicateColumns(ir, handle, bp, list(kind = "event", event = src))
+        if (!is.null(cols) && !value %in% cols[["name"]]) {
+          add(path, ": column '", value, "' is not a filterable column of the source")
+        }
       }
     }
   }
@@ -1174,6 +1270,7 @@
 #'   failing stage.
 #' @keywords internal
 .irValidate <- function(ir, handle = NULL, v1_plan = NULL) {
+  tryCatch(.conceptValidatePlan(ir, wire = TRUE), error = function(e) .irReject(conditionMessage(e)))
   errors <- .irSemanticErrors(ir)
   if (length(errors)) .irRejectAll("plan fails the semantic rules", errors)
   ops <- .irOperations(ir)
@@ -1186,6 +1283,10 @@
                  unavailable_outputs = character(0),
                  site_findings = character(0), dialect = NULL)
   if (is.null(handle)) return(invisible(report))
+  for (p in names(ir[["populations"]])) {
+    .irCheckOwnedCohort(handle, ir[["populations"]][[p]][["legacy_cohort_table"]],
+                       paste0("/populations/", p, "/legacy_cohort_table"))
+  }
   if (!is.null(v1_plan)) .planV1SiteCheck(v1_plan, handle)
   site <- .irSiteErrors(ir, handle)
   report[["unavailable"]] <- site[["unavailable"]]

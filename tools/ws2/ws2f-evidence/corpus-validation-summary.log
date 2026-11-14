@@ -1,0 +1,9 @@
+FAILURES BY FILE
+             file blocks failed errors
+ test-ir-corpus.R      1     13      0
+
+FAILING TESTS
+test-ir-corpus.R | every corpus plan reproduces its golden IR document, digest and annex | failed=13 error=FALSE
+
+RESULT failed: 13 errors: 0 skipped: 0 passed: 2953 
+RESULT failed: 13 errors: 0 skipped: 0 passed: 2953 

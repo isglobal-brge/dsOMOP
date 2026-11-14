@@ -203,6 +203,8 @@ test_that("baseline coverage: unique values exact, uncovered NA, ambiguous dropp
   })
   withr::with_options(list(nfilter.subset = 2L), {
     published <- .planExecute(handle, plan, list(demo = "demo_df"))$demo
+    published <- .expect_legacy_age_text(published, NULL,
+      "A-E6 coverage preserves exact values under A-27/A-28 age presentation")
     expect_equal(published[, names(out)], out)
   })
 })
@@ -695,7 +697,7 @@ test_that("cohort_membership output has correct structure", {
   })
 })
 
-test_that("cohort_membership absolute dates require explicit authorization", {
+test_that("A-28 cohort_membership assignment permits exact dates without an owner option", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
@@ -711,8 +713,8 @@ test_that("cohort_membership absolute dates require explicit authorization", {
   withr::with_options(list(nfilter.subset = 3,
                            dsomop.allow_absolute_dates = FALSE,
                            dsomop.query_strict = TRUE), {
-    expect_error(.planExecute(handle, plan, list(cm = "cm_df")),
-                 "Absolute date handling")
+    result <- .planExecute(handle, plan, list(cm = "cm_df"))$cm
+    expect_true(all(c("cohort_start_date", "cohort_end_date") %in% names(result)))
   })
   withr::with_options(list(nfilter.subset = 3,
                            dsomop.allow_absolute_dates = TRUE,

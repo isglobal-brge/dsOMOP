@@ -1287,7 +1287,7 @@ test_that("plan execute passes temporal and date_handling to extraction", {
   })
 })
 
-test_that("plan execute blocks absolute dates without server authorization", {
+test_that("A-28 plan assignment permits exact class-2 dates without an owner option", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
@@ -1313,10 +1313,9 @@ test_that("plan execute blocks absolute dates without server authorization", {
   withr::with_options(list(nfilter.subset = 3,
                            dsomop.allow_absolute_dates = FALSE,
                            dsomop.query_strict = TRUE), {
-    expect_error(
-      .planExecute(handle, plan, list(conditions = "cond_df")),
-      "not permitted by the server"
-    )
+    result <- .planExecute(handle, plan, list(conditions = "cond_df"))$conditions
+    expect_true(is.data.frame(result))
+    expect_true("condition_start_date" %in% names(result))
   })
 })
 

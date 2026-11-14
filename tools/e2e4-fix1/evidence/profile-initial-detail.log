@@ -1,0 +1,68 @@
+dsOMOP v2.10.3 loaded. OMOP CDM resource resolver registered.
+e2e4-profile:                                   self.time self.pct total.time total.pct
+"stringhash"                           3.62    31.07       3.62     31.07
+"paste"                                1.83    15.71       1.84     15.79
+"paste0"                               0.91     7.81       0.92      7.90
+".dsomopDpHmac"                        0.63     5.41       3.04     26.09
+".dsomopReleaseBuild"                  0.52     4.46      11.65    100.00
+"sub"                                  0.49     4.21       0.49      4.21
+"anyNA"                                0.47     4.03       0.47      4.03
+"FUN"                                  0.31     2.66      11.65    100.00
+"order"                                0.24     2.06       0.27      2.32
+"noisy"                                0.17     1.46       5.02     43.09
+"anyDuplicated.default"                0.14     1.20       0.14      1.20
+"is"                                   0.13     1.12       0.15      1.29
+"rawstringhash"                        0.12     1.03       3.77     32.36
+"anyDuplicated"                        0.11     0.94       0.25      2.15
+"dots.or.missing"                      0.11     0.94       0.11      0.94
+"list"                                 0.11     0.94       0.11      0.94
+"$"                                    0.10     0.86       0.10      0.86
+".dsomopReleaseFingerprintFramed"      0.09     0.77       3.17     27.21
+"[.data.frame"                         0.09     0.77       0.12      1.03
+"grepl"                                0.09     0.77       0.09      0.77
+"structure"                            0.08     0.69       0.24      2.06
+".dsomopDpBernoulli"                   0.07     0.60       0.27      2.32
+"vapply"                               0.06     0.52       4.67     40.09
+"isTRUE"                               0.06     0.52       0.09      0.77
+"match.arg"                            0.05     0.43       0.09      0.77
+"num_to_char"                          0.05     0.43       0.09      0.77
+"unique.default"                       0.05     0.43       0.05      0.43
+".local"                               0.04     0.34       0.57      4.89
+".dsomopBigMultiply"                   0.04     0.34       0.23      1.97
+"which"                                0.04     0.34       0.15      1.29
+"collapse_object"                      0.04     0.34       0.04      0.34
+"duplicated.default"                   0.04     0.34       0.04      0.34
+"is.na"                                0.04     0.34       0.04      0.34
+".dsomopBigNew"                        0.03     0.26       0.37      3.18
+".dsomopBigInteger"                    0.03     0.26       0.35      3.00
+                                      total.time total.pct self.time self.pct
+".dsomopReleaseBuild"                      11.65    100.00      0.52     4.46
+"FUN"                                      11.65    100.00      0.31     2.66
+"lapply"                                   11.65    100.00      0.01     0.09
+"doTryCatch"                               11.65    100.00      0.00     0.00
+"doWithOneRestart"                         11.65    100.00      0.00     0.00
+"eval"                                     11.65    100.00      0.00     0.00
+"source_file"                              11.65    100.00      0.00     0.00
+"test_code"                                11.65    100.00      0.00     0.00
+"test_dir"                                 11.65    100.00      0.00     0.00
+"test_files"                               11.65    100.00      0.00     0.00
+"test_files_serial"                        11.65    100.00      0.00     0.00
+"test_that"                                11.65    100.00      0.00     0.00
+"testthat::test_local"                     11.65    100.00      0.00     0.00
+"tryCatch"                                 11.65    100.00      0.00     0.00
+"tryCatchList"                             11.65    100.00      0.00     0.00
+"tryCatchOne"                              11.65    100.00      0.00     0.00
+"withCallingHandlers"                      11.65    100.00      0.00     0.00
+"withOneRestart"                           11.65    100.00      0.00     0.00
+"withRestarts"                             11.65    100.00      0.00     0.00
+"with_reporter"                            11.65    100.00      0.00     0.00
+"noisy"                                     5.02     43.09      0.17     1.46
+"vapply"                                    4.67     40.09      0.06     0.52
+".dsomopReleaseCanonicalPersonTokens"       4.02     34.51      0.00     0.00
+"rawstringhash"                             3.77     32.36      0.12     1.03
+"openssl::sha256"                           3.77     32.36      0.00     0.00
+.
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+RESULT failed: 0 errors: 0 skipped: 0 passed: 1 

@@ -411,7 +411,7 @@
     range_low = list(type = "numeric"), range_high = list(type = "numeric"),
     unit_unknown = list(type = "integer"))
   for (col in names(plan$others)) {
-    columns[[col]] <- list(type = plan$others[[col]], concept = grepl("_concept_id$", col))
+    columns[[col]] <- list(type = plan$others[[col]], concept = .conceptDeclaredColumn(col, plan$col_df))
   }
   aliases <- character(0)
   add_alias <- function(raw, to) if (!is.null(raw) && !raw %in% names(columns)) aliases[[raw]] <<- to
@@ -614,6 +614,64 @@
   f_final
 }
 
+# An unavailable source still has a declared type contract. Preserve the
+# packaged CDM fields and role aliases without inspecting patient rows or
+# guessing types from the requested name. Adapter columns use their own
+# normalized contract; a cost's parent table is not the cost stream.
+.eventUnavailableCatalogue <- function(ctx, name, table, kind, spec) {
+  refused <- stats::setNames(rep("row identifiers are never filterable",
+                                 length(.identifierColumns())), .identifierColumns())
+  private <- c("person_id", "event_id", "source_ns", "visit_id", "parent_source_ns",
+               "parent_event_id")
+  for (col in private) refused[[col]] <- "source identities are never filterable"
+  columns <- lapply(spec[setdiff(names(spec), names(refused))], function(col) {
+    list(type = col$type, concept = identical(col$role, "concept"))
+  })
+  aliases <- character(0)
+  if (identical(kind, "table")) {
+    version <- .buildBlueprint(ctx[["handle"]])$spec_version
+    metadata <- .loadVendoredSpec(version)
+    if (is.null(metadata) || (!is.null(version) &&
+        !identical(.normalizeCdmVersion(version), metadata$version))) {
+      return(.predicateCatalogue(columns, aliases, refused, what = paste0("event '", name, "'")))
+    }
+    fields <- metadata$field_level
+    fields <- fields[tolower(fields$cdmTableName) == table, , drop = FALSE]
+    col_df <- data.frame(column_name = tolower(fields$cdmFieldName),
+                         cdm_datatype = fields$cdmDatatype, stringsAsFactors = FALSE)
+    roles <- .roleRecordsCsv(metadata$version)
+    role <- roles[roles$table_name == table, , drop = FALSE]
+    if (nrow(role) == 1L) {
+      bindings <- c(start_col = "start_date", end_col = "end_recorded",
+                    supply_col = "supply", domain_concept_col = "concept_id",
+                    value_col = "value", unit_col = "unit_concept_id",
+                    operator_col = "operator_concept_id", range_low_col = "range_low",
+                    range_high_col = "range_high")
+      node <- ctx[["ir"]][["events"]][[name]]
+      if (!is.null(node[["concept_col"]])) role$domain_concept_col <- tolower(node[["concept_col"]])
+      if (!is.null(node[["value"]][["column"]])) role$value_col <- tolower(node[["value"]][["column"]])
+      for (key in names(bindings)) {
+        raw <- role[[key]][[1L]]
+        if (nzchar(raw) && raw %in% col_df$column_name && !raw %in% names(columns) &&
+            !.assignmentBlockedColumn(raw, col_df)) {
+          aliases[[raw]] <- bindings[[key]]
+        }
+      }
+    }
+    for (col in setdiff(col_df$column_name, c(names(columns), names(aliases), names(refused)))) {
+      type <- .eventColumnType(col_df, col)
+      if (.assignmentBlockedColumn(col, col_df)) {
+        refused[[col]] <- "a class-1 column is never released or filtered (design 7.6)"
+      } else if (is.null(type)) {
+        refused[[col]] <- "datetime and time columns are not event predicate columns (use the date roles)"
+      } else {
+        columns[[col]] <- list(type = type, concept = grepl("_concept_id$", col))
+      }
+    }
+  }
+  .predicateCatalogue(columns, aliases, refused, what = paste0("event '", name, "'"))
+}
+
 # The zero-row fragment of an event source this site cannot serve under
 # on_missing_table = "unavailable" (also used by the adapters). It keeps the
 # source kind's declared columns, unique key, source identity, ordering and
@@ -626,6 +684,7 @@
   nm_final <- .fragmentName("ev", name, ctx = ctx)
   spec <- c(.eventColumnSpec("integer")[c(.EVENT_SRC_COLUMNS, .EVENT_NORM_COLUMNS)],
             contract$extra)
+  catalogue <- .eventUnavailableCatalogue(ctx, name, table, kind, spec)
   types <- vapply(spec, function(c) c$type, "")
   nulls <- vapply(names(spec), function(col) {
     if (identical(col, "source_ns")) return(.compileTextLiteral(name))
@@ -646,7 +705,7 @@
   .fragmentRegister(ctx, f)
   .eventMetaSet(ctx, name, list(
     name = name, kind = kind, table = table, availability = "unavailable",
-    roles = character(0), catalogue = NULL, fragments = c(final = nm_final),
+    roles = character(0), catalogue = catalogue, fragments = c(final = nm_final),
     index_visit = isTRUE(index_visit), concept = concept, parent = parent, columns = names(spec)))
   f
 }
@@ -758,11 +817,13 @@
 #'
 #' Design 6.1 orders a plan's evaluation concept sets, events (adapters
 #' included), intervals, populations, variables, outputs. This is the event
-#' stage: every event the outputs read (their dependency closures), with its
-#' concept set and adapter parents, compiled in the plan order inside the
+#' stage: every event the outputs read (their execution dependency closures),
+#' with its concept set and adapter parents, compiled in the plan order inside the
 #' private compilation context. The data-dependent adapter refusals of
 #' section 11 (\code{adapter_person_mismatch}, \code{cost_currency_mixed},
 #' amendment A-18) surface here, before any output is materialised.
+#' Dictionary source outputs remain static concept dependencies and do not
+#' cause clinical events, adapters or populations to be materialised.
 #'
 #' @param cctx Compilation context (\code{.compileContext()}).
 #' @param outputs Names of the outputs to compute.
@@ -770,9 +831,14 @@
 #' @keywords internal
 .planCompileSources <- function(cctx, outputs) {
   ir <- cctx[["ir"]]
-  outputs <- intersect(as.character(outputs), names(ir[["outputs"]] %||% list()))
+  outputs <- .irReach(outputs, function(o) .outputExecutionDeps(ir, o), names(ir[["outputs"]]))
+  outputs <- outputs[!vapply(ir[["outputs"]][outputs], function(o) {
+    identical(o[["format"]], "dictionary")
+  }, logical(1))]
+  execution_ir <- ir
+  execution_ir[["outputs"]] <- ir[["outputs"]][outputs]
   events <- unique(unlist(lapply(outputs, function(o) {
-    names(.irOutputClosure(ir, o)[["events"]] %||% list())
+    names(.irOutputClosure(execution_ir, o)[["events"]] %||% list())
   }), use.names = FALSE))
   events <- intersect(.irOrder(ir)[["events"]], events)
   for (e in events) .compileEventByName(cctx, e)

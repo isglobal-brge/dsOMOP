@@ -1,0 +1,14 @@
+FAILURES BY FILE
+                        file blocks failed errors
+ test-publication-compiled.R      2      3      0
+              test-explain.R      1      1      0
+             test-sql-expr.R      1      1      0
+
+FAILING TESTS
+test-explain.R | the capability block declares the language (A-E7) | failed=1 error=FALSE
+test-publication-compiled.R | CSV staged roster keys match decimal doubles from frames and SQL | failed=2 error=FALSE
+test-publication-compiled.R | DuckDB BIGINT roster keys retain lineage through CSV staging | failed=1 error=FALSE
+test-sql-expr.R | every capability operation maps to constructs | failed=1 error=FALSE
+
+RESULT failed: 5 errors: 0 skipped: 2 passed: 9603 
+RESULT failed: 5 errors: 0 skipped: 2 passed: 9603 

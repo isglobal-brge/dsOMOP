@@ -110,6 +110,8 @@
   variable.derived = c("calendar", "date_diff_days"),
   variable.raw = character(0),
   variable.population_column = character(0),
+  date.presentation = character(0), date.elapsed = character(0),
+  output.concept_labels = character(0),
   output.wide = character(0),
   output.long = c("date_diff_days"),
   output.long.event_log = c("date_diff_days"),

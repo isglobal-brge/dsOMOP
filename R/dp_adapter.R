@@ -135,7 +135,7 @@
     local <- TRUE
     if (identical(group, "populations")) {
       local <- !identical(value$kind, "match") &&
-        is.null(value$cohort_definition_id)
+        is.null(value$cohort_definition_id) && is.null(value$legacy_cohort_table)
       if (!is.null(value$parent)) local <- local && node(group, value$parent)
       if (identical(value$kind, "setop")) {
         local <- local && all_local(value$setop$members, function(member) {

@@ -1,0 +1,112 @@
+diff --git a/R/interface.R b/R/interface.R
+index 4ab2fa7..63117fc 100644
+--- a/R/interface.R
++++ b/R/interface.R
+@@ -1692,7 +1692,8 @@ omopPlanPreviewDS <- function(omop_symbol, plan) {
+   plan <- .ds_arg(plan)
+   # Audit extraction reads output fields too: it must follow the same closed
+   # envelope as validation and preview, before any metadata or result query.
+-  .irValidateEnvelope(.irJsonForm(plan))
++  plan <- .irJsonForm(plan)
++  .irValidateEnvelope(plan)
+   # Preview is the cheapest, most-repeated data-touching op and is the primary
+   # differencing signal, so the data controller must be able to see the
+   # sequence of preview calls (banding alone cannot stop iterative probing).
+diff --git a/R/plan.R b/R/plan.R
+index 35bc970..a06d649 100644
+--- a/R/plan.R
++++ b/R/plan.R
+@@ -112,7 +112,16 @@
+     return(list(valid = FALSE, errors = envelope_error, warnings = character(0),
+                 available_tables = character(0)))
+   }
+-  legacy <- if (!identical(version, 2L)) .planLegacyFindings(handle, json) else {
++  legacy <- if (!identical(version, 2L)) {
++    legacy_plan <- json
++    if (wire[["scope_tables"]] > 0L) {
++      # Resolved frames are server context, not wire fields. Supplemental
++      # declaration checks still need to know that they supply the cohort.
++      legacy_plan$scope <- legacy_plan$scope %||% list()
++      legacy_plan$scope$tables_frames <- plan[["scope"]][["tables_frames"]]
++    }
++    .planLegacyFindings(handle, legacy_plan)
++  } else {
+     list(errors = character(0), missing_tables = character(0),
+          warnings = character(0), available_tables = character(0))
+   }
+@@ -124,7 +133,9 @@
+     .irPrepare(wire[["plan"]], handle = handle, scope_tables = wire[["scope_tables"]])
+     NULL
+   }, dsomop_plan_rejection = function(e) e$errors %||% conditionMessage(e),
+-  dsomop_v1_declaration_error = function(e) conditionMessage(e))
++  # Declaration diagnostics above include the resolved server-side scope;
++  # the wire-only preparation cannot observe those frames itself.
++  dsomop_v1_declaration_error = function(e) NULL)
+   if (identical(version, 2L) && is.null(ir_error)) {
+     bp <- .buildBlueprint(handle)
+     legacy[["available_tables"]] <- bp$tables$table_name[bp$tables$present_in_db]
+@@ -419,6 +430,9 @@
+   json <- .irJsonForm(wire[["plan"]])
+   .irValidateEnvelope(json)
+   validation <- .planValidate(handle, plan)
++  # Traverse the same object whose shapes were checked: in-process named
++  # atomic vectors represent JSON objects, too. Keep scope_tables separately.
++  plan <- json
+   native <- identical(.irPlanVersion(json), 2L)
+   settings <- .omopDisclosureSettings()
+   if (native) {
+diff --git a/tests/testthat/test-ws2f-validation.R b/tests/testthat/test-ws2f-validation.R
+index 3caa818..08a256f 100644
+--- a/tests/testthat/test-ws2f-validation.R
++++ b/tests/testthat/test-ws2f-validation.R
+@@ -188,3 +188,50 @@ test_that("N3 safe v1 validation keeps useful historical diagnostics", {
+   expect_false(age$valid)
+   expect_match(paste(age$errors, collapse = " "), "invalid age_breaks", fixed = TRUE)
+ })
++
++test_that("N3 preview traverses validated named atomic objects consistently", {
++  handle <- create_test_handle()
++  on.exit(cleanup_handle(handle), add = TRUE)
++  .setHandle("ws2f_object_preview", handle)
++  on.exit(.removeHandle("ws2f_object_preview"), add = TRUE)
++  plans <- list(
++    list(cohort = list(type = "cohort_table", cohort_definition_id = 1L),
++      outputs = list(x = c(type = "event_level", table = "person"))),
++    list(version = 2L,
++      meta = list(language_version = "2.0", semantic_version = "2.0.0", generated_by = "ws2f"),
++      populations = list(base = list(kind = "criteria")),
++      variables = list(sex = list(raw = list(table = "person", column = "gender_concept_id"))),
++      outputs = list(x = c(rows = "base", format = "wide", grain = "person")))
++  )
++  for (plan in plans) {
++    canonical <- .irJsonForm(plan)
++    expect_true(.planValidate(handle, plan)$valid)
++    expect_identical(.planValidate(handle, plan), .planValidate(handle, canonical))
++    expected <- .planPreview(handle, canonical)
++    expect_identical(.planPreview(handle, plan), expected)
++    expect_identical(omopPlanPreviewDS("ws2f_object_preview", plan), expected)
++    expect_identical(omopPlanPreviewDS("ws2f_object_preview", canonical), expected)
++  }
++})
++
++test_that("N3 internal frame scopes remain declared and restricted during preview", {
++  handle <- create_test_handle()
++  on.exit(cleanup_handle(handle), add = TRUE)
++  .buildBlueprint(handle)
++  local_mocked_bindings(.executeQuery = function(...) stop("unexpected result query"))
++  frame <- data.frame(person_id = 1:6)
++  for (frames in list(frame, list(frame))) {
++    plan <- list(scope = list(tables_frames = frames), outputs = list(
++      demo = list(type = "baseline", columns = "gender_concept_id"),
++      people = list(type = "event_level", table = "person", columns = "gender_concept_id")))
++    expect_identical(.planWirePart(plan)$scope_tables, 1L)
++    validation <- .planValidate(handle, plan)
++    expect_true(validation$valid)
++    expect_length(validation$errors, 0L)
++    preview <- .planPreview(handle, plan)
++    expect_true(preview$validation$valid)
++    expect_false(preview$outputs$people$n_persons_available)
++    expect_true(is.na(preview$outputs$people$n_persons))
++    expect_false(preview$outputs$people$n_persons_banded)
++  }
++})

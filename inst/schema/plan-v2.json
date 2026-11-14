@@ -61,6 +61,31 @@
         },
         "coverage": {
           "$ref": "#/$defs/coverage"
+        },
+        "labels": {
+          "type": "object",
+          "default": {},
+          "propertyNames": {
+            "pattern": "^(0|[1-9][0-9]*)$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "column_names": {
+          "type": "object",
+          "default": {},
+          "propertyNames": {
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "date_spec": {
+          "$ref": "#/$defs/date_spec"
         }
       }
     },
@@ -2063,6 +2088,31 @@
             "broadcast": {
               "type": "boolean",
               "default": false
+            },
+            "labels": {
+              "type": "object",
+              "default": {},
+              "propertyNames": {
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "column_names": {
+              "type": "object",
+              "default": {},
+              "propertyNames": {
+                "minLength": 1
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "date_spec": {
+              "$ref": "#/$defs/date_spec"
             }
           }
         },
@@ -2267,6 +2317,31 @@
                   }
                 }
               ]
+            },
+            "labels": {
+              "type": "object",
+              "default": {},
+              "propertyNames": {
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "column_names": {
+              "type": "object",
+              "default": {},
+              "propertyNames": {
+                "minLength": 1
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "date_spec": {
+              "$ref": "#/$defs/date_spec"
             }
           }
         },
@@ -2296,6 +2371,31 @@
                   "$ref": "#/$defs/column_name"
                 }
               }
+            },
+            "labels": {
+              "type": "object",
+              "default": {},
+              "propertyNames": {
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "column_names": {
+              "type": "object",
+              "default": {},
+              "propertyNames": {
+                "minLength": 1
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "date_spec": {
+              "$ref": "#/$defs/date_spec"
             }
           }
         },
@@ -2322,6 +2422,217 @@
                   ]
                 }
               }
+            },
+            "labels": {
+              "type": "object",
+              "default": {},
+              "propertyNames": {
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "column_names": {
+              "type": "object",
+              "default": {},
+              "propertyNames": {
+                "minLength": 1
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "date_spec": {
+              "$ref": "#/$defs/date_spec"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "derived"
+          ],
+          "properties": {
+            "derived": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "const": "calendar_date"
+                    },
+                    "reference": {
+                      "$ref": "#/$defs/date_source"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "reference"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "const": "date_part"
+                    },
+                    "reference": {
+                      "$ref": "#/$defs/date_source"
+                    },
+                    "part": {
+                      "enum": [
+                        "year",
+                        "semester",
+                        "quarter",
+                        "month",
+                        "month_name",
+                        "month_abbr",
+                        "day",
+                        "weekday",
+                        "weekday_name",
+                        "weekday_abbr",
+                        "iso_week",
+                        "iso_year",
+                        "day_of_year",
+                        "epi_week",
+                        "epi_year",
+                        "fiscal_year",
+                        "fiscal_quarter",
+                        "season",
+                        "month_sin",
+                        "month_cos",
+                        "weekday_sin",
+                        "weekday_cos",
+                        "season_sin",
+                        "season_cos"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "reference",
+                    "part"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "const": "time_between"
+                    },
+                    "from": {
+                      "$ref": "#/$defs/date_source"
+                    },
+                    "to": {
+                      "$ref": "#/$defs/date_source"
+                    },
+                    "unit": {
+                      "enum": [
+                        "days",
+                        "weeks",
+                        "months",
+                        "years",
+                        "decimal_years"
+                      ],
+                      "default": "days"
+                    },
+                    "absolute": {
+                      "type": "boolean",
+                      "default": false
+                    },
+                    "rounding": {
+                      "enum": [
+                        "none",
+                        "floor",
+                        "ceiling",
+                        "trunc",
+                        "nearest"
+                      ],
+                      "default": "none"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "from",
+                    "to"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "const": "age_at"
+                    },
+                    "reference": {
+                      "$ref": "#/$defs/date_source",
+                      "default": "index"
+                    },
+                    "unit": {
+                      "enum": [
+                        "years",
+                        "decimal_years",
+                        "months",
+                        "weeks",
+                        "days",
+                        "annual_years"
+                      ],
+                      "default": "years"
+                    },
+                    "bands": {
+                      "type": "boolean",
+                      "default": false
+                    },
+                    "age_breaks": {
+                      "type": "array",
+                      "minItems": 2,
+                      "items": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                }
+              ]
+            },
+            "labels": {
+              "type": "object",
+              "default": {},
+              "propertyNames": {
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "column_names": {
+              "type": "object",
+              "default": {},
+              "propertyNames": {
+                "minLength": 1
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "date_spec": {
+              "$ref": "#/$defs/date_spec"
+            },
+            "broadcast": {
+              "type": "boolean",
+              "default": false
             }
           }
         }
@@ -2439,13 +2750,7 @@
       "additionalProperties": false,
       "properties": {
         "date_handling": {
-          "$ref": "#/$defs/date_handling",
-          "default": {
-            "mode": "relative",
-            "reference": "index",
-            "bin_width": null,
-            "date_columns": null
-          }
+          "$ref": "#/$defs/date_handling"
         },
         "time_window": {
           "$ref": "#/$defs/nullable_window",
@@ -2461,13 +2766,7 @@
       "additionalProperties": false,
       "properties": {
         "date_handling": {
-          "$ref": "#/$defs/date_handling",
-          "default": {
-            "mode": "relative",
-            "reference": "index",
-            "bin_width": null,
-            "date_columns": null
-          }
+          "$ref": "#/$defs/date_handling"
         },
         "temporal": {
           "$ref": "#/$defs/temporal_select"
@@ -3053,13 +3352,7 @@
       "additionalProperties": false,
       "properties": {
         "date_handling": {
-          "$ref": "#/$defs/date_handling",
-          "default": {
-            "mode": "relative",
-            "reference": "index",
-            "bin_width": null,
-            "date_columns": null
-          }
+          "$ref": "#/$defs/date_handling"
         }
       }
     },
@@ -3390,6 +3683,207 @@
           }
         }
       ]
+    },
+    "date_component_operand": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "integer"
+            },
+            "value": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "column"
+            },
+            "name": {
+              "$ref": "#/$defs/column_name"
+            }
+          },
+          "required": [
+            "kind",
+            "name"
+          ]
+        }
+      ]
+    },
+    "date_source": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/anchor"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "date_components"
+            },
+            "year": {
+              "$ref": "#/$defs/date_component_operand"
+            },
+            "month": {
+              "$ref": "#/$defs/date_component_operand"
+            },
+            "day": {
+              "$ref": "#/$defs/date_component_operand"
+            },
+            "event": {
+              "$ref": "#/$defs/source_ref"
+            },
+            "which": {
+              "enum": [
+                "first",
+                "last",
+                "nth"
+              ],
+              "default": "first"
+            },
+            "n": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "scope": {
+              "enum": [
+                "person",
+                "episode"
+              ],
+              "default": "person"
+            },
+            "search": {
+              "$ref": "#/$defs/window"
+            }
+          },
+          "required": [
+            "kind",
+            "year"
+          ]
+        }
+      ]
+    },
+    "date_spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "precision": {
+          "enum": [
+            "day",
+            "year",
+            "semester",
+            "quarter",
+            "month",
+            "iso_week",
+            "cdc_week",
+            "epi_week",
+            "fiscal_year",
+            "fiscal_semester",
+            "fiscal_quarter",
+            "fiscal_month",
+            "relative_days",
+            "custom"
+          ]
+        },
+        "representation": {
+          "enum": [
+            "auto",
+            "factor",
+            "number",
+            "start",
+            "end"
+          ]
+        },
+        "numeric": {
+          "enum": [
+            "index",
+            "decimal_year"
+          ]
+        },
+        "origin": {
+          "$ref": "#/$defs/date"
+        },
+        "anchor": {
+          "$ref": "#/$defs/date_source"
+        },
+        "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "labels": {
+          "type": "object",
+          "propertyNames": {
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "level_range": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/date"
+          }
+        },
+        "fiscal_start": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "week_start": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 7
+        },
+        "week_min_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 7
+        },
+        "hemisphere": {
+          "enum": [
+            "north",
+            "south"
+          ]
+        },
+        "partial": {
+          "enum": [
+            "none",
+            "start",
+            "mid",
+            "end"
+          ]
+        },
+        "invalid": {
+          "const": "na"
+        },
+        "future": {
+          "enum": [
+            "allow",
+            "na"
+          ]
+        },
+        "as_of": {
+          "$ref": "#/$defs/date"
+        }
+      },
+      "required": []
     }
   }
 }

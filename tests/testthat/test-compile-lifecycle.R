@@ -17,7 +17,7 @@ test_that("native execution registers operation cleanup before compilation", {
   pre <- .createTempTable(h, "ws5_native_preexisting", "SELECT 17 AS value")
   p <- .ws5_lifecycle_plan()
   for (supplied_context in c(FALSE, TRUE)) {
-    for (failure in c("error", "rejection", "unsupported")) {
+    for (failure in c("error", "rejection", "validation")) {
       ctx <- if (supplied_context) .ws4_ctx(h, p) else NULL
       compile <- NULL
       compile_sources <- function(cctx, ...) {
@@ -30,7 +30,9 @@ test_that("native execution registers operation cleanup before compilation", {
         if (failure == "rejection") {
           .compileReject("downstream compile refusal", reason = "reducer_row_cap")
         }
-        invisible(NULL)
+        # Inject a validation refusal explicitly; do not depend on a later
+        # compiler being absent once the native population stage is merged.
+        .irReject("downstream validation refusal")
       }
       testthat::with_mocked_bindings({
         error <- tryCatch(.planExecute(h, p, list(o = "out"), ctx = ctx), error = identity)
@@ -143,4 +145,61 @@ test_that("publication success, refusal and downstream failure all close compile
     expect_setequal(.ws5_temp_names(h), pre)
     expect_identical(exists("out", ctx$target_env, inherits = FALSE), outcome == "success")
   }
+})
+
+test_that("native output compilation installs cleanup before creating its child context", {
+  h <- .ws4_reach_handle()
+  on.exit(DBI::dbDisconnect(h$conn), add = TRUE)
+  pre <- .createTempTable(h, "ws7_native_preexisting", "SELECT 43 AS value")
+  ctx <- .ws4_ctx(h, .ws5_lifecycle_plan())
+  create_context <- .compileContext
+  child <- NULL
+  testthat::with_mocked_bindings({
+    expect_error(.planExecuteNative(ctx, ctx$ir, list(o = "out")), "child creation failure")
+  }, .compileContext = function(ctx, ir) {
+    child <<- create_context(ctx, ir)
+    .compileIntervalByName(child, "i")
+    .createTempTable(h, "ws7_native_unregistered", "SELECT 47 AS value")
+    stop("child creation failure")
+  })
+  expect_true(.isPlanContext(ctx))
+  expect_false(is.null(ctx$ir))
+  expect_length(child$compile_temp_tables, 0L)
+  expect_setequal(h$temp_tables, pre)
+  expect_setequal(.ws5_temp_names(h), pre)
+  .planContextClose(ctx)
+})
+
+test_that("native output cleanup attempts unregistered objects after compiler DROP failure", {
+  h <- .ws4_reach_handle()
+  on.exit(DBI::dbDisconnect(h$conn), add = TRUE)
+  pre <- .createTempTable(h, "ws7_native_keep", "SELECT 53 AS value")
+  ctx <- .ws4_ctx(h, .ws5_lifecycle_plan())
+  child <- .compileContext(ctx, ctx$ir)
+  drop <- .dropTempTable
+  failing <- NULL
+  released <- NULL
+  testthat::with_mocked_bindings({
+    # Capture after unwinding: the original compile error is followed by a
+    # cleanup error, so an expectation's calling handler would see both.
+    failure <- tryCatch(.planExecuteNative(ctx, ctx$ir, list(o = "out")), error = identity)
+  }, .planCompileOutputs = function(cctx, ...) {
+    .compileIntervalByName(cctx, "i")
+    failing <<- cctx$compile_temp_tables
+    released <<- .createTempTable(h, "ws7_native_release", "SELECT 59 AS value")
+    stop("output compilation failure")
+  }, .dropTempTable = function(handle, name) {
+    if (name %in% failing) stop("injected native DROP failure")
+    drop(handle, name)
+  })
+  expect_s3_class(failure, "error")
+  expect_match(conditionMessage(failure), "injected native DROP failure")
+  expect_true(.isPlanContext(ctx))
+  expect_identical(child$compile_temp_tables, failing)
+  expect_false(released %in% .ws5_temp_names(h))
+  expect_true(pre %in% .ws5_temp_names(h))
+  .planContextClose(ctx)
+  expect_length(child$compile_temp_tables, 0L)
+  expect_setequal(h$temp_tables, pre)
+  expect_setequal(.ws5_temp_names(h), pre)
 })

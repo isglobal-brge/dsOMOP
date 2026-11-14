@@ -90,6 +90,9 @@ def population_indexed(populations, pid, seen=()):
     if not isinstance(p, dict) or pid in seen:
         return False
     kind = p.get("kind")
+    # Legacy OP criteria use their parent as a person seed, not index identity.
+    if kind == "criteria" and p.get("legacy_episodes") == "observation_periods":
+        return False
     if kind in ("index", "match"):
         return True
     seen = seen + (pid,)
@@ -120,6 +123,8 @@ def normalize(plan, schema):
         if x.get(slot) is None:
             x[slot] = {}
     x = apply_defaults(schema, x, schema)
+    from date_normalize import normalize_dates
+    x = normalize_dates(x)
     if x.get("publish") is None:
         x["publish"] = list(x["outputs"].keys())
     plan_cov = x["options"].get("coverage")

@@ -1,3 +1,145 @@
+# dsOMOP 2.10.4 (2026-11-13)
+
+- Corrected: derived sex is a factor with the public `F`, `M` domain, including
+  an unused level at a site. Assigned age bands, birth-year bands, panel age
+  and calendar categories, and legacy binned dates are ordered factors at
+  publication. Values and private arithmetic stay unchanged; concept recodes
+  and date categories retain the existing federation reconciliation and
+  disclosure gates. Re-run recipes to recreate these columns. Code that needs
+  their labels should use `as.character()`; use explicit numeric date
+  representations for arithmetic rather than factor codes.
+- Corrected: staged CSV and Parquet preserve ordinary factor levels and order,
+  including unused levels. Parquet presentation rewrites now supply Arrow's
+  required row-group size. Staged v1 age-band validation accepts the same
+  strictly increasing public breakpoints as in-memory assignment; it no longer
+  incorrectly applies the aggregate age grid. Re-run affected recipes; no
+  owner configuration is needed.
+- Corrected: publication formats ordinary integer lineage keys in a vectorized
+  operation, avoiding per-row formatting overhead in large panels. Key bytes,
+  lineage validation and publication thresholds are unchanged.
+
+- Corrected: an unavailable protected Poisson rate ratio now carries an
+  explanatory `unavailable_reason`, including the standard-mode protected
+  block. The label depends only on protected results; estimates, noise and
+  support gates are unchanged. Re-run the analysis to receive the explanation;
+  no recipe changes are needed.
+
+- Corrected: an unavailable protected MDRR now carries an explanatory
+  `unavailable_reason` in its protection label, including the CohortMethod
+  aliases, diagnostics summary and standard-mode protected block. The reason
+  depends only on the protected result; counts, noise and support gates are
+  unchanged. Re-run the analysis to receive the label; no recipe changes
+  are needed.
+
+- Corrected: large protected releases reuse a request-local OpenSSL HMAC
+  context for person tokens and streams contribution chunks when system headers
+  are available. Hash framing,
+  token bytes and complete release results are unchanged; builds without those
+  headers automatically use the existing R openssl implementation. No new
+  persistent state or owner configuration is needed.
+
+## Date presentation (A-28 / CR-29)
+
+- Corrected (DATES-B4): year-bearing custom factors include every year in a
+  declared `level_range`, including unused middle years and ISO boundary weeks.
+  Empty inputs stay empty, including patterns with literal separators. Empty
+  or disjoint observed dates no longer cause valid public keys to refuse
+  publication. Re-execute affected recipes; no declaration changes are needed.
+
+- Corrected (DATES-B1–B3): native date reducers and raw date columns apply the
+  effective invalid/domain/future policy after selection and before presentation.
+  A selected date beyond `as_of` becomes NA; no earlier event is substituted.
+  Yearless custom factors use first appearance in exactly 2000–2399, and escaped
+  percent directives are literal text in validation, rendering and label keys.
+  Re-execute affected recipes to refresh values and ordered-factor contrasts;
+  no declaration changes are needed. Active `%Y-W%V` remains refused: use `%G-W%V`.
+
+- Newly permitted: `omop_date_spec()`, `omop_date()`, `omop_date_components()`,
+  `omop_date_parts()`, `omop_time_between()` and `omop_age_at()` compose native
+  calendar dates, periods, partial dates, date parts and independently anchored
+  ages. Variable fields override recipe defaults. Calendar, fiscal, ISO/CDC and
+  explicitly profiled epi weeks support ordered factors, numeric coordinates
+  and inclusive period bounds. English names and validated custom patterns are
+  locale independent. Date factors reconcile through the existing controlled
+  factor transport, including public zero-count categories.
+- Corrected: exact-date assignment needs no `dsomop.allow_absolute_dates`
+  setting. All date-derived forms retain class-2 provenance, and publication,
+  protected lineage and aggregate admission remain enforced. Native presentation
+  cannot be erased by an omitted legacy date policy. Numeric measures stay
+  numeric. Legacy `first_date`/`last_date` offsets and `omop_age()` annual ages
+  keep their existing meaning when the new APIs are absent.
+- Newly refused: unsafe/custom patterns (use `%G-W%V` for ISO weeks), incomplete
+  epi profiles, irrelevant spec fields, duplicate part names and overlapping
+  explicit legacy/native date policies. Express native policies in `date_spec`.
+  Formats without a roster date slot refuse a date variable rather than
+  encoding a Date/factor into a numeric sparse matrix.
+- Migration: replace fixed-anchor offsets plus `mutate()`/`cut()` with
+  `omop_date("first_visit", omop_date_spec(precision="quarter"))`; replace
+  annual ages with `omop_age_at("death")` for completed years. Incomplete birth
+  dates give NA unless an explicit imputation or `unit="annual_years"` is chosen.
+  Coarsened labels are ordered factors; request `representation="number"` for
+  trends or `"start"`/`"end"` for Date bounds. Native interval/panel/survival
+  endpoint columns are added alongside unchanged internal day offsets when a
+  recipe date spec requests presentation.
+
+## Concept labels and categorical outputs
+
+- Corrected: concept-valued outputs are unordered factors by semantic type,
+  including renamed reducers, dictionaries and staged components. Vocabulary
+  labels and generated names reconcile by concept ID across retained sites;
+  absent categories retain their declared levels. Presentation-only requests
+  may use different vocabulary versions. Computation continues to use IDs.
+- Newly permitted: `labels` and `column_names` maps on `omop_variable()` and
+  `omop_recipe()`, with variable maps taking precedence. Equal concept labels
+  deliberately merge categories; column names must be unique valid R names.
+  Use `options = list(translate_concepts = FALSE)` for numeric concept IDs and
+  untranslated generated names. Ordinary age/calendar categories still reconcile.
+- Newly permitted: `ds.omop.table(data, column, conns)` pools concept counts
+  while preserving the complete permitted category contract, including unused
+  zero-count levels and labels containing commas. Failed or suppressed site
+  counts are never filled with zeros. Actual missing values stay missing.
+- Corrected: concept model frames retain shared levels during subsetting.
+  CSV staging distinguishes literal `"NA"` and leading backslashes from missing
+  values through the descriptor's `backslash-v1` encoding. Consumers must use
+  the descriptor-aware reader. Existing descriptors retain legacy decoding.
+- Newly refused: malformed/empty label maps, colliding explicit column names,
+  translation with `factor_concepts = FALSE`, and servers lacking the concept
+  presentation capability. Remove that flag or disable translation explicitly;
+  use matching 2.10.4 packages for the new presentation contract. Reconciliation
+  failures roll back all sites and cannot be bypassed with small-site skipping.
+
+## Native execution and compatibility
+
+- Corrected: native outputs and reducers complete the integrated language-2
+  path, preserving BIGINT values for empty/all-NULL streams, population
+  membership, interval coverage, survival censoring and panel source identity.
+  Concept reconciliation retains authenticated person lineage and snapshot
+  provenance when resealing. Final publication and aggregate gates still apply.
+- Corrected: v1 lowering retains supported legacy empty populations, owned
+  cohort references, output shapes and score semantics in the compatibility
+  layer. Native v2 keeps explicit coverage, anchors, censoring and grain rules.
+  Unsupported or ambiguous forms fail with a typed reason; use explicit native
+  declarations when migrating. See the population and extraction vignettes.
+
+## Upgrading from 2.10.3
+
+Install dsOMOP and dsOMOPClient 2.10.4 together, publish dsOMOP's methods and
+Options on Opal, and check `ds.omop.server.version()`. Existing valid secrets
+are reused automatically; no privacy setting, state provisioning, epoch bump,
+ETL hook or TLS change is needed. Re-execute recipes to recreate categorical
+columns. Use `as.character()` for factor labels, never numeric factor codes for
+arithmetic. Legacy date offsets and annual `omop_age()` retain their meaning;
+choose the native date/age helpers explicitly for new semantics. The protected
+release protocol introduced in 2.10.3 is unchanged; pooling still requires
+compatible contracts and logical source identities.
+
+Release verification: [recipe/publication contract run 43515122503](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43515122503)
+passed fresh and upgrade paths on Opal 5.7.6 and 6.1.3;
+[full e2e run 43515127555](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43515127555)
+passed both fresh and upgrade jobs. Both tested harness commit
+`17e5df40f4718bdece091f68d3003c764f061854`. These are evidence for that
+candidate, not a claim of live execution on every supported SQL dialect.
+
 # dsOMOP 2.10.3 (2026-11-13)
 
 Security release: the P0 fixes of the OHDSI-tools audit.

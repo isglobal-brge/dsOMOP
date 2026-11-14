@@ -821,7 +821,11 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
   # validated, normalised IR of a language 2.0 plan; for a v1 plan, which the
   # v1 executors and the legacy publication and DP contracts read in its own
   # fields, the execution plan (its validated IR is ctx$validation$ir).
-  ctx <- .planContext(handle, .planContextIr(validation, plan), output_mode, target_env)
+  # An already-refused plan needs only a status context. Passing no handle
+  # avoids the constructor's dialect probes before that refusal is reported.
+  ctx <- .planContext(if (is.null(validation$error)) handle else NULL,
+                      .planContextIr(validation, plan), output_mode, target_env)
+  ctx$handle <- handle
   if (.dsomopReadSnapshotActive(handle)) {
     # Publication remains provisional until the outer request validates and
     # rolls back its read snapshot. A late failure must revoke assigned rows
@@ -1730,9 +1734,11 @@ omopCdmVersionDS <- function(omop_symbol) {
 #' @export
 omopPlanPreviewDS <- function(omop_symbol, plan) {
   handle <- .getHandle(omop_symbol)
+  # Validate the closed envelope before entering a read snapshot or auditing fields.
+  plan <- .irJsonForm(.ds_arg(plan))
+  .irValidateEnvelope(plan)
   # One read snapshot for every source read of this release (R03).
   .dsomopWithReadSnapshot(handle, {
-    plan <- .ds_arg(plan)
     # Preview is the cheapest, most-repeated data-touching op and is the primary
     # differencing signal, so the data controller must be able to see the
     # sequence of preview calls (banding alone cannot stop iterative probing).
@@ -2900,37 +2906,33 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
   list(levels = levels_col, safe = isTRUE(safe))
 }
 
-#' Report disclosure-safe levels of concept-id columns
+#' Report disclosure-safe concept identities for federation reconciliation
 #'
-#' Aggregate-mode helper for the client-side concept-factor coordination layer.
-#' Scans a previously extracted data frame for columns whose name ends in
-#' \code{_concept_id} (both raw integer ids and translated character names keep
-#' this suffix) and, for each one, reports its distinct non-missing values as
-#' character levels — but only if that level set passes the server's disclosure
-#' gate (\code{\link{.assertSafeLevels}}: at most \code{nfilter.levels.max}
-#' distinct levels and density at or below \code{nfilter.levels.density}).
+#' A-27 outputs carry declared semantic classes and private ID mappings.
+#' This existing aggregate transport reports only policy-permitted ID/name/
+#' vocabulary-version candidates and public declared levels, including
+#' generated-column identities on numeric-only outputs. Observed IDs pass
+#' per-person support, cardinality and density checks before any metadata is
+#' returned. No rows, counts or person keys are disclosed. Staged descriptors
+#' use their manifest-bound presentation contract. The client resolves labels
+#' by ID and broadcasts a complete contract through omopAsFactorColumnsDS.
+#' Older untagged objects retain the legacy factor transport.
 #'
-#' The client collects each server's safe levels, computes their union in one
-#' deterministic order, and broadcasts that shared ordering back via
-#' \code{\link{omopAsFactorColumnsDS}} so the federated factor is harmonized
-#' across all sites. High-cardinality clinical columns that fail the gate are
-#' returned in \code{unsafe} so the client leaves them untouched (raw).
-#'
-#' Only the distinct category labels leave the server, never row-level data,
-#' and only after passing the same disclosure threshold that governs
-#' \code{ds.asFactor}/\code{ds.levels}. The result is returned natively
-#' (aggregate results are not JSON-encoded on the return path).
-#'
-#' @param df A data frame previously assigned server-side by
-#'   \code{\link{omopPlanExecuteDS}}.
-#' @return A named list with three elements: \code{levels} (named list mapping
+#' @param df A data frame or staged descriptor previously assigned server-side
+#'   by \code{\link{omopPlanExecuteDS}}.
+#' @return A named list with \code{levels} (named list mapping
 #'   each safe concept-id column to its character levels), \code{unsafe}
 #'   (character vector of concept-id columns that failed the disclosure gate),
 #'   and \code{nfilter_levels_max} (the server's level cap, so the client can
-#'   reconcile heterogeneous caps).
+#'   reconcile heterogeneous caps). A-27 reports also carry the concept
+#'   protocol, permitted ID/name/version candidates, generated/reference naming
+#'   identities, stable keys and evidence binding.
 #' @seealso \code{\link{omopAsFactorColumnsDS}}, \code{\link{.assertSafeLevels}}
 #' @export
 omopFactorLevelsDS <- function(df) {
+  if (inherits(df, "FlowerDatasetDescriptor") && !is.null(df$metadata$concept_presentation)) return(.conceptStageReport(df))
+  if (is.data.frame(df) && (!is.null(attr(df, "omop_concepts")) ||
+      !is.null(attr(df, "omop_generated_columns")))) return(.conceptLevelReport(df))
   cap <- .omopDisclosureSettings()$nfilter_levels_max
   empty <- list(levels = list(), unsafe = character(0), nfilter_levels_max = cap)
   if (!is.data.frame(df) || !.is_omop.table(df)) {
@@ -2972,51 +2974,52 @@ omopFactorLevelsDS <- function(df) {
   list(levels = safe, unsafe = unsafe, nfilter_levels_max = cap)
 }
 
-#' Recode concept-id columns to a harmonized factor
+#' Apply a complete shared concept presentation contract
 #'
-#' Assign-mode counterpart to \code{\link{omopFactorLevelsDS}}. Given the union
-#' of disclosure-safe levels computed across the federation by the client, this
-#' rebuilds the named concept-id columns of a server-side data frame as factors
-#' that share one identical level ordering across every site. Identical level
-#' coding is what makes pooled \code{ds.glm} / \code{ds.glmSLMA} and
-#' \code{ds.table} behave correctly on the federated factor.
+#' Rebuilds A-27 factors from their retained internal IDs, using one ordered
+#' union at every retained site. Absent local categories are unused levels;
+#' only explicit user recodes may merge identities. Generated names are
+#' validated against the complete component schema. Incomplete coverage,
+#' unsafe levels and invalid names fail and trigger federation rollback.
+#' Vocabulary evidence is rechecked before assignment. Verified protected
+#' lineage is preserved only through this checked identity-preserving route.
+#' Staged files are rewritten privately and their existing manifest updated.
+#' The legacy spec shape remains supported for older untagged objects.
 #'
-#' A value present on only some sites becomes an empty level on the sites that
-#' lack it — valid base R, and the modelling functions handle it (pooled
-#' estimation uses the global data; study-level meta-analysis yields per-study
-#' \code{NA} without crashing). Columns absent from this server are silently
-#' skipped, so the same broadcast spec works for every site.
-#'
-#' Recoding is representation-only: every original observed local level must
-#' pass the same per-level person-support, density, and level-cap gate as
-#' \code{\link{omopFactorLevelsDS}}, and the shared contract must cover every
-#' observed value. If any requested present column fails those conditions, the
-#' complete call silently returns the original frame byte-for-byte. This
-#' fail-quiet, all-or-nothing behavior prevents category-presence probes while
-#' guaranteeing that recoding never creates new missing values. A column with
-#' no observed values may still be recoded to the public contract, and safe
-#' levels present only at another site remain valid empty levels locally.
-#'
-#' The level cap is re-enforced here independently of the client: a column whose
-#' requested level count exceeds \code{nfilter.levels.max} is rejected, so a
-#' buggy or hostile client cannot coerce a disclosive factor onto the server.
-#' On validation error the original data frame keeps its prior value (the
-#' assignment is not applied), so the column safely remains raw.
-#'
-#' @param df A data frame previously assigned server-side by
-#'   \code{\link{omopPlanExecuteDS}}.
-#' @param spec A JSON-encoded named list mapping each concept-id column to the
-#'   shared character levels to impose (decoded via \code{\link{.ds_arg}}).
-#' @return The data frame with the specified concept-id columns recoded as
-#'   harmonized factors; the value is re-assigned to the original symbol.
+#' @param df A data frame or staged descriptor previously assigned server-side
+#'   by \code{\link{omopPlanExecuteDS}}.
+#' @param spec An encoded complete A-27 presentation contract, or the legacy
+#'   column-to-level list for an untagged object (decoded via
+#'   \code{\link{.ds_arg}}).
+#' @param table_column Optional stable concept-column key for a temporary
+#'   in-memory table analysis copy. Its resolved categories receive lossless
+#'   ASCII tokens for dsBase transport; rows, missingness and protected lineage
+#'   are preserved. The caller must remove the copy after analysis.
+#' @return The data frame or staged descriptor with harmonized factors and
+#'   generated names. Table analysis returns a temporary protected copy; normal
+#'   harmonisation reassigns the value to the original symbol.
 #' @seealso \code{\link{omopFactorLevelsDS}}
 #' @export
-omopAsFactorColumnsDS <- function(df, spec) {
-  if (!is.data.frame(df) || !.is_omop.table(df)) {
+omopAsFactorColumnsDS <- function(df, spec, table_column = NULL) {
+  if (!is.null(table_column) && inherits(df, "FlowerDatasetDescriptor")) {
+    stop("Table analysis requires an in-memory published concept factor.", call. = FALSE)
+  }
+  if (inherits(df, "FlowerDatasetDescriptor") && !is.null(df$metadata$concept_presentation)) {
+    return(.conceptRelevelStaged(df, .ds_arg(spec)))
+  }
+  if (!is.data.frame(df) || (!.is_omop.table(df) && is.null(attr(df, "omop_concepts")))) {
     stop("omopAsFactorColumnsDS: target must be a dsOMOP omop.table.",
          call. = FALSE)
   }
   spec <- .ds_arg(spec)
+  tagged <- !is.null(attr(df, "omop_concepts")) || !is.null(attr(df, "omop_generated_columns"))
+  if (tagged && !identical(as.integer(spec$concept_protocol), 1L)) {
+    stop("A complete concept presentation protocol is required for this output.", call. = FALSE)
+  }
+  if (identical(as.integer(spec$concept_protocol), 1L)) return(.conceptRelevel(df, spec, table_column))
+  if (!is.null(table_column)) {
+    stop("Table analysis requires a complete concept presentation protocol.", call. = FALSE)
+  }
   if (!is.list(spec) || length(spec) == 0L) {
     return(df)
   }

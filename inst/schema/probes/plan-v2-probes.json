@@ -30625,6 +30625,2278 @@
     }
   },
   {
+    "id": "I68",
+    "label": "criteria reference preserves case, dots and underscores (A-25)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I69",
+    "label": "index reference preserves recurrent event selection (A-25)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I70",
+    "label": "criteria reference has no native name length cap (A-25)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_",
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I71",
+    "label": "index reference has no native name length cap (A-25)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I72",
+    "label": "criteria reference permits a null numeric reference (A-25)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "legacy_episodes": "observation_periods",
+          "cohort_definition_id": null
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I73",
+    "label": "criteria reference preserves its episode policy and scope anchor (A-25)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "legacy_episodes": "observation_periods",
+          "episode_policy": "all_episodes",
+          "legacy_index_anchor": "scope_cohort"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I74",
+    "label": "index reference preserves historical cohort-row episodes (A-25)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          },
+          "legacy_episodes": "cohort_rows",
+          "legacy_index_anchor": "scope_cohort"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I75",
+    "label": "criteria reference refuses null (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": null,
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I76",
+    "label": "criteria reference refuses numeric (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": 1,
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I77",
+    "label": "criteria reference refuses object (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": {},
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I78",
+    "label": "criteria reference refuses array (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": [
+            "owned"
+          ],
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I79",
+    "label": "criteria reference refuses empty (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "",
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I80",
+    "label": "criteria reference refuses whitespace-padded (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": " owned ",
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I81",
+    "label": "criteria reference refuses malformed (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "bad-name",
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I82",
+    "label": "criteria reference refuses digit-only (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "1",
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I83",
+    "label": "criteria reference refuses padded digit-only (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": " 1 ",
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I84",
+    "label": "criteria reference refuses signed numeric (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "+1",
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I85",
+    "label": "criteria reference refuses exponent numeric (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "1e0",
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I86",
+    "label": "criteria reference refuses decimal numeric (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "1.0",
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I87",
+    "label": "criteria reference conflicts with a numeric population reference (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "legacy_episodes": "observation_periods",
+          "cohort_definition_id": 1
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I88",
+    "label": "criteria reference conflicts with legacy_empty (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "legacy_episodes": "observation_periods",
+          "legacy_empty": true
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I89",
+    "label": "index reference refuses null (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": null,
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I90",
+    "label": "index reference refuses numeric (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": 1,
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I91",
+    "label": "index reference refuses object (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": {},
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I92",
+    "label": "index reference refuses array (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": [
+            "owned"
+          ],
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I93",
+    "label": "index reference refuses empty (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I94",
+    "label": "index reference refuses whitespace-padded (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": " owned ",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I95",
+    "label": "index reference refuses malformed (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "bad-name",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I96",
+    "label": "index reference refuses digit-only (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "1",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I97",
+    "label": "index reference refuses padded digit-only (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": " 1 ",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I98",
+    "label": "index reference refuses signed numeric (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "+1",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I99",
+    "label": "index reference refuses exponent numeric (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "1e0",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I100",
+    "label": "index reference refuses decimal numeric (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "1.0",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I101",
+    "label": "index reference conflicts with a numeric population reference (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          },
+          "cohort_definition_id": 1
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I102",
+    "label": "index reference conflicts with legacy_empty (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          },
+          "legacy_empty": true
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I103",
+    "label": "criteria reference requires legacy_episodes (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "_Owned.Cohort_1"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I104",
+    "label": "criteria reference refuses cohort-row episodes (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "legacy_episodes": "cohort_rows"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I105",
+    "label": "criteria reference refuses null legacy_episodes (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "legacy_episodes": null
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I106",
+    "label": "index reference refuses episode_policy (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          },
+          "episode_policy": "first_episode"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I107",
+    "label": "index reference refuses even null episode_policy (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          },
+          "episode_policy": null
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I108",
+    "label": "setop reference refuses the compatibility property (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "setop",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "setop": {
+            "op": "union",
+            "members": [
+              "a",
+              "b"
+            ]
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I109",
+    "label": "match reference refuses the compatibility property (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "match",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "match": {
+            "cases": "a",
+            "controls": "b",
+            "outcome": {
+              "event": "events"
+            }
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I110",
+    "label": "legacy numeric cohort leaf still refuses names (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "where": {
+            "legacy": {
+              "type": "cohort",
+              "params": {
+                "cohort_definition_id": "owned"
+              }
+            }
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I111",
+    "label": "membership positive identifier (CR-27)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": 1
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I112",
+    "label": "membership zero identifier (CR-27)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": 0
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I113",
+    "label": "membership null identifier (CR-27)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": null
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I114",
+    "label": "membership negative identifier (CR-27)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": -1
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I115",
+    "label": "membership fractional identifier (CR-27)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": 1.5
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I116",
+    "label": "membership string identifier (CR-27)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": "1"
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I117",
+    "label": "membership boolean identifier (CR-27)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I118",
+    "label": "membership array identifier (CR-27)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": [
+              1
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I119",
+    "label": "membership object identifier (CR-27)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": {
+              "value": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "P74",
+    "label": "membership identifier absent without default on native wire (CR-27)",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {}
+        }
+      }
+    }
+  },
+  {
+    "id": "I120",
+    "label": "membership identifier refused on wide output (CR-27)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "wide",
+          "options": {
+            "legacy_cohort_definition_id": 1
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "P73",
+    "label": "membership identifier refused on native wire (CR-27)",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": 1
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I121",
+    "label": "membership minimum integer (A-26)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": -2147483647
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I122",
+    "label": "membership maximum integer (A-26)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": 2147483647
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I123",
+    "label": "membership below integer range (A-26)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": -2147483648
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I124",
+    "label": "membership above integer range (A-26)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": 2147483648
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "P75",
+    "label": "membership compatibility label refused on native wire (A-26)",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": null
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "P76",
+    "label": "membership compatibility label refused on native wire (A-26)",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": -1
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "P77",
+    "label": "membership compatibility label refused on native wire (A-26)",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": 0
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "P68",
+    "label": "criteria legacy_cohort_table refused on the wire (A-25)",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "owned"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "P69",
+    "label": "index legacy_cohort_table refused on the wire (A-25)",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "index": {
+            "source": {
+              "event": "events"
+            }
+          },
+          "legacy_cohort_table": "owned"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "P70",
+    "label": "named population cohort_definition_id refused on the wire (A-25)",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "cohort_definition_id": "owned"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "P71",
+    "label": "named native cohort criterion refused on the wire (A-25)",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "where": {
+            "cohort": {
+              "cohort_definition_id": "owned"
+            }
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "P72",
+    "label": "named index cohort source refused on the wire (A-25)",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "index": {
+            "source": {
+              "cohort_definition_id": "owned"
+            }
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
     "id": "P63",
     "label": "temporal source_analyses with a count-only selection (A-14; a wire field, so valid under both schemas)",
     "schema": "plan-v2",
@@ -36497,5 +38769,1668 @@
     "expect": "invalid",
     "instance": null,
     "instance_text": "{\"version\": 2, \"meta\": {\"language_version\": \"2.0\", \"semantic_version\": \"2.0.0\", \"generated_by\": \"dsOMOPClient\", \"client_version\": \"2.10.3\"}, \"options\": {\"translate_concepts\": true, \"block_sensitive\": true, \"factor_concepts\": true}, \"concept_sets\": {\"t2dm\": {\"concepts\": [201826], \"include_descendants\": true, \"include_mapped\": false, \"exclude\": null}, \"metformin\": {\"concepts\": [1503297], \"include_descendants\": true, \"include_mapped\": false, \"exclude\": null}, \"mi\": {\"concepts\": [4329847], \"include_descendants\": true, \"include_mapped\": false, \"exclude\": null}}, \"events\": {\"hba1c\": {\"table\": \"measurement\", \"table\": \"observation\", \"concept_set\": {\"concepts\": [3004410]}, \"value\": {\"column\": \"value_as_number\"}, \"unit\": {\"target\": 8554, \"convert\": {\"8753\": {\"factor\": 0.0915, \"offset\": 2.15}}, \"unknown\": \"missing\", \"censored\": \"keep\"}, \"where\": {\"var\": \"value\", \"op\": \"not_null\"}}, \"metf_rx\": {\"table\": \"drug_exposure\", \"concept_set\": \"metformin\", \"end\": {\"fallback\": \"days_supply\"}}, \"t2dm_dx\": {\"table\": \"condition_occurrence\", \"concept_set\": \"t2dm\"}, \"mi\": {\"table\": \"condition_occurrence\", \"concept_set\": \"mi\"}}, \"intervals\": {\"metf_era\": {\"source\": {\"event\": \"metf_rx\"}, \"gap\": 30, \"persistence\": 0, \"min_days\": 0, \"by\": \"event\", \"unmapped\": \"own_concept\", \"end\": \"recorded_end\", \"fallback\": \"days_supply\", \"stockpile\": false}}, \"populations\": {\"new_users\": {\"kind\": \"index\", \"label\": \"Metformin new users\", \"index\": {\"source\": {\"interval\": \"metf_era\"}, \"select\": \"first_eligible\", \"n\": 1, \"offset\": 0, \"end\": {\"strategy\": \"interval_end\", \"days\": null, \"pad\": 0}, \"restrict_to_observation\": true}, \"coverage\": {\"policy\": \"unique\", \"on_ambiguous\": \"drop\", \"on_missing\": \"drop\", \"gap\": 0}, \"where\": {\"and\": [{\"observed\": {\"before\": 365, \"after\": null, \"gap\": null}}, {\"has\": {\"source\": {\"event\": \"metf_rx\"}, \"op\": \"==\", \"n\": 0, \"window\": {\"start\": -365, \"end\": -1, \"anchor\": \"index\"}}}, {\"has\": {\"source\": {\"event\": \"t2dm_dx\"}, \"op\": \">=\", \"n\": 1, \"window\": {\"start\": null, \"end\": 0, \"anchor\": \"index\"}}}]}}}, \"variables\": {\"age\": {\"derived\": {\"kind\": \"age\", \"reference\": \"index\", \"reference_date\": null, \"bands\": false, \"age_breaks\": null}}, \"sex\": {\"derived\": {\"kind\": \"sex_mf\"}}, \"hba1c_base\": {\"source\": {\"event\": \"hba1c\"}, \"reducer\": {\"fn\": \"closest_value\", \"value\": \"value\", \"side\": \"before\", \"window\": {\"start\": -180, \"end\": 0, \"anchor\": \"index\"}}}}, \"outputs\": {\"baseline\": {\"rows\": \"new_users\", \"grain\": \"episode\", \"format\": \"wide\", \"columns\": [\"age\", \"sex\", \"hba1c_base\"], \"options\": {\"date_handling\": {\"mode\": \"relative\", \"reference\": \"index\", \"bin_width\": null, \"date_columns\": null}}, \"result_symbol\": \"D_baseline\"}, \"tte\": {\"rows\": \"new_users\", \"grain\": \"episode\", \"format\": \"survival\", \"result_symbol\": \"D_tte\", \"options\": {\"outcomes\": {\"mi\": {\"event\": \"mi\"}}, \"tars\": {\"itt\": {\"start\": 1, \"end\": null, \"anchor\": \"index\"}, \"on_treatment\": {\"start\": {\"anchor\": \"index\", \"offset\": 1}, \"end\": {\"anchor\": \"index_end\", \"offset\": 30}, \"anchor\": \"index\"}}, \"censor\": [\"observation_end\", \"death\"], \"prior_outcome\": {\"lookback\": 365, \"action\": \"exclude\"}, \"format\": \"survival\", \"event_order\": \"first\", \"tie_policy\": \"priority\"}}}, \"publish\": [\"baseline\", \"tte\"]}"
+  },
+  {
+    "id": "P_A27_1",
+    "label": "recipe concept recodes",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "options": {
+        "translate_concepts": true,
+        "block_sensitive": true,
+        "factor_concepts": true,
+        "labels": {
+          "0": "unknown",
+          "45000123": "yes"
+        }
+      },
+      "concept_sets": {
+        "t2dm": {
+          "concepts": [
+            201826
+          ],
+          "include_descendants": true,
+          "include_mapped": false,
+          "exclude": null
+        },
+        "metformin": {
+          "concepts": [
+            1503297
+          ],
+          "include_descendants": true,
+          "include_mapped": false,
+          "exclude": null
+        },
+        "mi": {
+          "concepts": [
+            4329847
+          ],
+          "include_descendants": true,
+          "include_mapped": false,
+          "exclude": null
+        }
+      },
+      "events": {
+        "hba1c": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3004410
+            ]
+          },
+          "value": {
+            "column": "value_as_number"
+          },
+          "unit": {
+            "target": 8554,
+            "convert": {
+              "8753": {
+                "factor": 0.0915,
+                "offset": 2.15
+              }
+            },
+            "unknown": "missing",
+            "censored": "keep"
+          },
+          "where": {
+            "var": "value",
+            "op": "not_null"
+          }
+        },
+        "metf_rx": {
+          "table": "drug_exposure",
+          "concept_set": "metformin",
+          "end": {
+            "fallback": "days_supply"
+          }
+        },
+        "t2dm_dx": {
+          "table": "condition_occurrence",
+          "concept_set": "t2dm"
+        },
+        "mi": {
+          "table": "condition_occurrence",
+          "concept_set": "mi"
+        }
+      },
+      "intervals": {
+        "metf_era": {
+          "source": {
+            "event": "metf_rx"
+          },
+          "gap": 30,
+          "persistence": 0,
+          "min_days": 0,
+          "by": "event",
+          "unmapped": "own_concept",
+          "end": "recorded_end",
+          "fallback": "days_supply",
+          "stockpile": false
+        }
+      },
+      "populations": {
+        "new_users": {
+          "kind": "index",
+          "label": "Metformin new users",
+          "index": {
+            "source": {
+              "interval": "metf_era"
+            },
+            "select": "first_eligible",
+            "n": 1,
+            "offset": 0,
+            "end": {
+              "strategy": "interval_end",
+              "days": null,
+              "pad": 0
+            },
+            "restrict_to_observation": true
+          },
+          "coverage": {
+            "policy": "unique",
+            "on_ambiguous": "drop",
+            "on_missing": "drop",
+            "gap": 0
+          },
+          "where": {
+            "and": [
+              {
+                "observed": {
+                  "before": 365,
+                  "after": null,
+                  "gap": null
+                }
+              },
+              {
+                "has": {
+                  "source": {
+                    "event": "metf_rx"
+                  },
+                  "op": "==",
+                  "n": 0,
+                  "window": {
+                    "start": -365,
+                    "end": -1,
+                    "anchor": "index"
+                  }
+                }
+              },
+              {
+                "has": {
+                  "source": {
+                    "event": "t2dm_dx"
+                  },
+                  "op": ">=",
+                  "n": 1,
+                  "window": {
+                    "start": null,
+                    "end": 0,
+                    "anchor": "index"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "variables": {
+        "age": {
+          "derived": {
+            "kind": "age",
+            "reference": "index",
+            "reference_date": null,
+            "bands": false,
+            "age_breaks": null
+          }
+        },
+        "sex": {
+          "derived": {
+            "kind": "sex_mf"
+          }
+        },
+        "hba1c_base": {
+          "source": {
+            "event": "hba1c"
+          },
+          "reducer": {
+            "fn": "closest_value",
+            "value": "value",
+            "side": "before",
+            "window": {
+              "start": -180,
+              "end": 0,
+              "anchor": "index"
+            }
+          }
+        }
+      },
+      "outputs": {
+        "baseline": {
+          "rows": "new_users",
+          "grain": "episode",
+          "format": "wide",
+          "columns": [
+            "age",
+            "sex",
+            "hba1c_base"
+          ],
+          "options": {
+            "date_handling": {
+              "mode": "relative",
+              "reference": "index",
+              "bin_width": null,
+              "date_columns": null
+            }
+          },
+          "result_symbol": "D_baseline"
+        },
+        "tte": {
+          "rows": "new_users",
+          "grain": "episode",
+          "format": "survival",
+          "result_symbol": "D_tte",
+          "options": {
+            "outcomes": {
+              "mi": {
+                "event": "mi"
+              }
+            },
+            "tars": {
+              "itt": {
+                "start": 1,
+                "end": null,
+                "anchor": "index"
+              },
+              "on_treatment": {
+                "start": {
+                  "anchor": "index",
+                  "offset": 1
+                },
+                "end": {
+                  "anchor": "index_end",
+                  "offset": 30
+                },
+                "anchor": "index"
+              }
+            },
+            "censor": [
+              "observation_end",
+              "death"
+            ],
+            "prior_outcome": {
+              "lookback": 365,
+              "action": "exclude"
+            },
+            "format": "survival",
+            "event_order": "first",
+            "tie_policy": "priority"
+          }
+        }
+      },
+      "publish": [
+        "baseline",
+        "tte"
+      ]
+    }
+  },
+  {
+    "id": "P_A27_2",
+    "label": "array concept map refused",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "options": {
+        "translate_concepts": true,
+        "block_sensitive": true,
+        "factor_concepts": true,
+        "labels": [
+          "yes"
+        ]
+      },
+      "concept_sets": {
+        "t2dm": {
+          "concepts": [
+            201826
+          ],
+          "include_descendants": true,
+          "include_mapped": false,
+          "exclude": null
+        },
+        "metformin": {
+          "concepts": [
+            1503297
+          ],
+          "include_descendants": true,
+          "include_mapped": false,
+          "exclude": null
+        },
+        "mi": {
+          "concepts": [
+            4329847
+          ],
+          "include_descendants": true,
+          "include_mapped": false,
+          "exclude": null
+        }
+      },
+      "events": {
+        "hba1c": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3004410
+            ]
+          },
+          "value": {
+            "column": "value_as_number"
+          },
+          "unit": {
+            "target": 8554,
+            "convert": {
+              "8753": {
+                "factor": 0.0915,
+                "offset": 2.15
+              }
+            },
+            "unknown": "missing",
+            "censored": "keep"
+          },
+          "where": {
+            "var": "value",
+            "op": "not_null"
+          }
+        },
+        "metf_rx": {
+          "table": "drug_exposure",
+          "concept_set": "metformin",
+          "end": {
+            "fallback": "days_supply"
+          }
+        },
+        "t2dm_dx": {
+          "table": "condition_occurrence",
+          "concept_set": "t2dm"
+        },
+        "mi": {
+          "table": "condition_occurrence",
+          "concept_set": "mi"
+        }
+      },
+      "intervals": {
+        "metf_era": {
+          "source": {
+            "event": "metf_rx"
+          },
+          "gap": 30,
+          "persistence": 0,
+          "min_days": 0,
+          "by": "event",
+          "unmapped": "own_concept",
+          "end": "recorded_end",
+          "fallback": "days_supply",
+          "stockpile": false
+        }
+      },
+      "populations": {
+        "new_users": {
+          "kind": "index",
+          "label": "Metformin new users",
+          "index": {
+            "source": {
+              "interval": "metf_era"
+            },
+            "select": "first_eligible",
+            "n": 1,
+            "offset": 0,
+            "end": {
+              "strategy": "interval_end",
+              "days": null,
+              "pad": 0
+            },
+            "restrict_to_observation": true
+          },
+          "coverage": {
+            "policy": "unique",
+            "on_ambiguous": "drop",
+            "on_missing": "drop",
+            "gap": 0
+          },
+          "where": {
+            "and": [
+              {
+                "observed": {
+                  "before": 365,
+                  "after": null,
+                  "gap": null
+                }
+              },
+              {
+                "has": {
+                  "source": {
+                    "event": "metf_rx"
+                  },
+                  "op": "==",
+                  "n": 0,
+                  "window": {
+                    "start": -365,
+                    "end": -1,
+                    "anchor": "index"
+                  }
+                }
+              },
+              {
+                "has": {
+                  "source": {
+                    "event": "t2dm_dx"
+                  },
+                  "op": ">=",
+                  "n": 1,
+                  "window": {
+                    "start": null,
+                    "end": 0,
+                    "anchor": "index"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "variables": {
+        "age": {
+          "derived": {
+            "kind": "age",
+            "reference": "index",
+            "reference_date": null,
+            "bands": false,
+            "age_breaks": null
+          }
+        },
+        "sex": {
+          "derived": {
+            "kind": "sex_mf"
+          }
+        },
+        "hba1c_base": {
+          "source": {
+            "event": "hba1c"
+          },
+          "reducer": {
+            "fn": "closest_value",
+            "value": "value",
+            "side": "before",
+            "window": {
+              "start": -180,
+              "end": 0,
+              "anchor": "index"
+            }
+          }
+        }
+      },
+      "outputs": {
+        "baseline": {
+          "rows": "new_users",
+          "grain": "episode",
+          "format": "wide",
+          "columns": [
+            "age",
+            "sex",
+            "hba1c_base"
+          ],
+          "options": {
+            "date_handling": {
+              "mode": "relative",
+              "reference": "index",
+              "bin_width": null,
+              "date_columns": null
+            }
+          },
+          "result_symbol": "D_baseline"
+        },
+        "tte": {
+          "rows": "new_users",
+          "grain": "episode",
+          "format": "survival",
+          "result_symbol": "D_tte",
+          "options": {
+            "outcomes": {
+              "mi": {
+                "event": "mi"
+              }
+            },
+            "tars": {
+              "itt": {
+                "start": 1,
+                "end": null,
+                "anchor": "index"
+              },
+              "on_treatment": {
+                "start": {
+                  "anchor": "index",
+                  "offset": 1
+                },
+                "end": {
+                  "anchor": "index_end",
+                  "offset": 30
+                },
+                "anchor": "index"
+              }
+            },
+            "censor": [
+              "observation_end",
+              "death"
+            ],
+            "prior_outcome": {
+              "lookback": 365,
+              "action": "exclude"
+            },
+            "format": "survival",
+            "event_order": "first",
+            "tie_policy": "priority"
+          }
+        }
+      },
+      "publish": [
+        "baseline",
+        "tte"
+      ]
+    }
+  },
+  {
+    "id": "P_A27_3",
+    "label": "null concept map member refused",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "options": {
+        "translate_concepts": true,
+        "block_sensitive": true,
+        "factor_concepts": true,
+        "labels": {
+          "1": null
+        }
+      },
+      "concept_sets": {
+        "t2dm": {
+          "concepts": [
+            201826
+          ],
+          "include_descendants": true,
+          "include_mapped": false,
+          "exclude": null
+        },
+        "metformin": {
+          "concepts": [
+            1503297
+          ],
+          "include_descendants": true,
+          "include_mapped": false,
+          "exclude": null
+        },
+        "mi": {
+          "concepts": [
+            4329847
+          ],
+          "include_descendants": true,
+          "include_mapped": false,
+          "exclude": null
+        }
+      },
+      "events": {
+        "hba1c": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3004410
+            ]
+          },
+          "value": {
+            "column": "value_as_number"
+          },
+          "unit": {
+            "target": 8554,
+            "convert": {
+              "8753": {
+                "factor": 0.0915,
+                "offset": 2.15
+              }
+            },
+            "unknown": "missing",
+            "censored": "keep"
+          },
+          "where": {
+            "var": "value",
+            "op": "not_null"
+          }
+        },
+        "metf_rx": {
+          "table": "drug_exposure",
+          "concept_set": "metformin",
+          "end": {
+            "fallback": "days_supply"
+          }
+        },
+        "t2dm_dx": {
+          "table": "condition_occurrence",
+          "concept_set": "t2dm"
+        },
+        "mi": {
+          "table": "condition_occurrence",
+          "concept_set": "mi"
+        }
+      },
+      "intervals": {
+        "metf_era": {
+          "source": {
+            "event": "metf_rx"
+          },
+          "gap": 30,
+          "persistence": 0,
+          "min_days": 0,
+          "by": "event",
+          "unmapped": "own_concept",
+          "end": "recorded_end",
+          "fallback": "days_supply",
+          "stockpile": false
+        }
+      },
+      "populations": {
+        "new_users": {
+          "kind": "index",
+          "label": "Metformin new users",
+          "index": {
+            "source": {
+              "interval": "metf_era"
+            },
+            "select": "first_eligible",
+            "n": 1,
+            "offset": 0,
+            "end": {
+              "strategy": "interval_end",
+              "days": null,
+              "pad": 0
+            },
+            "restrict_to_observation": true
+          },
+          "coverage": {
+            "policy": "unique",
+            "on_ambiguous": "drop",
+            "on_missing": "drop",
+            "gap": 0
+          },
+          "where": {
+            "and": [
+              {
+                "observed": {
+                  "before": 365,
+                  "after": null,
+                  "gap": null
+                }
+              },
+              {
+                "has": {
+                  "source": {
+                    "event": "metf_rx"
+                  },
+                  "op": "==",
+                  "n": 0,
+                  "window": {
+                    "start": -365,
+                    "end": -1,
+                    "anchor": "index"
+                  }
+                }
+              },
+              {
+                "has": {
+                  "source": {
+                    "event": "t2dm_dx"
+                  },
+                  "op": ">=",
+                  "n": 1,
+                  "window": {
+                    "start": null,
+                    "end": 0,
+                    "anchor": "index"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "variables": {
+        "age": {
+          "derived": {
+            "kind": "age",
+            "reference": "index",
+            "reference_date": null,
+            "bands": false,
+            "age_breaks": null
+          }
+        },
+        "sex": {
+          "derived": {
+            "kind": "sex_mf"
+          }
+        },
+        "hba1c_base": {
+          "source": {
+            "event": "hba1c"
+          },
+          "reducer": {
+            "fn": "closest_value",
+            "value": "value",
+            "side": "before",
+            "window": {
+              "start": -180,
+              "end": 0,
+              "anchor": "index"
+            }
+          }
+        }
+      },
+      "outputs": {
+        "baseline": {
+          "rows": "new_users",
+          "grain": "episode",
+          "format": "wide",
+          "columns": [
+            "age",
+            "sex",
+            "hba1c_base"
+          ],
+          "options": {
+            "date_handling": {
+              "mode": "relative",
+              "reference": "index",
+              "bin_width": null,
+              "date_columns": null
+            }
+          },
+          "result_symbol": "D_baseline"
+        },
+        "tte": {
+          "rows": "new_users",
+          "grain": "episode",
+          "format": "survival",
+          "result_symbol": "D_tte",
+          "options": {
+            "outcomes": {
+              "mi": {
+                "event": "mi"
+              }
+            },
+            "tars": {
+              "itt": {
+                "start": 1,
+                "end": null,
+                "anchor": "index"
+              },
+              "on_treatment": {
+                "start": {
+                  "anchor": "index",
+                  "offset": 1
+                },
+                "end": {
+                  "anchor": "index_end",
+                  "offset": 30
+                },
+                "anchor": "index"
+              }
+            },
+            "censor": [
+              "observation_end",
+              "death"
+            ],
+            "prior_outcome": {
+              "lookback": 365,
+              "action": "exclude"
+            },
+            "format": "survival",
+            "event_order": "first",
+            "tie_policy": "priority"
+          }
+        }
+      },
+      "publish": [
+        "baseline",
+        "tte"
+      ]
+    }
+  },
+  {
+    "id": "P_A27_4",
+    "label": "noncanonical concept key refused",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "options": {
+        "translate_concepts": true,
+        "block_sensitive": true,
+        "factor_concepts": true,
+        "labels": {
+          "01": "yes"
+        }
+      },
+      "concept_sets": {
+        "t2dm": {
+          "concepts": [
+            201826
+          ],
+          "include_descendants": true,
+          "include_mapped": false,
+          "exclude": null
+        },
+        "metformin": {
+          "concepts": [
+            1503297
+          ],
+          "include_descendants": true,
+          "include_mapped": false,
+          "exclude": null
+        },
+        "mi": {
+          "concepts": [
+            4329847
+          ],
+          "include_descendants": true,
+          "include_mapped": false,
+          "exclude": null
+        }
+      },
+      "events": {
+        "hba1c": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3004410
+            ]
+          },
+          "value": {
+            "column": "value_as_number"
+          },
+          "unit": {
+            "target": 8554,
+            "convert": {
+              "8753": {
+                "factor": 0.0915,
+                "offset": 2.15
+              }
+            },
+            "unknown": "missing",
+            "censored": "keep"
+          },
+          "where": {
+            "var": "value",
+            "op": "not_null"
+          }
+        },
+        "metf_rx": {
+          "table": "drug_exposure",
+          "concept_set": "metformin",
+          "end": {
+            "fallback": "days_supply"
+          }
+        },
+        "t2dm_dx": {
+          "table": "condition_occurrence",
+          "concept_set": "t2dm"
+        },
+        "mi": {
+          "table": "condition_occurrence",
+          "concept_set": "mi"
+        }
+      },
+      "intervals": {
+        "metf_era": {
+          "source": {
+            "event": "metf_rx"
+          },
+          "gap": 30,
+          "persistence": 0,
+          "min_days": 0,
+          "by": "event",
+          "unmapped": "own_concept",
+          "end": "recorded_end",
+          "fallback": "days_supply",
+          "stockpile": false
+        }
+      },
+      "populations": {
+        "new_users": {
+          "kind": "index",
+          "label": "Metformin new users",
+          "index": {
+            "source": {
+              "interval": "metf_era"
+            },
+            "select": "first_eligible",
+            "n": 1,
+            "offset": 0,
+            "end": {
+              "strategy": "interval_end",
+              "days": null,
+              "pad": 0
+            },
+            "restrict_to_observation": true
+          },
+          "coverage": {
+            "policy": "unique",
+            "on_ambiguous": "drop",
+            "on_missing": "drop",
+            "gap": 0
+          },
+          "where": {
+            "and": [
+              {
+                "observed": {
+                  "before": 365,
+                  "after": null,
+                  "gap": null
+                }
+              },
+              {
+                "has": {
+                  "source": {
+                    "event": "metf_rx"
+                  },
+                  "op": "==",
+                  "n": 0,
+                  "window": {
+                    "start": -365,
+                    "end": -1,
+                    "anchor": "index"
+                  }
+                }
+              },
+              {
+                "has": {
+                  "source": {
+                    "event": "t2dm_dx"
+                  },
+                  "op": ">=",
+                  "n": 1,
+                  "window": {
+                    "start": null,
+                    "end": 0,
+                    "anchor": "index"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "variables": {
+        "age": {
+          "derived": {
+            "kind": "age",
+            "reference": "index",
+            "reference_date": null,
+            "bands": false,
+            "age_breaks": null
+          }
+        },
+        "sex": {
+          "derived": {
+            "kind": "sex_mf"
+          }
+        },
+        "hba1c_base": {
+          "source": {
+            "event": "hba1c"
+          },
+          "reducer": {
+            "fn": "closest_value",
+            "value": "value",
+            "side": "before",
+            "window": {
+              "start": -180,
+              "end": 0,
+              "anchor": "index"
+            }
+          }
+        }
+      },
+      "outputs": {
+        "baseline": {
+          "rows": "new_users",
+          "grain": "episode",
+          "format": "wide",
+          "columns": [
+            "age",
+            "sex",
+            "hba1c_base"
+          ],
+          "options": {
+            "date_handling": {
+              "mode": "relative",
+              "reference": "index",
+              "bin_width": null,
+              "date_columns": null
+            }
+          },
+          "result_symbol": "D_baseline"
+        },
+        "tte": {
+          "rows": "new_users",
+          "grain": "episode",
+          "format": "survival",
+          "result_symbol": "D_tte",
+          "options": {
+            "outcomes": {
+              "mi": {
+                "event": "mi"
+              }
+            },
+            "tars": {
+              "itt": {
+                "start": 1,
+                "end": null,
+                "anchor": "index"
+              },
+              "on_treatment": {
+                "start": {
+                  "anchor": "index",
+                  "offset": 1
+                },
+                "end": {
+                  "anchor": "index_end",
+                  "offset": 30
+                },
+                "anchor": "index"
+              }
+            },
+            "censor": [
+              "observation_end",
+              "death"
+            ],
+            "prior_outcome": {
+              "lookback": 365,
+              "action": "exclude"
+            },
+            "format": "survival",
+            "event_order": "first",
+            "tie_policy": "priority"
+          }
+        }
+      },
+      "publish": [
+        "baseline",
+        "tte"
+      ]
+    }
+  },
+  {
+    "id": "P_A27_5",
+    "label": "generated-name overrides",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "options": {
+        "translate_concepts": true,
+        "block_sensitive": true,
+        "factor_concepts": true,
+        "column_names": {
+          "education_45000123": "educated"
+        }
+      },
+      "concept_sets": {
+        "t2dm": {
+          "concepts": [
+            201826
+          ],
+          "include_descendants": true,
+          "include_mapped": false,
+          "exclude": null
+        },
+        "metformin": {
+          "concepts": [
+            1503297
+          ],
+          "include_descendants": true,
+          "include_mapped": false,
+          "exclude": null
+        },
+        "mi": {
+          "concepts": [
+            4329847
+          ],
+          "include_descendants": true,
+          "include_mapped": false,
+          "exclude": null
+        }
+      },
+      "events": {
+        "hba1c": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3004410
+            ]
+          },
+          "value": {
+            "column": "value_as_number"
+          },
+          "unit": {
+            "target": 8554,
+            "convert": {
+              "8753": {
+                "factor": 0.0915,
+                "offset": 2.15
+              }
+            },
+            "unknown": "missing",
+            "censored": "keep"
+          },
+          "where": {
+            "var": "value",
+            "op": "not_null"
+          }
+        },
+        "metf_rx": {
+          "table": "drug_exposure",
+          "concept_set": "metformin",
+          "end": {
+            "fallback": "days_supply"
+          }
+        },
+        "t2dm_dx": {
+          "table": "condition_occurrence",
+          "concept_set": "t2dm"
+        },
+        "mi": {
+          "table": "condition_occurrence",
+          "concept_set": "mi"
+        }
+      },
+      "intervals": {
+        "metf_era": {
+          "source": {
+            "event": "metf_rx"
+          },
+          "gap": 30,
+          "persistence": 0,
+          "min_days": 0,
+          "by": "event",
+          "unmapped": "own_concept",
+          "end": "recorded_end",
+          "fallback": "days_supply",
+          "stockpile": false
+        }
+      },
+      "populations": {
+        "new_users": {
+          "kind": "index",
+          "label": "Metformin new users",
+          "index": {
+            "source": {
+              "interval": "metf_era"
+            },
+            "select": "first_eligible",
+            "n": 1,
+            "offset": 0,
+            "end": {
+              "strategy": "interval_end",
+              "days": null,
+              "pad": 0
+            },
+            "restrict_to_observation": true
+          },
+          "coverage": {
+            "policy": "unique",
+            "on_ambiguous": "drop",
+            "on_missing": "drop",
+            "gap": 0
+          },
+          "where": {
+            "and": [
+              {
+                "observed": {
+                  "before": 365,
+                  "after": null,
+                  "gap": null
+                }
+              },
+              {
+                "has": {
+                  "source": {
+                    "event": "metf_rx"
+                  },
+                  "op": "==",
+                  "n": 0,
+                  "window": {
+                    "start": -365,
+                    "end": -1,
+                    "anchor": "index"
+                  }
+                }
+              },
+              {
+                "has": {
+                  "source": {
+                    "event": "t2dm_dx"
+                  },
+                  "op": ">=",
+                  "n": 1,
+                  "window": {
+                    "start": null,
+                    "end": 0,
+                    "anchor": "index"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "variables": {
+        "age": {
+          "derived": {
+            "kind": "age",
+            "reference": "index",
+            "reference_date": null,
+            "bands": false,
+            "age_breaks": null
+          }
+        },
+        "sex": {
+          "derived": {
+            "kind": "sex_mf"
+          }
+        },
+        "hba1c_base": {
+          "source": {
+            "event": "hba1c"
+          },
+          "reducer": {
+            "fn": "closest_value",
+            "value": "value",
+            "side": "before",
+            "window": {
+              "start": -180,
+              "end": 0,
+              "anchor": "index"
+            }
+          }
+        }
+      },
+      "outputs": {
+        "baseline": {
+          "rows": "new_users",
+          "grain": "episode",
+          "format": "wide",
+          "columns": [
+            "age",
+            "sex",
+            "hba1c_base"
+          ],
+          "options": {
+            "date_handling": {
+              "mode": "relative",
+              "reference": "index",
+              "bin_width": null,
+              "date_columns": null
+            }
+          },
+          "result_symbol": "D_baseline"
+        },
+        "tte": {
+          "rows": "new_users",
+          "grain": "episode",
+          "format": "survival",
+          "result_symbol": "D_tte",
+          "options": {
+            "outcomes": {
+              "mi": {
+                "event": "mi"
+              }
+            },
+            "tars": {
+              "itt": {
+                "start": 1,
+                "end": null,
+                "anchor": "index"
+              },
+              "on_treatment": {
+                "start": {
+                  "anchor": "index",
+                  "offset": 1
+                },
+                "end": {
+                  "anchor": "index_end",
+                  "offset": 30
+                },
+                "anchor": "index"
+              }
+            },
+            "censor": [
+              "observation_end",
+              "death"
+            ],
+            "prior_outcome": {
+              "lookback": 365,
+              "action": "exclude"
+            },
+            "format": "survival",
+            "event_order": "first",
+            "tie_policy": "priority"
+          }
+        }
+      },
+      "publish": [
+        "baseline",
+        "tte"
+      ]
+    }
+  },
+  {
+    "id": "A28-01",
+    "label": "native date sources, age and part",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A28 acceptance"
+      },
+      "populations": {
+        "base": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "day": {
+          "derived": {
+            "kind": "calendar_date",
+            "reference": {
+              "date": "0004-02-29"
+            }
+          }
+        },
+        "age": {
+          "derived": {
+            "kind": "age_at",
+            "reference": {
+              "date": "2024-06-01"
+            },
+            "bands": true
+          }
+        },
+        "part": {
+          "derived": {
+            "kind": "date_part",
+            "reference": {
+              "kind": "date_components",
+              "year": {
+                "kind": "integer",
+                "value": 2024
+              },
+              "month": {
+                "kind": "integer",
+                "value": 2
+              }
+            },
+            "part": "month"
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "base",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "A28-02",
+    "label": "unknown native date spec field",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A28 acceptance"
+      },
+      "populations": {
+        "base": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "day": {
+          "derived": {
+            "kind": "calendar_date",
+            "reference": {
+              "date": "0004-02-29"
+            }
+          },
+          "date_spec": {
+            "sql": "now()"
+          }
+        },
+        "age": {
+          "derived": {
+            "kind": "age_at",
+            "reference": {
+              "date": "2024-06-01"
+            },
+            "bands": true
+          }
+        },
+        "part": {
+          "derived": {
+            "kind": "date_part",
+            "reference": {
+              "kind": "date_components",
+              "year": {
+                "kind": "integer",
+                "value": 2024
+              },
+              "month": {
+                "kind": "integer",
+                "value": 2
+              }
+            },
+            "part": "month"
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "base",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "A28-03",
+    "label": "unknown calendar precision",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A28 acceptance"
+      },
+      "populations": {
+        "base": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "day": {
+          "derived": {
+            "kind": "calendar_date",
+            "reference": {
+              "date": "0004-02-29"
+            }
+          },
+          "date_spec": {
+            "precision": "hour"
+          }
+        },
+        "age": {
+          "derived": {
+            "kind": "age_at",
+            "reference": {
+              "date": "2024-06-01"
+            },
+            "bands": true
+          }
+        },
+        "part": {
+          "derived": {
+            "kind": "date_part",
+            "reference": {
+              "kind": "date_components",
+              "year": {
+                "kind": "integer",
+                "value": 2024
+              },
+              "month": {
+                "kind": "integer",
+                "value": 2
+              }
+            },
+            "part": "month"
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "base",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "A28-04",
+    "label": "no arbitrary component operand",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A28 acceptance"
+      },
+      "populations": {
+        "base": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "day": {
+          "derived": {
+            "kind": "calendar_date",
+            "reference": {
+              "date": "0004-02-29"
+            }
+          }
+        },
+        "age": {
+          "derived": {
+            "kind": "age_at",
+            "reference": {
+              "date": "2024-06-01"
+            },
+            "bands": true
+          }
+        },
+        "part": {
+          "derived": {
+            "kind": "date_part",
+            "reference": {
+              "kind": "date_components",
+              "year": {
+                "kind": "sql",
+                "value": "year()"
+              },
+              "month": {
+                "kind": "integer",
+                "value": 2
+              }
+            },
+            "part": "month"
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "base",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "A28-05",
+    "label": "native broadcast must be boolean",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A28 acceptance"
+      },
+      "populations": {
+        "base": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "day": {
+          "derived": {
+            "kind": "calendar_date",
+            "reference": {
+              "date": "0004-02-29"
+            }
+          },
+          "broadcast": 1
+        },
+        "age": {
+          "derived": {
+            "kind": "age_at",
+            "reference": {
+              "date": "2024-06-01"
+            },
+            "bands": true
+          }
+        },
+        "part": {
+          "derived": {
+            "kind": "date_part",
+            "reference": {
+              "kind": "date_components",
+              "year": {
+                "kind": "integer",
+                "value": 2024
+              },
+              "month": {
+                "kind": "integer",
+                "value": 2
+              }
+            },
+            "part": "month"
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "base",
+          "format": "wide"
+        }
+      }
+    }
   }
 ]

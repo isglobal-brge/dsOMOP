@@ -444,7 +444,12 @@ test_that("semantic rules of populations refuse before any query", {
   strata <- list(list(strata = list(source = list(event = "anc"),
                                     window = list(start = list(anchor = list(source = list(event = "anc")), offset = 0L),
                                                   end = NULL, anchor = "index"))))
-  refuse(.ws6_plan(ev, c(base, list(m = match(match = strata)))), "strata window anchors at the case time")
+  # Explicit source bounds are supported by A-20(b), including on matching
+  # strata. The normal reference validator still refuses an unknown source.
+  anchored <- .ws6_plan(ev, c(base, list(m = match(match = strata))))
+  expect_s3_class(.irPrepare(anchored), "dsomop_ir")
+  anchored$populations$m$match$match[[1L]]$strata$window$start$anchor$source$event <- "missing_anchor"
+  refuse(anchored, "missing_anchor")
   refuse(.ws6_plan(ev, list(a = .ws6_idx("all"),
                             b = list(kind = "criteria", parent = "a", episode_policy = "any_episode"))),
          "a child inherits its parent's episodes")

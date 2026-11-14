@@ -146,7 +146,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "drug_cost_60": {
       "source": {
@@ -175,7 +177,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "supply_90": {
       "source": {
@@ -204,7 +208,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "observed_90": {
       "derived": {
@@ -214,7 +220,9 @@
           "end": 90,
           "anchor": "index"
         }
-      }
+      },
+      "labels": {},
+      "column_names": {}
     },
     "pdc_num_eff_90": {
       "source": {
@@ -243,7 +251,9 @@
         "unit": "day",
         "fills": "start_in_window"
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "pdc_num_rec_90": {
       "source": {
@@ -272,7 +282,9 @@
         "coverage": "recorded",
         "fills": "start_in_window"
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "covered_eff_90": {
       "source": {
@@ -301,7 +313,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "covered_rec_90": {
       "source": {
@@ -330,7 +344,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "observed_10": {
       "derived": {
@@ -340,7 +356,9 @@
           "end": 10,
           "anchor": "index"
         }
-      }
+      },
+      "labels": {},
+      "column_names": {}
     },
     "pdc_num_eff_10": {
       "source": {
@@ -369,7 +387,9 @@
         "unit": "day",
         "fills": "start_in_window"
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "covered_eff_10": {
       "source": {
@@ -398,7 +418,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     }
   },
   "outputs": {
@@ -423,20 +445,22 @@
       ],
       "sources": [],
       "options": {
+        "time_window": null,
         "date_handling": {
           "mode": "relative",
           "reference": "index",
           "bin_width": null,
           "date_columns": null
-        },
-        "time_window": null
+        }
       }
     }
   },
   "options": {
     "translate_concepts": true,
     "block_sensitive": true,
-    "factor_concepts": true
+    "factor_concepts": true,
+    "labels": {},
+    "column_names": {}
   },
   "concept_sets": {},
   "publish": [

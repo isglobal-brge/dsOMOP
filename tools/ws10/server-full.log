@@ -1,0 +1,4 @@
+FULL SUITE SKIPPED by the coordinator (David, 12 Nov: speed first). Run only the test files that cover your change,
+with a FILTER regex (for example 'compile-interval|ws5-acceptance'). The final full pass happens once, at integration
+and release; only those jobs set RTEST_FULL=1. Report which filtered files you ran.
+RESULT skipped: full suite disabled (use a filter)

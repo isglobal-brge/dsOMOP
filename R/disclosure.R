@@ -109,10 +109,10 @@
 #' These default to FALSE (locked). Only the server admin / data controller
 #' can enable them. Analysts cannot request bypass directly.
 #' \describe{
-#'   \item{\code{allow_absolute_dates} (default FALSE)}{When FALSE, any
-#'     extraction request with \code{date_handling = "absolute"} is rejected.
-#'     Raw dates are quasi-identifiers per OMOP Privacy Guidance.
-#'     Set via: \code{options(dsomop.allow_absolute_dates = TRUE)}}
+#'   \item{\code{allow_absolute_dates} (default FALSE)}{Legacy setting retained
+#'     for configuration compatibility. Exact class-2 dates are permitted on
+#'     server-side assignment paths without this option (A-28). Aggregate
+#'     admission and disclosure checks remain unchanged.}
 #'   \item{\code{allow_sensitive_cols} (default FALSE)}{When FALSE, any
 #'     extraction request with \code{block_sensitive = FALSE} is rejected.
 #'     Sensitive columns include source_value fields, free text, provider

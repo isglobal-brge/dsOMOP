@@ -1,0 +1,2 @@
+# Binary R openssl installations need no additional system development library.
+# Use the identical portable R implementation on Windows.

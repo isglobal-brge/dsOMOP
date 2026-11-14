@@ -1,0 +1,9 @@
+FAILURES BY FILE
+             file blocks failed errors
+ test-e2e4-mdrr.R      1      0      1
+
+FAILING TESTS
+test-e2e4-mdrr.R | unavailable protected MDRR has a stable reason on every route and alias | failed=0 error=TRUE
+
+RESULT failed: 0 errors: 1 skipped: 0 passed: 3 
+RESULT failed: 0 errors: 1 skipped: 0 passed: 3 

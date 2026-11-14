@@ -1244,6 +1244,7 @@
       cdm_datatype = character(nrow(db_cols)),
       db_datatype  = db_cols$data_type,
       concept_role = character(nrow(db_cols)),
+      semantic_class = rep("ordinary", nrow(db_cols)),
       fk_domain    = character(nrow(db_cols)),
       is_date      = logical(nrow(db_cols)),
       is_extension = !db_cols$column_name %in% standard_cols,
@@ -1280,6 +1281,8 @@
         # Introspection-only: use heuristic classification
         col_df$concept_role[j] <- .classifyConceptRoleHeuristic(tbl_name, col_name)
       }
+
+      col_df$semantic_class[j] <- if (col_df$concept_role[j] != "non_concept" && nzchar(col_df$concept_role[j])) "concept" else "ordinary"
 
       col_df$is_date[j] <- grepl("_date$|_datetime$", col_name) ||
         grepl("^date$|^datetime$", tolower(col_df$cdm_datatype[j]))

@@ -1,0 +1,51 @@
+dsOMOP v2.10.2 loaded. OMOP CDM resource resolver registered.
+ir-review: ......................................................................................................................................[dsomop-audit] 2026-11-12T19:18:44+0000 method=omopPlanExplainDS detail={"plan":{"version":2,"meta":{"language_version":"2.0","semantic_version":"2.0.0","generated_by":"dsOMOPClient","client_version":"2.10.3"},"options":{"translate_concepts":true,"block_sensitive":true,"factor_concepts":true},"concept_sets":{"t2dm":{"concepts":[201826],"include_descendants":true,"include_mapped":false,"exclude":null},"metformin":{"concepts":[1503297],"include_descendants":true,"include_mapped":false,"exclude":null},"mi":{"concepts":[4329847],"include_descendants":true,"include_mapped":false,"exclude":null}},"events":{"hba1c":{"table":"measurement","concept_set":{"concepts":[3004410]},"value":{"column":"value_as_number"},"unit":{"target":8554,"convert":{"8753":{"factor":0.0915,"offset":2.15}},"unknown":"missing","censored":"keep"},"where":{"var":"value","op":"not_null"}},"metf_rx":{"table":"drug_exposure","concept_set":"metformin"},"t2dm_dx":{"table":"condition_occurrence","concept_set":"t2dm"},"mi":{"table":"condition_occurrence","concept_set":"mi"}},"intervals":{"metf_era":{"source":{"event":"metf_rx"},"gap":30,"persistence":0,"min_days":0,"by":"event","unmapped":"own_concept","end":"recorded_end","fallback":"days_supply","stockpile":false}},"populations":{"new_users":{"kind":"index","label":"Metformin new users","index":{"source":{"interval":"metf_era"},"select":"first_eligible","n":1,"offset":0,"end":{"strategy":"interval_end","days":null,"pad":0},"restrict_to_observation":true},"coverage":{"policy":"unique","on_ambiguous":"drop","on_missing":"drop","gap":0},"where":{"and":[{"observed":{"before":365,"after":null,"gap":null}},{"has":{"source":{"event":"metf_rx"},"op":"==","n":0,"window":{"start":-365,"end":-1,"anchor":"index"}}},{"has":{"source":{"event":"t2dm_dx"},"op":">=","n":1,"window":{"start":null,"end":0,"anchor":"index"}}}]}}},"variables":{"age":{"derived":{"kind":"age","reference":"index","reference_date":null,"bands":false,"age_breaks":null}},"sex":{"derived":{"kind":"sex_mf"}},"hba1c_base":{"source":{"event":"hba1c"},"reducer":{"fn":"closes...<truncated>
+[dsomop-audit] 2026-11-12T19:18:44+0000 method=omopPlanExplainDS detail={"plan":{"version":2,"meta":{"language_version":"2.0","semantic_version":"2.0.0","generated_by":"dsOMOPClient","client_version":"2.10.3"},"options":{"translate_concepts":true,"block_sensitive":true,"factor_concepts":true},"concept_sets":{"t2dm":{"concepts":[201826],"include_descendants":true,"include_mapped":false,"exclude":null},"metformin":{"concepts":[1503297],"include_descendants":true,"include_mapped":false,"exclude":null},"mi":{"concepts":[4329847],"include_descendants":true,"include_mapped":false,"exclude":null}},"events":{"hba1c":{"table":"measurement","concept_set":{"concepts":[3004410]},"value":{"column":"value_as_number"},"unit":{"target":8554,"convert":{"8753":{"factor":0.0915,"offset":2.15}},"unknown":"missing","censored":"keep"},"where":{"var":"value","op":"not_null"}},"metf_rx":{"table":"drug_exposure","concept_set":"metformin"},"t2dm_dx":{"table":"condition_occurrence","concept_set":"t2dm"},"mi":{"table":"condition_occurrence","concept_set":"mi"}},"intervals":{"metf_era":{"source":{"event":"metf_rx"},"gap":30,"persistence":0,"min_days":0,"by":"event","unmapped":"own_concept","end":"recorded_end","fallback":"days_supply","stockpile":false}},"populations":{"new_users":{"kind":"index","label":"Metformin new users","index":{"source":{"interval":"metf_era"},"select":"first_eligible","n":1,"offset":0,"end":{"strategy":"interval_end","days":null,"pad":0},"restrict_to_observation":true},"coverage":{"policy":"unique","on_ambiguous":"drop","on_missing":"drop","gap":0},"where":{"and":[{"observed":{"before":365,"after":null,"gap":null}},{"has":{"source":{"event":"metf_rx"},"op":"==","n":0,"window":{"start":-365,"end":-1,"anchor":"index"}}},{"has":{"source":{"event":"t2dm_dx"},"op":">=","n":1,"window":{"start":null,"end":0,"anchor":"index"}}}]}}},"variables":{"age":{"derived":{"kind":"age","reference":"index","reference_date":null,"bands":false,"age_breaks":null}},"sex":{"derived":{"kind":"sex_mf"}},"hba1c_base":{"source":{"event":"hba1c"},"reducer":{"fn":"closes...<truncated>
+.............[dsomop-audit] 2026-11-12T19:18:46+0000 method=publication detail={"output":"e","component":"e","passed":true}
+........[dsomop-audit] 2026-11-12T19:18:48+0000 method=publication detail={"output":"on_alias","component":"on_alias","passed":true}
+[dsomop-audit] 2026-11-12T19:18:48+0000 method=publication detail={"output":"on_base","component":"on_base","passed":true}
+.....[dsomop-audit] 2026-11-12T19:18:48+0000 method=publication detail={"output":"p","component":"p","passed":true}
+[dsomop-audit] 2026-11-12T19:18:48+0000 method=publication detail={"output":"p","component":"p","passed":true}
+............................[dsomop-audit] 2026-11-12T19:18:52+0000 method=omopPlanExecuteDS detail={"outputs":"p","plan":{"outputs":{"p":{"type":"person_level","tables":{"person":["gender_concept_id"]}}}},"scope_present":false,"scope_table_count":0}
+...............................[dsomop-audit] 2026-11-12T19:18:54+0000 method=publication detail={"output":"m","component":"m","passed":true}
+.[dsomop-audit] 2026-11-12T19:18:55+0000 method=publication detail={"output":"m","component":"m","passed":true}
+......[dsomop-audit] 2026-11-12T19:18:55+0000 method=publication detail={"output":"iv","component":"iv","passed":true}
+[dsomop-audit] 2026-11-12T19:18:55+0000 method=publication detail={"output":"iv","component":"iv","passed":true}
+....[dsomop-audit] 2026-11-12T19:18:56+0000 method=publication detail={"output":"iv","component":"iv","passed":true}
+[dsomop-audit] 2026-11-12T19:18:56+0000 method=publication detail={"output":"iv","component":"iv","passed":true}
+....[dsomop-audit] 2026-11-12T19:18:56+0000 method=publication detail={"output":"iv","component":"iv","passed":true}
+[dsomop-audit] 2026-11-12T19:18:56+0000 method=publication detail={"output":"iv","component":"iv","passed":true}
+....[dsomop-audit] 2026-11-12T19:18:57+0000 method=publication detail={"output":"m","component":"m","passed":true}
+[dsomop-audit] 2026-11-12T19:18:57+0000 method=publication detail={"output":"m","component":"m","passed":true}
+......[dsomop-audit] 2026-11-12T19:18:57+0000 method=publication detail={"output":"p","component":"p","passed":true}
+[dsomop-audit] 2026-11-12T19:18:57+0000 method=publication detail={"output":"p","component":"p","passed":true}
+......[dsomop-audit] 2026-11-12T19:18:58+0000 method=publication detail={"output":"s","component":"covariates","passed":true}
+[dsomop-audit] 2026-11-12T19:18:58+0000 method=publication detail={"output":"s","component":"covariateRef","passed":true}
+[dsomop-audit] 2026-11-12T19:18:58+0000 method=publication detail={"output":"s","component":"personRef","passed":true}
+[dsomop-audit] 2026-11-12T19:18:58+0000 method=publication detail={"output":"s","component":"covariates","passed":true}
+[dsomop-audit] 2026-11-12T19:18:58+0000 method=publication detail={"output":"s","component":"covariateRef","passed":true}
+[dsomop-audit] 2026-11-12T19:18:58+0000 method=publication detail={"output":"s","component":"personRef","passed":true}
+............................................[dsomop-audit] 2026-11-12T19:19:03+0000 method=publication detail={"output":"x","component":"x","passed":true}
+[dsomop-audit] 2026-11-12T19:19:03+0000 method=publication detail={"output":"x","component":"x","passed":true}
+..[dsomop-audit] 2026-11-12T19:19:03+0000 method=publication detail={"output":"x","component":"x","passed":true}
+...[dsomop-audit] 2026-11-12T19:19:04+0000 method=publication detail={"output":"x","component":"x","passed":true}
+[dsomop-audit] 2026-11-12T19:19:04+0000 method=publication detail={"output":"y","component":"y","passed":true}
+....[dsomop-audit] 2026-11-12T19:19:04+0000 method=publication detail={"output":"e","component":"e","passed":true}
+[dsomop-audit] 2026-11-12T19:19:04+0000 method=publication detail={"output":"e","component":"e","passed":true}
+.[dsomop-audit] 2026-11-12T19:19:04+0000 method=publication detail={"output":"e","component":"e","passed":true}
+[dsomop-audit] 2026-11-12T19:19:04+0000 method=publication detail={"output":"e","component":"e","passed":true}
+.[dsomop-audit] 2026-11-12T19:19:05+0000 method=publication detail={"output":"e","component":"e","passed":true}
+[dsomop-audit] 2026-11-12T19:19:05+0000 method=publication detail={"output":"e","component":"e","passed":true}
+..[dsomop-audit] 2026-11-12T19:19:05+0000 method=publication detail={"output":"e","component":"e","passed":true}
+..[dsomop-audit] 2026-11-12T19:19:05+0000 method=publication detail={"output":"e","component":"e","passed":true}
+.....[dsomop-audit] 2026-11-12T19:19:05+0000 method=publication detail={"output":"iv","component":"iv","passed":true}
+[dsomop-audit] 2026-11-12T19:19:06+0000 method=publication detail={"output":"iv","component":"iv","passed":true}
+..................[dsomop-audit] 2026-11-12T19:19:07+0000 method=publication detail={"output":"p","component":"p","passed":true}
+..[dsomop-audit] 2026-11-12T19:19:07+0000 method=publication detail={"output":"e","component":"e","passed":true}
+..................[dsomop-audit] 2026-11-12T19:19:10+0000 method=publication detail={"output":"pa","component":"pa","passed":true}
+....[dsomop-audit] 2026-11-12T19:19:11+0000 method=publication detail={"output":"pa","component":"pa","passed":true}
+.....
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+RESULT failed: 0 errors: 0 skipped: 0 passed: 361 

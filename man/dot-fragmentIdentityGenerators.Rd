@@ -16,8 +16,11 @@ register for that plan. WS-4: \code{ev} (table events: stages
 the final fragment) and \code{map} (vocabulary maps). WS-5: \code{iv}
 (intervals), \code{op} / \code{opc} / \code{seg} (coverage) and
 \code{anc} (anchors). WS-6: \code{cand} / \code{pop} / \code{scope}
-(populations) and \code{mt} (matching). Later compilers add their
-families here (e.g. output rosters); a fragment family without a
-generator cannot be named.
+(populations) and \code{mt} (matching). WS-7: \code{rd} (variable streams,
+bounds and person attributes per output) and \code{ox} (output-level
+streams: survival outcomes and censors, panel sources, exposures, outcomes
+and boundaries, long and interval sources, relations). Later compilers
+add their families here; a fragment family without a generator cannot be
+named.
 }
 \keyword{internal}

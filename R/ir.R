@@ -468,8 +468,11 @@
     keep_i <- c(keep_i, new_i)
     pending <- c(ev[new_e], iv[new_i])
   }
+  # an event's own concept set and the v1 output-level concept set that also
+  # restricts it (A-10 legacy_concept_scope)
   cs_refs <- unlist(lapply(ev[keep_e], function(e) {
-    if (is.character(e[["concept_set"]])) e[["concept_set"]]
+    c(if (is.character(e[["concept_set"]])) e[["concept_set"]],
+      e[["legacy_concept_scope"]][["concept_set_ref"]])
   }), use.names = FALSE)
   pick <- function(map, keep) {
     map <- map %||% list()
@@ -502,7 +505,8 @@
 #' Every value of a long output's named \code{options.anchors} map is a final
 #' anchor of the output's population, nested search anchors included; a
 #' matching controls template's candidate anchors include those of the match
-#' population's strata windows (design 6.10; amendment A-20(b)). Anchors are
+#' population's strata windows; the same strata anchors are final anchors of
+#' its cases population (design 6.10; amendment A-20(b)). Anchors are
 #' collected from the normalised IR, so omitted and explicit defaults give one
 #' canonical anchor.
 #'
@@ -542,10 +546,11 @@
   if (!is.list(x)) return(out)
   nm <- names(x)
   if (!is.null(nm)) {
-    for (key in intersect(nm, c("anchor", "reference"))) {
+    for (key in intersect(nm, c("anchor", "reference", "from", "to"))) {
       a <- x[[key]]
       if (is.list(a) && !is.null(a[["source"]])) out <- c(out, list(a))
     }
+    # Named output anchors (A-20(b)), including nested search anchors.
     if ("anchors" %in% nm && is.list(x[["anchors"]])) {
       for (a in x[["anchors"]]) {
         if (is.list(a) && !is.null(a[["source"]])) out <- c(out, list(a))
@@ -568,18 +573,26 @@
   pops <- ir[["populations"]] %||% list()
   # matching (design 6.10): the controls template is instantiated at each case
   # time, so the anchors of a match population's strata windows are resolved
-  # on the template's candidate roster, with the template's own criteria
+  # on the template's candidate roster, with the template's own criteria,
+  # and independently on the cases' final roster. Template-only criteria do
+  # not become case-side anchors.
   templates <- list()
+  cases <- list()
   for (p in names(pops)) {
     m <- pops[[p]][["match"]]
     controls <- m[["controls"]]
     if (is.list(m) && is.character(controls) && length(controls) == 1L) {
-      templates[[controls]] <- c(templates[[controls]], .irCollectAnchors(m[["match"]]))
+      strata <- .irCollectAnchors(m[["match"]])
+      templates[[controls]] <- c(templates[[controls]], strata)
+      case_pop <- m[["cases"]]
+      if (is.character(case_pop) && length(case_pop) == 1L) {
+        cases[[case_pop]] <- c(cases[[case_pop]], strata)
+      }
     }
   }
   for (p in names(pops)) {
     candidate[[p]] <- .irUniqueAnchors(c(.irCollectAnchors(pops[[p]][["where"]]), templates[[p]]))
-    used <- list()
+    used <- c(cases[[p]] %||% list(), .irCollectAnchors(ir$options$date_spec))
     for (o in names(ir[["outputs"]])) {
       out <- ir[["outputs"]][[o]]
       if (!identical(out[["rows"]], p)) next

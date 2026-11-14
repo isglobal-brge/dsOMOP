@@ -97,7 +97,8 @@ test_that("every probe of the corpus has its documented verdict", {
   probes <- c(dsOMOP:::.jsonSchemaLoad(file.path(d, "probes", "plan-v2-probes.json")),
               dsOMOP:::.jsonSchemaLoad(file.path(d, "probes", "mutate-v1-probes.json")))
   ids <- vapply(probes, function(p) p$id, "")
-  for (needed in c("P37", "P38", "P43", "P44", "P45", "P46", "P47", "P48", "P49", "I10", "I11", "I12", "I13", "I14", "I15", "I16", "M06", "M07", "M08")) {
+  for (needed in c("P37", "P38", "P43", "P44", "P45", "P46", "P47", "P48", "P49", "I10", "I11", "I12", "I13", "I14", "I15", "I16", "M06", "M07", "M08",
+                   paste0("I", 68:110), paste0("P", 68:72))) {
     expect_true(needed %in% ids, info = needed)
   }
   for (p in probes) {

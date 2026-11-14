@@ -28,7 +28,8 @@ final roster); one anchor definition used in both stages appears in both.
 Every value of a long output's named \code{options.anchors} map is a final
 anchor of the output's population, nested search anchors included; a
 matching controls template's candidate anchors include those of the match
-population's strata windows (design 6.10; amendment A-20(b)). Anchors are
+population's strata windows; the same strata anchors are final anchors of
+its cases population (design 6.10; amendment A-20(b)). Anchors are
 collected from the normalised IR, so omitted and explicit defaults give one
 canonical anchor.
 }

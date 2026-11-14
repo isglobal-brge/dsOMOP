@@ -17,10 +17,12 @@ The names of the compiled events, invisibly.
 \description{
 Design 6.1 orders a plan's evaluation concept sets, events (adapters
 included), intervals, populations, variables, outputs. This is the event
-stage: every event the outputs read (their dependency closures), with its
-concept set and adapter parents, compiled in the plan order inside the
+stage: every event the outputs read (their execution dependency closures),
+with its concept set and adapter parents, compiled in the plan order inside the
 private compilation context. The data-dependent adapter refusals of
 section 11 (\code{adapter_person_mismatch}, \code{cost_currency_mixed},
 amendment A-18) surface here, before any output is materialised.
+Dictionary source outputs remain static concept dependencies and do not
+cause clinical events, adapters or populations to be materialised.
 }
 \keyword{internal}

@@ -1,0 +1,9 @@
+FAILURES BY FILE
+                     file blocks failed errors
+ test-concept-label-api.R      1      2      0
+
+FAILING TESTS
+test-concept-label-api.R | A27 appended maps survive native rendering and binding | failed=2 error=FALSE
+
+RESULT failed: 2 errors: 0 skipped: 0 passed: 3922 
+RESULT failed: 2 errors: 0 skipped: 0 passed: 3922 

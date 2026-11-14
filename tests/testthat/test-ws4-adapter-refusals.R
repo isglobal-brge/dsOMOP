@@ -41,6 +41,10 @@
 }
 
 .ws4_ar_execute <- function(handle, plan, out, policy) {
+  # These compiler fixtures carry an old 16-byte key. Successful native
+  # controls now reach publication and need the valid, locally opted-in
+  # historical-handle fixture used by the other integration tests.
+  .setLegacyTestPersonKey(handle, "ws4-adapter-refusals", .local_envir = environment())
   sym <- paste0("ws4_a18_", as.integer(stats::runif(1L, 1, 1e6)))
   .setHandle(sym, handle)
   # unregister without closing: the fixture owns the connection
@@ -66,6 +70,22 @@
   flat <- paste(unlist(st), collapse = " ")
   expect_false(grepl("belongs to another person|mix currencies|/events/|members|visit_cost|[0-9]",
                      flat), info = info)
+}
+
+.ws4_ar_expect_published <- function(run, root, symbol, persons, info) {
+  st <- run$status
+  expect_identical(st$status, "ok", info = info)
+  expect_true(.validatePlanStatus(st), info = info)
+  expect_length(st$rejected, 0L)
+  expect_length(st$unavailable, 0L)
+  expect_identical(names(st$published), root, info = info)
+  expect_identical(st$published[[root]][[root]]$symbol, symbol, info = info)
+  expect_identical(ls(run$target, all.names = TRUE), symbol, info = info)
+  frame <- get(symbol, envir = run$target, inherits = FALSE)
+  expect_s3_class(frame, "data.frame")
+  expect_true(all(grepl("^p2[0-9a-f]+\\.[0-9a-f]{64}$", frame$person_id)), info = info)
+  expect_identical(length(unique(frame$person_id)), persons, info = info)
+  frame
 }
 
 .ws4_ar_backends_with <- function(with_defects) {
@@ -97,22 +117,20 @@ test_that("A-18: cost_currency_mixed travels with its reason under both commit p
       run <- .ws4_ar_execute(h, .ws4_ar_cost_plan(), list(costs = "D_cost"), policy)
       .ws4_ar_expect_refused(run, "costs", "cost_currency_mixed", paste(b, policy))
     }
-    # the avoidable refusal: restricted to one currency the source compiles and
-    # the plan is never refused for this reason (until the later compilers are
-    # installed it is refused as not yet executable, without a reason)
+    # Restricting the source to USD must now execute and publish: the two
+    # USD visits total 150 + 1000; the EUR visit's 70 is excluded.
     for (policy in c("server", "all_or_none")) {
       run <- .ws4_ar_execute(h, .ws4_ar_cost_plan(currency = 44818668), list(costs = "D_cost"), policy)
-      st <- run$status
-      if (identical(st$status, "refused")) {
-        expect_false("reason" %in% names(st$rejected$costs), info = paste(b, policy))
-        expect_identical(ls(run$target, all.names = TRUE), character(0))
-      }
-      expect_true(.validatePlanStatus(st))
-    }
-    # the same members plan on a site whose members agree: no adapter refusal
-    run <- .ws4_ar_execute(h, .ws4_ar_members_plan(), list(episodes_out = "D_ep"), "server")
-    if (identical(run$status$status, "refused")) {
-      expect_false("reason" %in% names(run$status$rejected$episodes_out), info = b)
+      costs <- .ws4_ar_expect_published(run, "costs", "D_cost", 132L, paste(b, policy))
+      expect_identical(nrow(costs), 132L)
+      expect_false(anyNA(costs$cost))
+      expect_equal(sort(as.numeric(costs$cost[costs$cost != 0])), c(150, 1000))
+      # The same member adapter without a person mismatch publishes all 11
+      # episodes, including two distinct episodes for the same person.
+      run <- .ws4_ar_execute(h, .ws4_ar_members_plan(), list(episodes_out = "D_ep"), policy)
+      episodes <- .ws4_ar_expect_published(run, "episodes_out", "D_ep", 10L, paste(b, policy))
+      expect_identical(nrow(episodes), 11L)
+      expect_equal(sort(as.numeric(episodes$n_members)), c(rep(1, 9L), 2, 4))
     }
   }
 })

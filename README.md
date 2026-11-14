@@ -395,9 +395,9 @@ You can then install the `dsOMOP` package using the following command:
 dsadmin.install_github_package(o, 'dsOMOP', username='isglobal-brge', ref='main')
 ```
 
-#### Upgrading to 2.10.3 on Opal
+#### Upgrading to 2.10.4 on Opal
 
-The release pairs dsOMOP 2.10.3 with dsOMOPClient 2.10.3. It includes the
+The release pairs dsOMOP 2.10.4 with dsOMOPClient 2.10.4. It includes the
 OHDSI protected-release corrections and recipe language 2. Existing secrets are
 reused automatically; no state-directory setting, privacy tuning, epoch bump,
 ETL hook or TLS change is part of this upgrade.
@@ -409,7 +409,7 @@ Publish, also available as `dsadmin.publish_package(o, 'dsOMOP')`). This is the
 ordinary Opal package-publication lifecycle. `ds.omop.server.version(conns)`
 reports installed and published versions and distinguishes a stale profile from
 an old package. Language-2 execution refuses a profile missing its protocol
-before assignment; publication of an installed 2.10.3 makes that protocol
+before assignment; publication of an installed 2.10.4 makes that protocol
 available without another upgrade.
 
 Supported legacy recipes retain their v1 execution path. Language-2 plans need
@@ -423,6 +423,25 @@ Protected answers can change with the repaired component contracts and grids.
 Historical releases are not retracted. Fixed-vector and heuristic guarantees,
 exact support gates and the remaining adaptive-inference limits are described
 in [DISCLOSURE_CONTROL.md](DISCLOSURE_CONTROL.md#upgrading-to-2103).
+
+### New presentation in 2.10.4
+
+Concept-valued outputs use shared labelled factors. `labels` can merge concept
+categories deliberately; `column_names` renames generated columns without
+merging them. `ds.omop.table()` retains unused public levels and exact labels
+when pooling. Native `omop_date_spec()`, `omop_date_parts()` and `omop_age_at()`
+provide calendar factors, numeric coordinates, Date bounds and anchored ages.
+No absolute-date permission is needed for assignment; final person support and
+aggregate controls remain. Re-run recipes after upgrading to recreate factors;
+use explicit numeric representations for date arithmetic. See
+[NEWS.md](NEWS.md) for migrations and the client extraction vignette for examples.
+
+Release verification: [recipe/publication contract run 43515122503](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43515122503)
+passed fresh and upgrade paths on Opal 5.7.6 and 6.1.3;
+[full e2e run 43515127555](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43515127555)
+passed both fresh and upgrade jobs. Both tested harness commit
+`17e5df40f4718bdece091f68d3003c764f061854`. These are evidence for that
+candidate, not a claim of live execution on every supported SQL dialect.
 
 ## Creating OMOP CDM resources
 
@@ -479,47 +498,61 @@ Resources created with the dsOMOP 1.x form (format `omop.cdm.db`, URL
 2.x resource, with the same checks. The form only creates 2.x resources;
 re-create old ones with it whenever convenient.
 
-### Database support contract
+### Database support contract for 2.10.4
 
-The factories above are connector and SQL-adapter contracts, not a claim of
-feature parity on every vendor/version. Database execution uses DBI directly;
-`DatabaseConnector` is not a runtime dependency. dsOMOP's own generated SQL
-uses its reviewed local subset (`TOP`, day `DATEADD`/`DATEDIFF`, and Oracle's
-bare-alias syntax). Separately,
-controller-owned canonical OHDSI SQL can use the official optional `SqlRender`
-render/translate path. That path fails closed when `SqlRender` or the requested
-dialect is unavailable and never falls back silently to the smaller local
-translator. MySQL/MariaDB are a reviewed dsOMOP extension rather than an OHDSI
-SqlRender target.
+The following matrix separates executable backend support from rendered SQL
+contracts. The release evidence below records the tested environments. A plan is admitted only when every typed
+SQL helper it needs is available in the site's dialect and its materialisation
+needs fit the backend. Unsupported constructs fail at preflight with
+`dialect_unsupported`, naming the construct. `recipe_explain()` and the
+capability `dialect` block expose `family`, `temporary_materialization`,
+`typed_sql`, `sha256_sql` and `window_frames` before execution.
 
-| Backend | R driver | Metadata path | Cross-statement temporary object | Verification in this repository |
-|---|---|---|---|---|
-| PostgreSQL | RPostgres; RPostgreSQL fallback | privilege-filtered `pg_catalog` | `pg_temp` session table | live PostgreSQL 16 CI with separate schemas |
-| SQLite | RSQLite | SQLite catalogs, including attached schemas | session temp table | executable integration tests |
-| DuckDB | duckdb | DBI/`information_schema` | session temp table | optional executable tests when installed |
-| MySQL / MariaDB | RMariaDB | `information_schema`, preserving case-sensitive physical names | `DROP TEMPORARY TABLE` lifecycle | live MySQL 8.4 and MariaDB 11.4 CI with separate databases |
-| SQL Server / Synapse / PDW | odbc | `information_schema` | unavailable for dsOMOP cross-statement recipes | SQL contract tests only |
-| Oracle | ROracle or odbc | Oracle catalogs | unavailable for dsOMOP cross-statement recipes | SQL contract tests only |
-| Redshift | RPostgres | `information_schema` | unavailable cross-statement | SQL contract tests only |
-| BigQuery | bigrquery | dataset-qualified `INFORMATION_SCHEMA` | unavailable for dsOMOP cross-statement recipes | SQL contract tests only |
-| Snowflake | odbc | `information_schema` with Snowflake casing | unavailable cross-statement | SQL contract tests only |
-| Spark / Databricks | odbc | `SHOW TABLES` / `DESCRIBE TABLE` | unavailable cross-statement | SQL contract tests only |
+| helper or construct | used by | PostgreSQL 16 | SQLite (RSQLite) | DuckDB | MySQL ≥ 8.0, MariaDB ≥ 10.2 | SQL Server, Synapse, PDW | Oracle | Redshift | BigQuery | Snowflake | Spark, Databricks |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `.sqlDateAddDays` with expression operands | windows, ends, eras, TARs | ✓ interval arithmetic | ✓ `date(x, '+n day')` via `printf` | ✓ | ✓ `DATE_ADD(x, INTERVAL n DAY)` | ○ `DATEADD(day, n, x)` | ○ `x + n` | ○ `DATEADD` | ○ `DATE_ADD(x, INTERVAL n DAY)` | ○ `DATEADD` | ○ `DATE_ADD` |
+| `.sqlDateDiffDays` with expression operands | offsets, durations, gaps | ✓ `(b - a)` | ✓ `julianday` | ✓ | ✓ `DATEDIFF(b, a)` | ○ `DATEDIFF(day, a, b)` | ○ `b - a` | ○ `DATEDIFF(day, a, b)` | ○ `DATE_DIFF` | ○ `DATEDIFF` | ○ `DATEDIFF` |
+| `.sqlYear`, `.sqlMonthKey`, `.sqlCalendarFloor/Advance`, `.sqlMakeDate` | age, calendar bins, partitions | ✓ | ✓ `strftime` | ✓ | ✓ | ○ | ○ `TRUNC`, `ADD_MONTHS` | ○ | ○ | ○ | ○ |
+| `.sqlDateLiteral` typed | predicates on dates, admin censoring | ✓ `DATE '…'` | ✓ text | ✓ | ✓ | ○ `CAST(… AS date)` | ○ `DATE '…'` | ○ | ○ `DATE '…'` | ○ | ○ `DATE '…'` |
+| `.sqlLeast/.sqlGreatest` | ends, exposure overlap, censoring | ✓ | ✓ `MIN/MAX` scalar | ✓ | ✓ | ○ CASE | ○ | ○ | ○ | ○ | ○ |
+| `.sqlRowNumber`, `LAG`, `LEAD`, `SUM/MAX OVER (ROWS …)` | selection, eras, partitions, long projections | ✓ | ✓ (runtime SQLite version read at preflight; frame feature executed in tests, never inferred from the package name) | ✓ | ✓ | ○ | ○ | ○ | ○ | ○ | ○ |
+| `.sqlLosslessKey` (BIGINT cast) | identities, keys | ✓ | ✓ | ✓ | ✓ | ○ | ○ | ○ | ○ | ○ | ○ |
+| `.sqlSha256Hex` (optional push-down of the matching order) | matching | ✓ `encode(sha256(...))` | ✗ (R fallback) | ✓ | ✓ `SHA2(x, 256)` | ○ `HASHBYTES` | ○ `STANDARD_HASH` | ○ `SHA2` | ○ `SHA256` | ○ `SHA2` | ○ `sha2` |
+| EXISTS / NOT EXISTS, correlated COUNT, CTEs | criteria, visits, every fragment | ✓ | ✓ | ✓ | ✓ (floor enforced `resource.R:269`) | ○ | ○ | ○ | ○ | ○ | ○ |
+| session temp tables (rosters reused by several statements) | populations, set-ops, scope | ✓ | ✓ | ✓ | ✓ | ✗ preflight refusal when reuse is needed | ✗ | ✗ | ✗ | ✗ | ✗ |
+| verification in this repository | | live CI | embedded tests | optional embedded | live CI | snapshot only | snapshot only | snapshot only | snapshot only | snapshot only | snapshot only |
 
-The vendor workflow exercises PostgreSQL, MySQL and MariaDB through their real
-drivers, with distinct CDM, vocabulary and results namespaces plus same-named
-decoy tables that detect routing bleed. It covers metadata discovery, filters,
-date translation, vocabulary lookup, cohort/results routing, one reviewed
-analysis-catalog query, repeated-event `intervals_long`, temporal covariates,
-observation-aware person-period panels, survival/competing-risk/recurrent-event/
-counting-process/multi-state formats, bounded-chunk staging (including the
-stateful multi-state transform) and session temporary tables. A
-site must still test its exact authentication, roles, permissions and server
-version before production use. Other network
-backends remain SQL-contract-only. Operations that need a temporary cohort or
-working relation fail explicitly on backends whose safe cross-statement
-materialisation is not implemented; simple metadata or single-statement queries
-may still work. The `database_support` element returned in the server
-capabilities reports this adapter profile.
+✓ = required: implemented and executable-tested before release; ○ =
+required: implemented with a rendered-SQL snapshot per family; ✗ = not
+available, preflight refusal. Release evidence records the actual runtime
+and driver versions used (`RSQLite`/SQLite, `duckdb`, server versions) in
+the conformance report. Every new emitter adds a
+snapshot test per family (`test-sql-render.R` style) and an executable test
+on SQLite/DuckDB and in the vendor CI
+(`.github/workflows/vendor-db-integration.yaml`: PostgreSQL 16, MySQL 8.4,
+MariaDB 11.4). Capability families reported to the client: `family`,
+`temporary_materialization`, `typed_sql = TRUE` (helpers present),
+`sha256_sql` (push-down available), `window_frames` (1-PRECEDING frame
+available), so `recipe_explain(conns = )` can state before execution which
+constructs a site cannot run.
+
+
+Runtime evidence must record the database and driver versions actually used,
+not infer SQLite features from the RSQLite package version. SQLite preflight
+probes the runtime window-frame support. MySQL requires ≥8.0 and MariaDB ≥10.2;
+the release CI targets PostgreSQL 16, MySQL 8.4 and MariaDB 11.4. The development
+test pod uses PostgreSQL 14, MySQL 8.4.11 and MariaDB 10.6; passing there does
+not replace the release CI matrix. DuckDB execution is optional when installed.
+The recipe-contract Opal harness pins 6.1.3 and 5.7.6 and records actual
+Opal/R/database/driver versions in its artifacts. Both fresh and upgrade paths
+passed in the cited release run.
+
+Database execution uses DBI: RPostgres (RPostgreSQL fallback), RSQLite, duckdb,
+RMariaDB, odbc, ROracle or bigrquery as appropriate. DatabaseConnector is not a
+runtime dependency. Optional controller-owned OHDSI SQL translation uses
+SqlRender with no silent fallback. No database requires TLS/SSL. Snapshot-only
+families are SQL contracts, not live-database validation; cross-statement
+roster reuse is refused on those families even when a single statement renders.
 
 ### OHDSI alignment and interoperability
 

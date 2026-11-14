@@ -98,18 +98,48 @@
 #' @return List with validation results
 #' @keywords internal
 .planValidate <- function(handle, plan) {
-  legacy <- .planLegacyFindings(handle, plan)
+  wire <- .planWirePart(plan)
+  # Every traversal, including supplemental v1 diagnostics, follows the
+  # incoming version's closed envelope. Malformed inputs need no site work.
+  envelope_error <- tryCatch({
+    json <- .irJsonForm(wire[["plan"]])
+    .irValidateEnvelope(json)
+    version <- .irPlanVersion(json)
+    if (!identical(version, 2L)) .planV1CohortPreflight(json, handle)
+    NULL
+  }, dsomop_plan_rejection = function(e) e$errors %||% conditionMessage(e))
+  if (!is.null(envelope_error)) {
+    return(list(valid = FALSE, errors = envelope_error, warnings = character(0),
+                available_tables = character(0)))
+  }
+  legacy <- if (!identical(version, 2L)) {
+    legacy_plan <- json
+    if (wire[["scope_tables"]] > 0L) {
+      # Resolved frames are server context, not wire fields. Supplemental
+      # declaration checks still need to know that they supply the cohort.
+      legacy_plan$scope <- legacy_plan$scope %||% list()
+      legacy_plan$scope$tables_frames <- plan[["scope"]][["tables_frames"]]
+    }
+    .planLegacyFindings(handle, legacy_plan)
+  } else {
+    list(errors = character(0), missing_tables = character(0),
+         warnings = character(0), available_tables = character(0))
+  }
   # The frozen validation sequence (design-2.10.3 section 4.5) -- closed
   # envelope, normalisation, ir-v2.json, semantic and site rules, dialect
   # preflight -- reported here as validation errors, raised as typed
   # rejections at execution.
-  wire <- .planWirePart(plan)
   ir_error <- tryCatch({
     .irPrepare(wire[["plan"]], handle = handle, scope_tables = wire[["scope_tables"]])
     NULL
   }, dsomop_plan_rejection = function(e) e$errors %||% conditionMessage(e),
-  # the v1 plan-declaration errors are among the legacy findings already
+  # Declaration diagnostics above include the resolved server-side scope;
+  # the wire-only preparation cannot observe those frames itself.
   dsomop_v1_declaration_error = function(e) NULL)
+  if (identical(version, 2L) && is.null(ir_error)) {
+    bp <- .buildBlueprint(handle)
+    legacy[["available_tables"]] <- bp$tables$table_name[bp$tables$present_in_db]
+  }
   errors <- unique(c(legacy[["errors"]], legacy[["missing_tables"]], ir_error))
   list(
     valid = length(errors) == 0,
@@ -396,8 +426,36 @@
 #'   estimates for the executed output.
 #' @keywords internal
 .planPreview <- function(handle, plan) {
-  bp <- .buildBlueprint(handle)
+  wire <- .planWirePart(plan)
+  json <- .irJsonForm(wire[["plan"]])
+  .irValidateEnvelope(json)
   validation <- .planValidate(handle, plan)
+  # Traverse the same object whose shapes were checked: in-process named
+  # atomic vectors represent JSON objects, too. Keep scope_tables separately.
+  plan <- json
+  native <- identical(.irPlanVersion(json), 2L)
+  settings <- .omopDisclosureSettings()
+  if (native) {
+    ir <- .irPrepare(json, handle, scope_tables = wire[["scope_tables"]])
+    # Native formats have their own option contracts. Report their prepared
+    # declarations without applying the v1 table and survival projections.
+    outputs <- lapply(ir[["outputs"]], function(node) list(
+      type = node[["format"]], rows = node[["rows"]], grain = node[["grain"]],
+      columns = as.character(unlist(node[["columns"]], use.names = FALSE)),
+      columns_complete = FALSE,
+      columns_unavailable_reason = paste0(
+        "only declared variable columns are listed; output keys and generated ",
+        "columns are resolved at execution"),
+      sources = node[["sources"]], options = node[["options"]],
+      n_persons = NA_real_, n_persons_available = FALSE,
+      n_persons_unavailable_reason = "native output populations are not executed by preview",
+      n_persons_banded = FALSE, band_width = settings$nfilter_band,
+      disclosive = NA
+    ))
+    return(list(validation = validation, outputs = outputs,
+                band_width = settings$nfilter_band))
+  }
+  bp <- .buildBlueprint(handle)
   cohort_errors <- validation$errors[grepl(
     "no executable cohort source|Plan cohort cannot execute",
     validation$errors
@@ -406,7 +464,6 @@
     stop("Plan preview rejected: ", paste(cohort_errors, collapse = " "),
          call. = FALSE)
   }
-  settings <- .omopDisclosureSettings()
 
   # Disclosure note (differencing defence):
   # The per-output n_persons counts below are the most-repeated, lowest-cost
@@ -428,7 +485,8 @@
   # unrestricted output.  Scoped/filtered counts are reported as unavailable
   # instead of presenting the source-table population as if it described the
   # requested output.
-  plan_is_scoped <- !is.null(plan$cohort) || !is.null(plan$scope) ||
+  plan_is_scoped <- wire[["scope_tables"]] > 0L ||
+    !is.null(plan$cohort) || !is.null(plan$scope) ||
     .planHasMultiPopulation(plan)
   preview_person_count <- function(tbl_row, col_df, restricted,
                                    unavailable_reason) {
@@ -1882,6 +1940,7 @@
       row_count_policy = "banded_lower_bound",
       columns = file_info$columns,
       column_types = file_info$column_types %||% NULL,
+      csv_encoding = file_info$csv_encoding %||% NULL,
       pseudonymization = pseudonymization,
       semantic_contract = semantic_contract,
       bundle_contract = bundle_contract
@@ -2096,6 +2155,15 @@
   # first byte is written: person/subject keys become authenticated resource-
   # scoped tokens and every other OMOP row/entity identifier is removed.
   if (!already_tokenized) df <- .pseudonymizeIdentifiers(df, key, pseudonymization)
+  if (.isPlanContext(ctx) && !.dsomopDpIsV2(ctx$ir) && is.null(attr(df, "omop_concepts"))) {
+    parts <- strsplit(output_name, ".", fixed = TRUE)[[1L]]
+    root <- parts[[1L]]
+    component <- if (length(parts) > 1L) tail(parts, 1L) else root
+    columns <- .conceptLegacyColumns(ctx, df, root, component)
+    attr(df, "omop_concept_reference") <- if (component %in% c("covariateRef", "analysisRef", "timeRef") ||
+      identical(ctx$ir$outputs[[root]]$type, "concept_dictionary")) TRUE else NULL
+    df <- .conceptPresent(ctx, df, columns)
+  }
   max_rows <- suppressWarnings(as.numeric(
     getOption("dsomop.max_staged_rows", 50000000L)
   ))
@@ -2131,7 +2199,7 @@
     # CSV is read as characters for lossless lineage checks. Keep numeric keys
     # in the same decimal form as integer and BIGINT keys, regardless of scipen.
     old_options <- options(scipen = 999)
-    tryCatch(utils::write.csv(df, output_path, row.names = FALSE),
+    tryCatch(.stagedWriteCsv(df, output_path),
              finally = options(old_options))
   }
   if (existing_bytes + file.info(output_path)$size > max_bytes) {
@@ -2143,6 +2211,7 @@
   file_info <- list(
     file    = output_path,
     format  = ext,
+    csv_encoding = if (!use_parquet) "backslash-v1" else NULL,
     layout  = "file",
     parts   = NULL,
     n_rows  = nrow(df),
@@ -2151,10 +2220,11 @@
       paste(typeof(col), paste(class(col), collapse = "/"), sep = "|")
     }, character(1))
   )
-  .buildStagedDescriptor(output_name, file_info, token,
+  descriptor <- .buildStagedDescriptor(output_name, file_info, token,
                          pseudonymization = pseudonymization,
                          semantic_contract = semantic_contract,
                          bundle_contract = bundle_contract)
+  .conceptStageCapture(df, descriptor)
 }
 
 #' Does this plan declare more than the implicit unrestricted base population?
@@ -2468,18 +2538,15 @@
     "op.observation_period_start_date <= t.", start_col, " AND ",
     "op.observation_period_end_date >= t.", start_col
   )
-  # Coverage policy (design 1.3 and 6.13; defect A-E6): the lowered default is
-  # unique with on_missing = "drop" and on_ambiguous = "drop". A candidate
-  # outside every observation period is not an eligible index event (the inner
-  # join), and a candidate whose index is covered by more than one period is
-  # dropped privately -- it no longer aborts the plan. Both happen before the
-  # primary-limit selection, as uncovered candidates always did.
+  # The v1 compatibility default is unique/drop/drop (design 1.3, A-E6).
+  # Keep only candidates with exactly one covering record; an ambiguous
+  # candidate cannot abort unrelated persons or duplicate an index episode.
+  # Coverage is resolved before the existing primary-limit selection.
   unique_coverage <- paste0(
-    " AND NOT EXISTS (SELECT 1 FROM ", op_qualified, " op2 WHERE ",
-    "op2.person_id = t.person_id AND ",
-    "op2.observation_period_start_date <= t.", start_col, " AND ",
-    "op2.observation_period_end_date >= t.", start_col, " AND ",
-    "op2.observation_period_id <> op.observation_period_id)"
+    " AND (SELECT COUNT(*) FROM ", op_qualified, " op_cover WHERE ",
+    "op_cover.person_id = t.person_id AND ",
+    "op_cover.observation_period_start_date <= t.", start_col, " AND ",
+    "op_cover.observation_period_end_date >= t.", start_col, ") = 1"
   )
 
   cohort_end <- "op.observation_period_end_date"
@@ -2978,14 +3045,14 @@
     # Keep the full validation sequence and context lifecycle above, but do
     # not compile or materialize unrequested private sources and outputs.
     if (!length(ir$publish)) return(list())
-    # The event stage of language-2.0 execution (design 6.1, WS-4): the event
-    # sources of the requested roots compile in the private context, so the
-    # data-dependent adapter refusals of section 11 are raised, with their
-    # reason (A-18), before any output is materialised. The later stages
-    # (intervals, populations, variables, outputs) replace the refusal below.
+    # Language-2.0 execution (design 6.1): the event sources of the requested
+    # roots compile first in the private context, so the data-dependent adapter
+    # refusals of section 11 are raised, with their reason (A-18), before any
+    # output is materialised; then populations, variables and outputs
+    # (.planExecuteNative(), R/compile_output.R) produce one CompiledOutput per
+    # root for the publication boundary.
     .planCompileSources(.compileContext(ctx, ir), names(out_symbols))
-    .irReject(paste0("this server validates language 2.0 plans but does not ",
-                     "execute them yet; use omopPlanExplainDS"))
+    return(.planExecuteNative(ctx, ir, out_symbols, own_context))
   }
 
   bp <- .buildBlueprint(handle)
@@ -3174,13 +3241,8 @@
   # away. Carried out of here as an attribute on the returned list (see tail).
   concept_cols_by_output <- list()
   options <- plan$options %||% list()
-  translate <- options$translate_concepts %||% TRUE
-  # Staged datasets are an interoperability boundary. Preserve standard OMOP
-  # concept IDs so every long output can stream and downstream OHDSI tools can
-  # join vocabulary tables without loading or mutating the fact dataset. Human
-  # labels belong in a separate concept-reference component, not in-place in a
-  # potentially massive event stream.
-  if (staged) translate <- FALSE
+  # A-27: compatibility computations use IDs; publication applies presentation.
+  translate <- FALSE
   block_sensitive <- options$block_sensitive %||% TRUE
 
   # Concept expansion cache: expand each unique concept set once
@@ -3497,14 +3559,7 @@
             default_mode <- getOption("dsomop.default_date_handling", "remove")
             dh <- .normalizeDateHandling(default_mode)
           }
-          if (identical(dh$mode, "absolute")) {
-            allow <- getOption("dsomop.allow_absolute_dates",
-                       getOption("default.dsomop.allow_absolute_dates", FALSE))
-            if (!isTRUE(allow)) {
-              stop("Absolute date handling is not permitted by the server.",
-                   call. = FALSE)
-            }
-          }
+
 
           # Capture date column for days_from_index computation
           tbl_date_col <- .getDateColumn(bp, tolower(out$table))
@@ -3580,6 +3635,34 @@
 
           results[[out_name]] <- result_df
         }
+
+        # Successful extraction proves this output came from a source the SQL
+        # compiler explicitly permits as reference data. Record the proof in
+        # the private context: neither a missing result key nor a client field
+        # can exempt patient output from publication support. Source extensions
+        # carrying patient/episode keys must still use genuine person lineage.
+        # A visit filter reads patient visits through an EXISTS, even when an
+        # extension's visit key is omitted from the reference projection.
+        source_columns <- bp$columns[[tolower(out$table)]]$column_name
+        reference <- is.null(visit_filter) && .referenceTableSource(bp, out$table) &&
+          !any(c(.PERSON_KEY_COLS(), .EPISODE_KEY_COLS(), "set_id") %in% source_columns)
+        if (reference && !is.null(concept_set)) {
+          # V1 permits key-column overrides on patient sources. A reference
+          # exemption cannot hide an extension selector by dropping its column
+          # from the result. Standard reference fields keep their historical
+          # semantics (including metadata_id and value_as_string); extensions
+          # must have a filterable role. is_extension is server-built from the
+          # vendored CDM specification, never a client declaration.
+          scope_column <- .conceptScopeColumns(bp, out$table, concept_col,
+            out$columns, custom_filters)$filter_column
+          source_metadata <- bp$columns[[tolower(out$table)]]
+          standard_columns <- source_metadata$column_name[
+            source_metadata$is_extension %in% FALSE]
+          reference <- length(scope_column) == 1L &&
+            scope_column %in% union(standard_columns,
+              .filterableColumns(bp, tolower(out$table)))
+        }
+        if (reference) ctx$reference_outputs <- union(ctx$reference_outputs, out_name)
 
       } else if (out_type == "baseline") {
         if (!is.null(custom_filters) && length(custom_filters) > 0) {
@@ -3718,7 +3801,9 @@
         results[[out_name]] <- .extractCohortMembership(
           handle,
           cohort_table = cohort_table,
-          cohort_definition_id = plan$cohort$cohort_definition_id,
+          cohort_definition_id = .v1MembershipLabel(
+            ir$outputs[[.v1AllocateNames(names(outputs))[[out_name]]]]$options,
+            plan$cohort$cohort_definition_id),
           date_handling = out$date_handling
         )
 
@@ -3858,7 +3943,7 @@
         stop("concept_dictionary is derived from other outputs and cannot ",
              "apply filters$custom directly.", call. = FALSE)
       }
-      results[[out_name]] <- if (staged) {
+      results[[out_name]] <- if (staged || !isFALSE(plan$options$translate_concepts)) {
         .buildDeclaredConceptDictionary(
           handle,
           outputs = outputs,
@@ -3960,6 +4045,13 @@
           } else {
             stop("Invalid SQL-backed temporal component.", call. = FALSE)
           }
+          if (!is.null(component$concept_support_sql)) {
+            support <- .executeQuery(handle, component$concept_support_sql)
+            total <- .executeQuery(handle, component$concept_total_sql)[[1L]][[1L]]
+            attr(desc, "omop_reference_support") <- list(
+              counts = setNames(as.integer(support$n), as.character(support$conceptId)),
+              total = as.integer(total))
+          }
           component_results[[comp_name]] <- desc
           staged_descriptors[[full_name]] <- desc
         }
@@ -4002,11 +4094,19 @@
     status <- .publishOutputs(ctx, results, out_symbols)
     if (exists(ctx$id, .publicationRegistry, inherits = FALSE)) rm(list = ctx$id, envir = .publicationRegistry)
     if (status$status == "refused") .publishReject(status$rejected[[1L]]$code)
-    if (staged) {
-      for (root in names(status$published)) for (component in names(status$published[[root]])) {
-        descriptor <- get(status$published[[root]][[component]]$symbol, ctx$target_env)
-        if (component == root) results[[root]] <- descriptor else results[[root]][[component]] <- descriptor
+    for (root in names(status$published)) for (component in names(status$published[[root]])) {
+      value <- get(status$published[[root]][[component]]$symbol, ctx$target_env)
+      # The untranslated private v1 return predates publication/presentation
+      # frame metadata. Keep its exact shape; the outer list below retains
+      # concept-column tags. Public assignments and translated results retain
+      # the complete metadata used for safe concept reconciliation.
+      if (isTRUE(ctx$return_private) && !.reduceTranslate(ctx) && is.data.frame(value)) {
+        attr(value, "omop_concept_cols") <- NULL
+        attr(value, "omop_concept_reference") <- NULL
+        attr(value, "omop_column_contract") <- NULL
+        attr(value, "omop_reference_support") <- NULL
       }
+      if (component == root) results[[root]] <- value else results[[root]][[component]] <- value
     }
     results <- results[intersect(names(results), names(status$published))]
     attr(results, "omop_concept_cols") <- concept_cols_by_output

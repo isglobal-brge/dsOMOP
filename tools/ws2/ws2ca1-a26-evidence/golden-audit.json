@@ -1,0 +1,46 @@
+{
+  "entries": 477,
+  "changed": [
+    {
+      "id": "v1-027",
+      "labels_added": {
+        "cm": 1
+      },
+      "old_digest": "788f7c8e7d879308eccb92fcd0700a66e3b936f3408f5a8f99f53d1ad60f003c",
+      "new_digest": "cd398e73e291fc75ca36f6a3a6106e4bd62f1f7e786b8faa47067843e86bb86d"
+    },
+    {
+      "id": "v1-028",
+      "labels_added": {
+        "cm": 1
+      },
+      "old_digest": "ff90eb700633f6187e44eab5e9a1b6225fabda621a471b85969875ce26b114d7",
+      "new_digest": "9355b045cd5fb0e2a433e6357ca9b7613d5cdda0e8a13c222ead17b4bbfe1397"
+    },
+    {
+      "id": "v1-364",
+      "labels_added": {
+        "cm": 1
+      },
+      "old_digest": "a95faf54d074ca5667137350300ca91b4467a829e58ba44b1bbb1a9378200cad",
+      "new_digest": "f05ca9c19cf8243ca5174c154cf9b41bb1961ed90ea04379b1a2e4a1cfd34465"
+    },
+    {
+      "id": "v1-365",
+      "labels_added": {
+        "cm": 1
+      },
+      "old_digest": "af3cd89f819cf78de1bd40dff0bd63335addba773083cc794afbdcfe60bbb376",
+      "new_digest": "606594171d0f6f7e62823aab7dd09d3a73ebef40b863302829be02508a506471"
+    },
+    {
+      "id": "v1-366",
+      "labels_added": {
+        "cm": 1
+      },
+      "old_digest": "eaf82345a043ddbb99a9dad260610879c129f7e3db7e202d5fccf296dbecd112",
+      "new_digest": "933bd1aff45e49ee7caa1f0313f2aed487388f441aecb5b9569620b9acb57a4f"
+    }
+  ],
+  "audit": "Only effective membership labels and resulting semantic digests changed; all outcomes, other IR fields and annexes are identical."
+}

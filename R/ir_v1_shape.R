@@ -11,9 +11,8 @@
 #   - scalars with a type and, optionally, an enumeration;
 #   - alternatives (the forms a v1 field accepts, such as a concept-id list or
 #     a concept-set object);
-#   - opaque advisory content (documented uses only: the client-side
-#     federation evidence inside `harmonization`, which the server never
-#     reads; it goes to the server-private annex).
+#   - deferred variants (cohort.spec), checked in their owning object's
+#     cross-field check; advisory federation evidence is closed as well.
 # A shape may carry `check`, a function(x, path) returning findings: the value
 # rules of the corrected legacy validators that own that position.
 
@@ -72,6 +71,7 @@
 .v1ShapeErrors <- function(x, shape, path = "") {
   errors <- character(0)
   add <- function(...) errors <<- c(errors, paste0(...))
+  checked <- x
   type <- .v1JsonType(x)
   label <- if (nzchar(path)) path else "/"
   switch(shape[["kind"]],
@@ -90,8 +90,22 @@
       }
     },
     scalar = {
-      if (!identical(type, "scalar") || !.v1ScalarOk(x, shape[["type"]])) {
-        add(label, ": must be a ", shape[["type"]])
+      st <- shape[["type"]]
+      if (st %in% c("integer", "number", "cohort_id")) {
+        # the v1 executors read numbers through as.numeric() / as.integer()
+        # (.longitudinalInteger(), the leaf compiler's integer_param(), the
+        # window offsets, concept id lists, value_bin bounds): every value
+        # they executed is accepted with the meaning they gave it, and the
+        # lowering stores the coerced number (A-16, A-19 item 7)
+        coerced <- switch(st, integer = .v1AsInteger(x), number = .v1AsNumber(x),
+                          cohort_id = .v1AsCohortInteger(x))
+        if (is.null(coerced)) {
+          add(label, if (identical(st, "integer")) ": must be one integer" else ": must be one finite number")
+        } else {
+          checked <- coerced
+        }
+      } else if (!identical(type, "scalar") || !.v1ScalarOk(x, st)) {
+        add(label, ": must be a ", st)
       } else if (!is.null(shape[["enum"]]) &&
                  !tolower(as.character(x)) %in% tolower(shape[["enum"]])) {
         add(label, ": must be one of ", paste(shape[["enum"]], collapse = ", "))
@@ -171,9 +185,53 @@
     stop("unknown v1 shape kind '", shape[["kind"]], "'", call. = FALSE)
   )
   if (!length(errors) && is.function(shape[["check"]])) {
-    errors <- c(errors, shape[["check"]](x, label))
+    errors <- c(errors, shape[["check"]](checked, label))
   }
   errors
+}
+
+#' The v1 executors' numeric coercions
+#'
+#' \code{.v1AsInteger()}: one value that \code{as.numeric()} makes a finite
+#' number equal to its \code{as.integer()} -- the rule of
+#' \code{.longitudinalInteger()}, the leaf compiler's \code{integer_param()},
+#' the window offsets of \code{.windowPredicateSql()}, the inclusion
+#' occurrence count and the concept id lists, which executed integer-valued
+#' numbers, numeric strings (\code{"9000"}, \code{"9e3"}, \code{" 30 "}) and
+#' booleans alike. \code{.v1AsNumber()}: one value \code{as.numeric()} makes
+#' finite (value_bin bounds, numeric filter parameters). A one-element array
+#' is its element, as \code{as.numeric()} reads it.
+#'
+#' @param x A parsed JSON value.
+#' @return The coerced integer / number, or NULL when the executors refused it.
+#' @keywords internal
+.v1AsInteger <- function(x) {
+  x <- .v1Scalar(x)
+  if (is.null(x) || is.list(x) || !is.atomic(x) || length(x) != 1L) return(NULL)
+  number <- suppressWarnings(as.numeric(x))
+  integer <- suppressWarnings(as.integer(x))
+  if (length(number) != 1L || is.na(number) || !is.finite(number) ||
+      length(integer) != 1L || is.na(integer) || number != integer) return(NULL)
+  integer
+}
+
+#' @rdname dot-v1AsInteger
+#' @keywords internal
+.v1AsNumber <- function(x) {
+  x <- .v1Scalar(x)
+  if (is.null(x) || is.list(x) || !is.atomic(x) || length(x) != 1L) return(NULL)
+  number <- suppressWarnings(as.numeric(x))
+  if (length(number) != 1L || is.na(number) || !is.finite(number)) NULL else number
+}
+
+# Cohort references and temporary inline-spec ids historically use
+# as.integer() directly, including truncation of a finite fractional number.
+# Other integer fields use .v1AsInteger() and continue to reject fractions.
+.v1AsCohortInteger <- function(x) {
+  number <- .v1AsNumber(x)
+  if (is.null(number)) return(NULL)
+  value <- suppressWarnings(as.integer(number))
+  if (is.na(value)) NULL else value
 }
 
 # Run a legacy validator that stops on its first finding; return the finding
@@ -187,7 +245,29 @@
 
 # --- shared v1 shapes ------------------------------------------------------------
 
-.v1sConceptIds <- function() .v1sArr(.v1sScalar("integer"))
+# These legacy vector positions are flattened by unlist() before numeric
+# conversion. Empty nested arrays contribute no value; objects stay closed.
+.v1sIntegerVector <- function(.check = NULL) {
+  .v1sCustom(function(x, path) {
+    walk <- function(value, p, depth = 1L) {
+      if (depth > 64L) return(paste0(p, ": integer-vector nesting is too deep"))
+      if (is.list(value) && is.null(names(value))) {
+        return(unlist(lapply(seq_along(value), function(i) {
+          if (is.null(value[[i]])) paste0(p, "/", i - 1L, ": an array item cannot be null")
+          else walk(value[[i]], paste0(p, "/", i - 1L), depth + 1L)
+        }), use.names = FALSE))
+      }
+      if (is.atomic(value) && length(value) != 1L) {
+        return(walk(as.list(value), p, depth))
+      }
+      .v1ShapeErrors(value, .v1sScalar("integer"), p)
+    }
+    errors <- walk(x, path)
+    if (!length(errors) && is.function(.check)) errors <- .check(x, path)
+    errors
+  })
+}
+.v1sConceptIds <- function() .v1sIntegerVector()
 .v1sSafeScope <- function() {
   .v1sObj(table = .v1sScalar("string"), column = .v1sScalar("string"),
           concept_id = .v1sConceptIds(), concept_col = .v1sScalar("string"),
@@ -196,14 +276,43 @@
 
 # A results-cohort id: a positive integer (amendment A-10: 0 is refused).
 .v1sCohortId <- function() {
-  .v1sScalar("integer", .check = function(x, path) {
+  .v1sScalar("cohort_id", .check = function(x, path) {
     if (x < 1) paste0(path, ": a v1 cohort_definition_id must be a positive integer (0 is refused)")
   })
 }
 # The plan cohort's cohort_definition_id: a results-cohort reference (>= 1,
-# A-10) when the cohort is a cohort_table; otherwise the optional identifier
-# of an inline spec, any non-negative integer (A-16).
-.v1sPlanCohortId <- function() .v1sScalar("integer")
+# A-10) when the cohort is a cohort_table; the cross-field check applies
+# A-16 to actual inline-spec creation. Filter-tree labels retain as.integer()
+# scalar coercion, including signed integers and NA (A-26).
+.v1sPlanCohortId <- function() .v1sCustom(function(x, path) {
+  value <- tryCatch(suppressWarnings(as.integer(x)), error = function(e) NULL)
+  if (!is.null(names(x)) || length(value) != 1L) {
+    paste0(path, ": must be one historically integer-coercible value")
+  }
+})
+
+# .resolveCohortTable() dispatches only numeric values and digit-only strings
+# as ids. Other strings are cohort-table names, so coercing "+1" or "1e0"
+# here would hide the malformed identifier the historical executor refused.
+# The root cohort/spec identifier uses as.integer() directly and keeps its
+# separate, broader .v1sCohortId() coercions.
+.v1sResolvedCohort <- function(allow_name = FALSE) {
+  .v1sCustom(function(x, path) {
+    # Match the executor's dispatch BEFORE unwrapping: an array containing an
+    # ID is sent to its name branch, where it is not a valid identifier.
+    numeric_id <- is.numeric(x) ||
+      (is.character(x) && length(x) == 1L && !is.na(x) &&
+       grepl("^[0-9]+$", x))
+    if (numeric_id) return(.v1ShapeErrors(x, .v1sCohortId(), path))
+    value <- .v1Scalar(x)
+    if (!is.character(value) || length(value) != 1L || is.na(value)) {
+      return(paste0(path, ": a resolved cohort reference must be a numeric ID or identifier string"))
+    }
+    errors <- .v1Legacy(path, .validateIdentifier(value, "cohort"))
+    if (length(errors) || isTRUE(allow_name)) return(errors)
+    .v1ShapeErrors(x, .v1sCohortId(), path)
+  })
+}
 
 #' Findings of a v1 row filter (the custom DSL of \code{.assertCustomFilterSafe()})
 #'
@@ -268,9 +377,11 @@
 #' Findings of a v1 population filter tree
 #'
 #' The legacy validator \code{.validateCohortFilterTree()} (closed leaves,
-#' known types and parameters, the complexity caps) plus the closure of the
-#' nested parameter objects (\code{window}, \code{safe_scope}) and amendment
-#' A-10's refusal of a \code{cohort_definition_id} of 0.
+#' known types and parameters, the complexity caps), the closure of the
+#' nested parameter objects (\code{window}, \code{safe_scope}), the
+#' advisory \code{concept_name} label typed, amendment A-10's refusal of a
+#' \code{cohort_definition_id} of 0, and the parameter rules the leaf
+#' compiler applies without a site (\code{.v1FilterLeafErrors()}).
 #' @keywords internal
 .v1FilterTreeErrors <- function(x, path) {
   errors <- .v1Legacy(path, .validateCohortFilterTree(x))
@@ -285,9 +396,19 @@
       params <- node[["params"]] %||% list()
       pp <- paste0(p, "/params")
       if (!is.null(params[["window"]])) {
-        errors <<- c(errors, .v1ShapeErrors(params[["window"]], .v1sObj(start = .v1sScalar("integer"),
-                                                                        end = .v1sScalar("integer")),
-                                            paste0(pp, "/window")))
+        window <- params[["window"]]
+        found <- .v1ShapeErrors(window, .v1sObj(start = .v1sScalar("integer"), end = .v1sScalar("integer")),
+                                paste0(pp, "/window"))
+        if (!length(found)) {
+          window <- .v1Compact(window)
+          if (is.null(window[["start"]]) && is.null(window[["end"]])) {
+            found <- paste0(pp, "/window: Population filter window must contain start and/or end.")
+          } else if (!is.null(window[["start"]]) && !is.null(window[["end"]]) &&
+                     .v1AsInteger(window[["start"]]) > .v1AsInteger(window[["end"]])) {
+            found <- paste0(pp, "/window: Population filter window start must not be after end.")
+          }
+        }
+        errors <<- c(errors, found)
       }
       if (!is.null(params[["safe_scope"]])) {
         errors <<- c(errors, .v1ShapeErrors(params[["safe_scope"]], .v1sSafeScope(), paste0(pp, "/safe_scope")))
@@ -296,6 +417,11 @@
         errors <<- c(errors, .v1ShapeErrors(params[["cohort_definition_id"]], .v1sCohortId(),
                                             paste0(pp, "/cohort_definition_id")))
       }
+      # an advisory label: a string or an array of strings (never an object)
+      if (!is.null(params[["concept_name"]])) {
+        errors <<- c(errors, .v1ShapeErrors(params[["concept_name"]], .v1sStrs(), paste0(pp, "/concept_name")))
+      }
+      errors <<- c(errors, .v1FilterLeafErrors(tolower(.v1Text(node[["type"]]) %||% ""), params, pp))
       return(invisible())
     }
     if ("not" %in% names(node)) walk(node[["not"]], paste0(p, "/not"))
@@ -308,6 +434,127 @@
   errors
 }
 
+#' The parameter rules of the v1 population leaf compiler, without a site
+#'
+#' Exactly the checks \code{.compileCohortFilterLeaf()} applies to the
+#' parameters before it reads any table, with its messages and its coercions
+#' (\code{integer_param()} / \code{numeric_param()} through
+#' \code{.v1AsInteger()} / \code{.v1AsNumber()}, \code{.conceptIdList()},
+#' \code{.isoDate()}), so a leaf the executor would refuse while running is
+#' refused at step 1 with a typed rejection (a fractional
+#' \code{age_range.min}, an unordered age band, a missing table, ...). The
+#' table, column and index requirements stay with the site checks.
+#'
+#' @param type Lower-case leaf type.
+#' @param params The leaf's parameter object.
+#' @param pp Path of the parameter object.
+#' @return Character vector of findings.
+#' @keywords internal
+.v1FilterLeafErrors <- function(type, params, pp) {
+  out <- character(0)
+  fail <- function(message) {
+    out <<- c(out, paste0(pp, ": Population filter '", type, "' cannot be compiled: ", message))
+  }
+  int_param <- function(name, minimum = NULL) {
+    value <- params[[name]]
+    if (is.null(value)) return(NULL)
+    i <- .v1AsInteger(value)
+    if (is.null(i) || (!is.null(minimum) && i < minimum)) {
+      fail(paste0(name, " must be one finite integer",
+                  if (!is.null(minimum)) paste0(" >= ", minimum) else "", "."))
+      return(NULL)
+    }
+    i
+  }
+  num_param <- function(name) {
+    value <- params[[name]]
+    if (is.null(value)) return(NULL)
+    n <- .v1AsNumber(value)
+    if (is.null(n)) fail(paste0(name, " must be one finite number."))
+    n
+  }
+  ids <- function(primary, alternative) {
+    found <- character(0)
+    n <- tryCatch(length(.conceptIdList(params[[primary]] %||% params[[alternative]])),
+                  error = function(e) {
+                    found <<- paste0(pp, ": ", conditionMessage(e))
+                    NA_integer_
+                  })
+    out <<- c(out, found)
+    n
+  }
+  date <- function() {
+    if (!is.null(params[["reference_date"]])) {
+      found <- .v1Legacy("", .isoDate(params[["reference_date"]], paste(type, "reference_date")))
+      if (length(found)) fail(sub("^: ", "", found))
+    }
+  }
+  table_required <- function() {
+    table <- .v1Text(params[["table"]])
+    if (is.null(table) || !nzchar(table)) fail("table is required.")
+  }
+  switch(type,
+    sex = {
+      value <- .v1Text(params[["value"]])
+      if (is.null(value) || !toupper(value) %in% c("F", "FEMALE", "M", "MALE")) {
+        fail("value must be M/MALE or F/FEMALE.")
+      }
+    },
+    age_range = {
+      if (is.null(params[["min"]]) && is.null(params[["max"]])) fail("min and/or max is required.")
+      date()
+      lo <- int_param("min", 0L)
+      hi <- int_param("max", 0L)
+      if (!is.null(lo) && !is.null(hi) && lo > hi) fail("min must not be greater than max.")
+    },
+    age_group = {
+      date()
+      groups <- unlist(params[["groups"]], use.names = FALSE)
+      if (length(groups) == 0L || anyNA(groups)) {
+        fail("at least one non-missing age band is required.")
+      } else {
+        for (g in trimws(as.character(groups))) {
+          if (grepl("^[0-9]+-[0-9]+$", g)) {
+            bounds <- as.integer(strsplit(g, "-", fixed = TRUE)[[1L]])
+            if (bounds[[1L]] > bounds[[2L]]) fail(paste0("invalid age band '", g, "'."))
+          } else if (!grepl("^[0-9]+\\+$", g)) {
+            fail(paste0("invalid age band '", g, "'."))
+          }
+        }
+      }
+    },
+    cohort = int_param("cohort_definition_id", 0L),
+    has_concept =, concept_count =, not_has_concept = {
+      n <- ids("concept_ids", "concept_id")
+      if (!identical(type, "not_has_concept")) int_param("min_count", 1L)
+      table_required()
+      if (identical(n, 0L)) fail("concept_id(s) are required.")
+      date()
+    },
+    prior_observation =, followup = {
+      int_param("min_days", 0L)
+      date()
+    },
+    visit_count = {
+      int_param("min_count", 1L)
+      ids("visit_concept_ids", "visit_concept_id")
+      date()
+    },
+    has_measurement = {
+      if (identical(ids("concept_ids", "concept_id"), 0L)) fail("concept_id(s) are required.")
+      lo <- num_param("min_value")
+      hi <- num_param("max_value")
+      if (!is.null(lo) && !is.null(hi) && lo >= hi) fail("min_value must be strictly less than max_value.")
+      date()
+    },
+    missing_measurement = {
+      if (identical(ids("concept_ids", "concept_id"), 0L)) fail("concept_id(s) are required.")
+      date()
+    },
+    NULL)
+  out
+}
+
 # --- the v1 plan ---------------------------------------------------------------------
 
 .v1sStr <- function(enum = NULL) .v1sScalar("string", enum = enum)
@@ -317,11 +564,19 @@
 .v1sStrs <- function(enum = NULL) .v1sArr(.v1sStr(enum))
 .v1sWindow <- function() .v1sObj(start = .v1sInt(), end = .v1sInt())
 .v1sRowFilter <- function() .v1sCustom(.v1RowFilterErrors)
-.v1sFilterTree <- function() .v1sCustom(.v1FilterTreeErrors)
+.v1sFilterTree <- function() .v1sCustom(function(x, path) {
+  errors <- .v1FilterTreeErrors(x, path)
+  context <- if (startsWith(path, "/populations/")) {
+    name <- sub("/filter_tree$", "", substring(path, nchar("/populations/") + 1L))
+    paste0("Population '", name, "' filter_tree")
+  } else "Plan cohort filter_tree"
+  # Keep the historical diagnostic label as well as the precise wire path.
+  sub(": ", paste0(": ", context, ": "), errors, fixed = TRUE)
+})
 .v1sConceptSet <- function() {
-  .v1sOneOf(.v1sConceptIds(),
-            .v1sObj(concepts = .v1sConceptIds(), include_descendants = .v1sBool(),
-                    include_mapped = .v1sBool(), exclude = .v1sConceptIds()))
+  .v1sOneOf(.v1sObj(concepts = .v1sConceptIds(), include_descendants = .v1sBool(),
+                    include_mapped = .v1sBool(), exclude = .v1sConceptIds()),
+            .v1sConceptIds())
 }
 .v1sVisit <- function() .v1sObj(concept_ids = .v1sConceptIds(), visit_concept_id = .v1sConceptIds())
 .v1sDateHandling <- function() {
@@ -413,8 +668,10 @@
       # the executor reads the values (tolower(columns)); names are ignored
       columns = .v1sOneOf(.v1sStrs(), .v1sMap(.v1sStr())),
       derived = .v1sStrs(c("age_at_index", "prior_observation", "future_observation")),
-      age_breaks = .v1sArr(.v1sInt(), .check = function(x, path) {
-        .v1Legacy(path, .bandAges(20L, age_breaks = x))
+      age_breaks = .v1sIntegerVector(.check = function(x, path) {
+        errors <- .v1Legacy(path, .bandAges(20L, age_breaks = x))
+        sub(paste0(path, ": "), paste0(path, ": invalid age_breaks: "),
+            errors, fixed = TRUE)
       })),
     survival = out(
       outcome = .v1sOutcome(), outcomes = .v1sMap(.v1sOutcome()),
@@ -453,7 +710,7 @@
           value_bin = .v1sObj(lower = .v1sNum(), upper = .v1sNum(), safe_scope = .v1sSafeScope(),
                               .required = c("lower", "upper"),
                               .check = function(x, path) {
-                                if (!(x[["lower"]] < x[["upper"]])) {
+                                if (!(.v1AsNumber(x[["lower"]]) < .v1AsNumber(x[["upper"]]))) {
                                   paste0(path, ": value_bin requires finite scalar lower/upper bounds with lower < upper.")
                                 }
                               }),
@@ -479,7 +736,7 @@
   if (!is.null(cached)) return(cached)
   population <- .v1sObj(
     id = .v1sStr(), label = .v1sStr(), kind = .v1sStr(c("criteria", "setop")),
-    filter_tree = .v1sFilterTree(), cohort_definition_id = .v1sCohortId(),
+    filter_tree = .v1sFilterTree(), cohort_definition_id = .v1sResolvedCohort(allow_name = TRUE),
     episode_policy = .v1sStr(.V1_EPISODE_POLICIES),
     index_event = .v1sObj(table = .v1sStr(), concept_set = .v1sConceptSet(),
                           primary_limit = .v1sStr(c("first", "last", "all")),
@@ -491,20 +748,29 @@
     filters = .v1sRowFilter())
   shape <- .v1sObj(
     version = .v1sScalar("integer"),
-    # the executor reads `spec` only without a filter_tree (it then ignores
-    # it, even in the legacy flat-array form): validated where it is read
+    # the executor reads `spec` only without a filter_tree; an inactive spec
+    # next to a filter_tree is ignored by it but closed all the same (design
+    # 4.5; re-review R1): an inline-spec object, or the legacy flat array of
+    # population filter leaves
     cohort = .v1sObj(type = .v1sStr(c("cohort_table", "spec")), cohort_definition_id = .v1sPlanCohortId(),
                      spec = .v1sOpaque(), filter_tree = .v1sFilterTree(),
                      episode_policy = .v1sStr(.V1_EPISODE_POLICIES),
                      .check = function(x, path) {
                        id <- x[["cohort_definition_id"]]
+                       spec <- x[["spec"]]
                        c(if (!is.null(id) && identical(.v1Text(x[["type"]]), "cohort_table")) {
                            .v1ShapeErrors(id, .v1sCohortId(), paste0(path, "/cohort_definition_id"))
-                         } else if (!is.null(id) && id < 0) {
-                           paste0(path, "/cohort_definition_id: an inline spec's cohort_definition_id is a non-negative integer")
+                         } else if (!is.null(id) && is.null(x[["filter_tree"]])) {
+                           c(.v1ShapeErrors(id, .v1sScalar("cohort_id"), paste0(path, "/cohort_definition_id")),
+                             if (isTRUE(.v1AsCohortInteger(id) < 0L))
+                               paste0(path, "/cohort_definition_id: an inline spec's cohort_definition_id is a non-negative integer"))
                          },
-                         if (is.null(x[["filter_tree"]]) && !is.null(x[["spec"]])) {
-                           .v1ShapeErrors(x[["spec"]], .v1sSpec(), paste0(path, "/spec"))
+                         if (!is.null(spec)) {
+                           if (!is.null(x[["filter_tree"]]) && .v1IsArray(spec)) {
+                             .v1FilterTreeErrors(spec, paste0(path, "/spec"))
+                           } else {
+                             .v1ShapeErrors(spec, .v1sSpec(), paste0(path, "/spec"))
+                           }
                          })
                      }),
     anchor = .v1sObj(table = .v1sStr(), id_col = .v1sStr()),
@@ -514,11 +780,23 @@
                       factor_concepts = .v1sBool(), min_persons = .v1sInt()),
     populations = .v1sMap(population),
     # resolved workspace frames are server state and never part of a plan
-    scope = .v1sObj(cohort = .v1sOneOf(.v1sCohortId(), .v1sStr(), .v1sArr(.v1sOneOf(.v1sCohortId(), .v1sStr()))),
+    scope = .v1sObj(cohort = .v1sOneOf(.v1sResolvedCohort(TRUE), .v1sArr(.v1sResolvedCohort(TRUE))),
                     tables = .v1sStrs(), combine = .v1sStr(c("union", "intersect"))),
-    # client-side federation evidence (never read by the server; annex)
-    harmonization = .v1sObj(version = .v1sScalar("integer"), mode = .v1sStr(), strict = .v1sBool(),
-                            manifest = .v1sOpaque(), schema = .v1sOpaque(), plan_signature = .v1sStr()))
+    # client-side federation evidence (never read by the server; annex),
+    # closed on the shapes dsOMOPClient writes (.plan_dependency_manifest(),
+    # .plan_schema_snapshot(), .plan_semantic_snapshot())
+    harmonization = .v1sObj(
+      version = .v1sScalar("integer"), mode = .v1sStr(), strict = .v1sBool(),
+      manifest = .v1sObj(tables = .v1sMap(.v1sStrs()), reasons = .v1sMap(.v1sStrs()),
+                         needs_vocabulary_identity = .v1sBool(), issues = .v1sStrs(),
+                         cohort_required = .v1sStrs()),
+      schema = .v1sObj(servers = .v1sStrs(), tables = .v1sStrs(),
+                       requirements = .v1sMap(.v1sStrs()), present = .v1sMap(.v1sBool()),
+                       columns = .v1sMap(.v1sOneOf(.v1sStrs(), .v1sMap(.v1sOneOf(.v1sStr(), .v1sStrs())))),
+                       types = .v1sMap(.v1sOneOf(.v1sStrs(), .v1sMap(.v1sStr()))),
+                       semantic_versions = .v1sMap(.v1sObj(cdm_version = .v1sStr(), spec_version = .v1sStr(),
+                                                           vocabulary_version = .v1sStr()))),
+      plan_signature = .v1sStr()))
   assign("v1_plan_shape", shape, envir = .irCache)
   shape
 }

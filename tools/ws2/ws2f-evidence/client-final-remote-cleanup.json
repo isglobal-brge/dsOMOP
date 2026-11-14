@@ -1,0 +1,23 @@
+{
+  "completed_utc": "2026-11-12T17:04:55Z",
+  "deleted": [
+    {
+      "path": "/root/rt/wt/ws2c/dsOMOP/tools/ws2/artifacts/ws2f-client-final/dsOMOP",
+      "file_count": 1364,
+      "total_file_bytes": 16159122
+    },
+    {
+      "path": "/root/rt/wt/ws2c/dsOMOP/tools/ws2/artifacts/ws2f-client-final/dsOMOPClient",
+      "file_count": 1172,
+      "total_file_bytes": 11563062
+    },
+    {
+      "path": "/root/rt/lib/wt_ws2c_dsOMOP_tools_ws2_artifacts_ws2f-client-final_dsOMOPClient",
+      "file_count": 241,
+      "total_file_bytes": 8081581
+    }
+  ],
+  "total_deleted_file_bytes": 35803765,
+  "retained_raw_log": "/root/rt/wt/ws2c/dsOMOP/tools/ws2/artifacts/ws2f-client-final/dsOMOPClient.last.log",
+  "retained_raw_log_exists": true
+}

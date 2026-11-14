@@ -1,0 +1,24 @@
+{
+  "dsOMOP": {
+    "commit": "ee92a528cc8e07884f4fe79aa38f8d09109f0419",
+    "tree": "e489389338f9a37af0ecea0cb4db40570d8f214f",
+    "changed_from_endorsed_branch": [
+      "tests/testthat/test-explain.R",
+      "tests/testthat/test-publication-compiled.R",
+      "tests/testthat/test-sql-expr.R"
+    ],
+    "only_tests_changed": true,
+    "date_semantics_sha256": "2dbfa538e46949774baad7a4f56c41ff00cb1cebfbc47f163c3254642e47db12",
+    "version": "2.10.3"
+  },
+  "dsOMOPClient": {
+    "commit": "30a9794b4fe30c7b04f30390686157bf67ff4a63",
+    "tree": "b4b3b2e185995d205065a1606e22bfc106648e8c",
+    "changed_from_endorsed_branch": [
+      "tests/testthat/test-concept-label-api.R"
+    ],
+    "only_tests_changed": true,
+    "date_semantics_sha256": "2dbfa538e46949774baad7a4f56c41ff00cb1cebfbc47f163c3254642e47db12",
+    "version": "2.10.3"
+  }
+}

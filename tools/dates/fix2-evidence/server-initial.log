@@ -1,0 +1,9 @@
+FAILURES BY FILE
+              file blocks failed errors
+ test-date-range.R      1      0      1
+
+FAILING TESTS
+test-date-range.R | B4 custom public ranges order all years independently of observed dates | failed=0 error=TRUE
+
+RESULT failed: 0 errors: 1 skipped: 0 passed: 1242 
+RESULT failed: 0 errors: 1 skipped: 0 passed: 1242 

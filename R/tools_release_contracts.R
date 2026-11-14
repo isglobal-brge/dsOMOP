@@ -1148,6 +1148,22 @@
     is_cox <- identical(view, "effect") &&
       !identical(params$model_type %||% "cox", "poisson")
     extra <- list()
+    if (identical(view, "mdrr") && !is.finite(mdrr)) {
+      # Availability is post-processing of protected components only. Do not
+      # explain it using the raw arm sizes, events or person-time.
+      extra$unavailable_reason <- paste0(
+        "The protected MDRR is unavailable: the protected arm components ",
+        "do not support a finite MDRR (sufficient protected persons, positive ",
+        "total outcomes and positive person-time in both arms are required).")
+    }
+    if (identical(view, "effect") && !is_cox &&
+        !is.finite(rr[["estimate"]])) {
+      # This explanation uses only the protected result, never raw support.
+      extra$unavailable_reason <- paste0(
+        "The protected Poisson rate ratio is unavailable: the protected arm ",
+        "components do not support a finite rate ratio (sufficient protected ",
+        "outcomes and positive person-time in both arms are required).")
+    }
     if (is_cox) {
       extra$estimand <- paste0(
         "grouped-time Cox (Breslow ties) on public exit bins, capped at ",
@@ -1926,6 +1942,7 @@
   } else NA_real_
   df$mdrr <- rep(mdrr, nrow(df))
   list(df = df, built = arms$built,
+       extra = arms$extra,
        blocks = list(summary = "standard", mdrr = route$protection))
 }
 
@@ -1941,10 +1958,11 @@
                                      snap) {
   result <- contract$overlay(handle, ctx, params, route, snap, df)
   out <- result$df
-  label <- .omopToolsReleaseLabel(route, result$built, contract, snap, list(
+  label <- .omopToolsReleaseLabel(route, result$built, contract, snap, c(
+    result$extra %||% list(), list(
     protection = "mixed",
     blocks = result$blocks %||%
-      list(binary = "standard", distribution = route$protection)))
+      list(binary = "standard", distribution = route$protection))))
   attr(out, "dsomop_protection") <- label
   attr(out, "dsomop_release") <- list(
     protocol = .DSOMOP_RELEASE_PROTOCOL,

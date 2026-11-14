@@ -1,0 +1,55 @@
+date-review-fixes: dsOMOP v2.10.3 loaded. OMOP CDM resource resolver registered.
+Loading required package: DSI
+Loading required package: progress
+Loading required package: R6
+Loading required package: rly
+
+Logging into the collaborating servers
+[dsomop-audit] 2026-11-13T14:13:13+0000 method=omopPlanExecuteDS detail={"outputs":"o","plan":{"version":2,"meta":{"language_version":"2.0","semantic_version":"2.0.0","generated_by":"dsOMOPClient","client_version":"2.10.3"},"events":{"visit_occurrence":{"table":"visit_occurrence"}},"populations":{"base":{"kind":"criteria"}},"variables":{"helper":{"derived":{"kind":"calendar_date","reference":{"source":{"event":"visit_occurrence"},"which":"first","field":"start","scope":"person"}},"broadcast":false,"date_spec":{"future":"na","as_of":"2020-06-15"}},"first":{"source":{"event":"visit_occurrence"},"reducer":{"fn":"first_date"},"date_spec":{"future":"na","as_of":"2020-06-15"}},"last":{"source":{"event":"visit_occurrence"},"reducer":{"fn":"last_date"},"date_spec":{"future":"na","as_of":"2020-06-15"}},"value":{"source":{"event":"visit_occurrence"},"reducer":{"fn":"first_value","value":"visit_start_date"},"date_spec":{"future":"na","as_of":"2020-06-15"}}},"outputs":{"o":{"rows":"base","format":"wide","grain":"person","result_symbol":"D_o"}},"publish":["o"]},"scope_present":false,"scope_table_count":0}
+[dsomop-audit] 2026-11-13T14:13:14+0000 method=publication detail={"output":"o","component":"o","passed":true}
+.....[dsomop-audit] 2026-11-13T14:13:15+0000 method=omopPlanExecuteDS detail={"outputs":"o","plan":{"version":2,"meta":{"language_version":"2.0","semantic_version":"2.0.0","generated_by":"dsOMOPClient","client_version":"2.10.3"},"options":{"date_spec":{"future":"na","as_of":"2020-06-15"}},"events":{"visit_occurrence":{"table":"visit_occurrence"}},"populations":{"base":{"kind":"criteria"}},"variables":{"helper":{"derived":{"kind":"calendar_date","reference":{"source":{"event":"visit_occurrence"},"which":"first","field":"start","scope":"person"}},"broadcast":false},"first":{"source":{"event":"visit_occurrence"},"reducer":{"fn":"first_date"}},"last":{"source":{"event":"visit_occurrence"},"reducer":{"fn":"last_date"}},"value":{"source":{"event":"visit_occurrence"},"reducer":{"fn":"first_value","value":"visit_start_date"}}},"outputs":{"o":{"rows":"base","format":"wide","grain":"person","result_symbol":"D_o"}},"publish":["o"]},"scope_present":false,"scope_table_count":0}
+[dsomop-audit] 2026-11-13T14:13:16+0000 method=publication detail={"output":"o","component":"o","passed":true}
+.....
+Logging into the collaborating servers
+[dsomop-audit] 2026-11-13T14:13:17+0000 method=omopPlanExecuteDS detail={"outputs":"o","plan":{"version":2,"meta":{"language_version":"2.0","semantic_version":"2.0.0","generated_by":"dsOMOPClient","client_version":"2.10.3"},"populations":{"base":{"kind":"criteria"}},"variables":{"abbr":{"derived":{"kind":"calendar_date","reference":{"date":"2020-01-01"}},"broadcast":false,"date_spec":{"precision":"custom","pattern":"%a","level_range":["2020-01-01","2020-01-07"]}},"full":{"derived":{"kind":"calendar_date","reference":{"date":"2020-01-01"}},"broadcast":false,"date_spec":{"precision":"custom","pattern":"%A","level_range":["2020-01-01","2020-01-07"]}},"weekday":{"derived":{"kind":"calendar_date","reference":{"date":"2020-01-01"}},"broadcast":false,"date_spec":{"precision":"custom","pattern":"%u","level_range":["2020-01-01","2020-01-07"]}},"escaped":{"derived":{"kind":"calendar_date","reference":{"date":"2020-01-01"}},"broadcast":false,"date_spec":{"precision":"custom","pattern":"%%Y %a","level_range":["2020-01-01","2020-01-07"]}}},"outputs":{"o":{"rows":"base","format":"wide","grain":"person","result_symbol":"D_o"}},"publish":["o"]},"scope_present":false,"scope_table_count":0}
+[dsomop-audit] 2026-11-13T14:13:45+0000 method=publication detail={"output":"o","component":"o","passed":true}
+[dsomop-audit] 2026-11-13T14:13:45+0000 method=omopPlanExecuteDS detail={"outputs":"o","plan":{"version":2,"meta":{"language_version":"2.0","semantic_version":"2.0.0","generated_by":"dsOMOPClient","client_version":"2.10.3"},"populations":{"base":{"kind":"criteria"}},"variables":{"abbr":{"derived":{"kind":"calendar_date","reference":{"date":"2020-01-01"}},"broadcast":false,"date_spec":{"precision":"custom","pattern":"%a","level_range":["2020-01-01","2020-01-07"]}},"full":{"derived":{"kind":"calendar_date","reference":{"date":"2020-01-01"}},"broadcast":false,"date_spec":{"precision":"custom","pattern":"%A","level_range":["2020-01-01","2020-01-07"]}},"weekday":{"derived":{"kind":"calendar_date","reference":{"date":"2020-01-01"}},"broadcast":false,"date_spec":{"precision":"custom","pattern":"%u","level_range":["2020-01-01","2020-01-07"]}},"escaped":{"derived":{"kind":"calendar_date","reference":{"date":"2020-01-01"}},"broadcast":false,"date_spec":{"precision":"custom","pattern":"%%Y %a","level_range":["2020-01-01","2020-01-07"]}}},"outputs":{"o":{"rows":"base","format":"wide","grain":"person","result_symbol":"D_o"}},"publish":["o"]},"scope_present":false,"scope_table_count":0}
+[dsomop-audit] 2026-11-13T14:14:13+0000 method=publication detail={"output":"o","component":"o","passed":true}
+[dsomop-audit] 2026-11-13T14:14:13+0000 method=omopPlanExecuteDS detail={"outputs":"o","plan":{"version":2,"meta":{"language_version":"2.0","semantic_version":"2.0.0","generated_by":"dsOMOPClient","client_version":"2.10.3"},"populations":{"base":{"kind":"criteria"}},"variables":{"abbr":{"derived":{"kind":"calendar_date","reference":{"date":"2020-01-01"}},"broadcast":false,"date_spec":{"precision":"custom","pattern":"%a","level_range":["2020-01-01","2020-01-07"]}},"full":{"derived":{"kind":"calendar_date","reference":{"date":"2020-01-01"}},"broadcast":false,"date_spec":{"precision":"custom","pattern":"%A","level_range":["2020-01-01","2020-01-07"]}},"weekday":{"derived":{"kind":"calendar_date","reference":{"date":"2020-01-01"}},"broadcast":false,"date_spec":{"precision":"custom","pattern":"%u","level_range":["2020-01-01","2020-01-07"]}},"escaped":{"derived":{"kind":"calendar_date","reference":{"date":"2020-01-01"}},"broadcast":false,"date_spec":{"precision":"custom","pattern":"%%Y %a","level_range":["2020-01-01","2020-01-07"]}}},"outputs":{"o":{"rows":"base","format":"wide","grain":"person","result_symbol":"D_o"}},"publish":["o"]},"scope_present":false,"scope_table_count":0}
+[dsomop-audit] 2026-11-13T14:14:42+0000 method=publication detail={"output":"o","component":"o","passed":true}
+[dsomop-audit] 2026-11-13T14:14:42+0000 method=omopPlanExecuteDS detail={"outputs":"o","plan":{"version":2,"meta":{"language_version":"2.0","semantic_version":"2.0.0","generated_by":"dsOMOPClient","client_version":"2.10.3"},"populations":{"base":{"kind":"criteria"}},"variables":{"abbr":{"derived":{"kind":"calendar_date","reference":{"date":"2020-01-01"}},"broadcast":false,"date_spec":{"precision":"custom","pattern":"%a","level_range":["2020-01-01","2020-01-07"]}},"full":{"derived":{"kind":"calendar_date","reference":{"date":"2020-01-01"}},"broadcast":false,"date_spec":{"precision":"custom","pattern":"%A","level_range":["2020-01-01","2020-01-07"]}},"weekday":{"derived":{"kind":"calendar_date","reference":{"date":"2020-01-01"}},"broadcast":false,"date_spec":{"precision":"custom","pattern":"%u","level_range":["2020-01-01","2020-01-07"]}},"escaped":{"derived":{"kind":"calendar_date","reference":{"date":"2020-01-01"}},"broadcast":false,"date_spec":{"precision":"custom","pattern":"%%Y %a","level_range":["2020-01-01","2020-01-07"]}}},"outputs":{"o":{"rows":"base","format":"wide","grain":"person","result_symbol":"D_o"}},"publish":["o"]},"scope_present":false,"scope_table_count":0}
+[dsomop-audit] 2026-11-13T14:15:10+0000 method=publication detail={"output":"o","component":"o","passed":true}
+......................................WW1
+Logging into the collaborating servers
+2
+
+══ Warnings ════════════════════════════════════════════════════════════════════
+1. B2 reference calendar order survives federation, contrasts and staging ('test-date-review-fixes.R:27:12') - object 'dsOclose.DEYH2Z' not found
+
+2. B2 reference calendar order survives federation, contrasts and staging ('test-date-review-fixes.R:27:12') - object 'dsOclose.DEYH2Z' not found
+
+══ Failed ══════════════════════════════════════════════════════════════════════
+── 1. Error ('test-date-review-fixes.R:27:12'): B2 reference calendar order surv
+Error: Could not prove OMOP handle cleanup on every server; the client session was retained for retry. Affected server(s): There are some DataSHIELD errors, list them with datashield.errors().
+Backtrace:
+    ▆
+ 1. └─dsOMOPClient::ds.omop.disconnect(conns = conns) at test-date-review-fixes.R:27:12
+
+── 2. Error ('test-date-review-fixes.R:63:3'): B3 client patterns distinguish es
+Error: OMOP session 'omop' is already active; disconnect it before reusing the symbol.
+Backtrace:
+    ▆
+ 1. └─dates_va_fixture() at test-date-review-fixes.R:63:3
+ 2.   └─dsOMOPClient::ds.omop.connect(resource = "fixture", conns = conns) at tests/testthat/helper-dates-va.R:80:1
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+FAILURES BY FILE
+                     file blocks failed errors
+ test-date-review-fixes.R      2      0      2
+
+FAILING TESTS
+test-date-review-fixes.R | B2 reference calendar order survives federation, contrasts and staging | failed=0 error=TRUE
+test-date-review-fixes.R | B3 client patterns distinguish escaped and active adjacent directives | failed=0 error=TRUE
+
+RESULT failed: 0 errors: 2 skipped: 0 passed: 48 

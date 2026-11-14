@@ -1,0 +1,22 @@
+{
+  "dsOMOP": {
+    "commit": "0649f1a6a6a2871e570f23df19ce7e034c8a2c73",
+    "tree": "f922bc508c3f13d70b8964501193692a5040b4d9",
+    "parents": [
+      "766f33dda88dbf4298809069790b70a678fb1659",
+      "a620dd74b71d0471a5938492374a82faba6f4fd8"
+    ],
+    "dates_tip": "a620dd74b71d0471a5938492374a82faba6f4fd8",
+    "tree_identical_to_dates_branch": true
+  },
+  "dsOMOPClient": {
+    "commit": "7188cde5d0c7d553bf07f3da6bbd9fea5eac7044",
+    "tree": "44764d4d608c12e94833308c5c6c18bf64df3376",
+    "parents": [
+      "a5918c60985418eb4e50fb01a08ddb6bd5ce5264",
+      "da95946096120854836191806c82f91db7528f17"
+    ],
+    "dates_tip": "da95946096120854836191806c82f91db7528f17",
+    "tree_identical_to_dates_branch": true
+  }
+}

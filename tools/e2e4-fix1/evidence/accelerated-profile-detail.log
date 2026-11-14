@@ -1,0 +1,98 @@
+dsOMOP v2.10.3 loaded. OMOP CDM resource resolver registered.
+e2e-fix3-performance: 
+ROUTE fixed_synopsis 
+BASELINE
+   user  system elapsed 
+ 12.943   0.380  13.323 
+CURRENT
+   user  system elapsed 
+  8.414   0.109   8.523 
+WARM BASELINE
+   user  system elapsed 
+  9.890   0.022   9.912 
+WARM CURRENT
+   user  system elapsed 
+  9.796   0.018   9.816 
+.
+ROUTE realised_sticky 
+BASELINE
+   user  system elapsed 
+  9.312   0.035   9.348 
+CURRENT
+   user  system elapsed 
+  9.046   0.034   9.082 
+WARM BASELINE
+   user  system elapsed 
+  9.514   0.016   9.530 
+WARM CURRENT
+   user  system elapsed 
+  9.165   0.040   9.205 
+.
+e2e4-hmac: ......................
+e2e4-profile:                                       self.time self.pct total.time total.pct
+"paste"                                    1.02    12.04       1.05     12.40
+"FUN"                                      0.97    11.45       8.47    100.00
+"paste0"                                   0.95    11.22       0.95     11.22
+"grepl"                                    0.68     8.03       0.68      8.03
+".dsomopReleaseCanonicalPersonTokens"      0.60     7.08       1.17     13.81
+".dsomopReleaseBuild"                      0.49     5.79       8.47    100.00
+"sub"                                      0.46     5.43       0.46      5.43
+"anyNA"                                    0.43     5.08       0.43      5.08
+"which"                                    0.24     2.83       0.33      3.90
+"order"                                    0.23     2.72       0.24      2.83
+".local"                                   0.19     2.24       0.66      7.79
+"structure"                                0.15     1.77       0.17      2.01
+"anyDuplicated.default"                    0.15     1.77       0.15      1.77
+"stringhash"                               0.13     1.53       0.15      1.77
+"anyDuplicated"                            0.12     1.42       0.27      3.19
+"match.arg"                                0.12     1.42       0.17      2.01
+".dsomopReleaseFingerprintFramed"          0.10     1.18       2.29     27.04
+"jsonlite::toJSON"                         0.10     1.18       0.90     10.63
+"seq.int"                                  0.10     1.18       0.10      1.18
+"unique.default"                           0.08     0.94       0.08      0.94
+"vapply"                                   0.06     0.71       4.67     55.14
+".dsomopBigNew"                            0.06     0.71       0.36      4.25
+"[.data.frame"                             0.06     0.71       0.09      1.06
+"$"                                        0.06     0.71       0.06      0.71
+"isTRUE"                                   0.05     0.59       0.07      0.83
+"duplicated.default"                       0.05     0.59       0.05      0.59
+".dsomopBigInteger"                        0.04     0.47       0.49      5.79
+".dsomopDpBernoulli"                       0.04     0.47       0.23      2.72
+"%in%"                                     0.04     0.47       0.05      0.59
+"c"                                        0.04     0.47       0.04      0.47
+"eval"                                     0.03     0.35       8.47    100.00
+".dsomopBigMultiply"                       0.03     0.35       0.22      2.60
+".dsomopBigCompare"                        0.03     0.35       0.05      0.59
+"as.character"                             0.03     0.35       0.03      0.35
+"colSums"                                  0.03     0.35       0.03      0.35
+                                  total.time total.pct self.time self.pct
+"FUN"                                   8.47    100.00      0.97    11.45
+".dsomopReleaseBuild"                   8.47    100.00      0.49     5.79
+"eval"                                  8.47    100.00      0.03     0.35
+"lapply"                                8.47    100.00      0.01     0.12
+"doTryCatch"                            8.47    100.00      0.00     0.00
+"doWithOneRestart"                      8.47    100.00      0.00     0.00
+"source_file"                           8.47    100.00      0.00     0.00
+"test_code"                             8.47    100.00      0.00     0.00
+"test_dir"                              8.47    100.00      0.00     0.00
+"test_files"                            8.47    100.00      0.00     0.00
+"test_files_serial"                     8.47    100.00      0.00     0.00
+"test_that"                             8.47    100.00      0.00     0.00
+"testthat::test_local"                  8.47    100.00      0.00     0.00
+"tryCatch"                              8.47    100.00      0.00     0.00
+"tryCatchList"                          8.47    100.00      0.00     0.00
+"tryCatchOne"                           8.47    100.00      0.00     0.00
+"withCallingHandlers"                   8.47    100.00      0.00     0.00
+"withOneRestart"                        8.47    100.00      0.00     0.00
+"withRestarts"                          8.47    100.00      0.00     0.00
+"with_reporter"                         8.47    100.00      0.00     0.00
+"noisy"                                 5.02     59.27      0.01     0.12
+"vapply"                                4.67     55.14      0.06     0.71
+".dsomopReleaseNoisyComponent"          2.36     27.86      0.00     0.00
+".dsomopReleaseFingerprintFramed"       2.29     27.04      0.10     1.18
+".dsomopDpDiscreteLaplace"              1.67     19.72      0.00     0.00
+.
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+RESULT failed: 0 errors: 0 skipped: 0 passed: 25 

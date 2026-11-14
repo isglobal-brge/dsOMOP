@@ -554,8 +554,7 @@
 #'     \item{\code{"binned"}}{Truncates dates to year/month/week. Reduces
 #'       temporal precision while preserving broad trends.}
 #'     \item{\code{"absolute"}}{Returns raw dates unchanged.
-#'       \strong{Requires server authorization}:
-#'       \code{dsomop.allow_absolute_dates = TRUE}. Raw dates are
+#'       Requires no owner option on assignment paths (A-28). Raw dates are
 #'       quasi-identifiers per OMOP Privacy Guidance.}
 #'   }
 #' @param index_date_col Character; column with index dates (for relative mode)
@@ -593,14 +592,7 @@
            paste(not_dates, collapse = ", "), ".", call. = FALSE)
     }
     date_columns <- unique(requested)
-    allow_absolute <- getOption("dsomop.allow_absolute_dates",
-      getOption("default.dsomop.allow_absolute_dates", FALSE))
-    omitted <- setdiff(all_date_columns, date_columns)
-    if (length(omitted) > 0 && !isTRUE(allow_absolute)) {
-      stop("date_handling$date_columns omits date column(s) while absolute ",
-           "dates are disabled: ", paste(omitted, collapse = ", "), ".",
-           call. = FALSE)
-    }
+
   }
   if (length(date_columns) == 0) return(df)
 
@@ -645,23 +637,13 @@
     # The reference itself is safe only as a relative zero, never as a date.
     if (ref_col %in% date_columns) {
       df[[ref_col]] <- 0L
-    } else {
-      allow_absolute <- getOption("dsomop.allow_absolute_dates",
-        getOption("default.dsomop.allow_absolute_dates", FALSE))
-      if (!isTRUE(allow_absolute)) {
-        stop("Relative date handling cannot leave its index date untransformed.",
-             call. = FALSE)
-      }
     }
+
     return(df)
   }
 
   if (mode == "binned") {
     bin_width <- date_handling$bin_width %||% "month"
-    if (nrow(df) == 0L) {
-      for (col in date_columns) df[[col]] <- character(0)
-      return(df)
-    }
     for (col in date_columns) {
       col_dates <- as_date(df[[col]], col)
       df[[col]] <- switch(bin_width,
@@ -674,6 +656,9 @@
         }
       )
     }
+    domains <- attr(df, "omop_category_columns") %||% list()
+    for (col in date_columns) domains[[col]] <- list(calendar = list(category = "legacy_date_bin", precision = bin_width))
+    attr(df, "omop_category_columns") <- domains
     return(df)
   }
 }
@@ -695,6 +680,40 @@
   }
   conn <- if (is.null(handle)) DBI::ANSI() else .conn(handle)
   as.character(DBI::dbQuoteLiteral(conn, x))
+}
+
+# The closed reference-source allowlist used by extraction and by the legacy
+# executor's private publication proof. A projected frame without person keys
+# is never sufficient evidence on its own.
+.referenceTableSource <- function(blueprint, table) {
+  table <- tolower(table)
+  source <- blueprint$tables[blueprint$tables$table_name == table, , drop = FALSE]
+  nrow(source) == 1L && isTRUE(source$present_in_db[[1L]]) &&
+    (identical(source$schema_category[[1L]], "Vocabulary") ||
+       table %in% c("cdm_source", "metadata", "cohort_definition", "achilles_analysis"))
+}
+
+# Resolve both the surfaced concept column and the column constrained by a
+# concept set. The executor's reference proof must use the compiler's same
+# precedence: a requested or independently filtered override surfaces values,
+# while the set continues to constrain the source's domain concept column.
+.conceptScopeColumns <- function(blueprint, table, concept_col = NULL,
+                                 columns = NULL, filters = NULL) {
+  table_lower <- tolower(table)
+  domain <- .getDomainConceptColumn(blueprint, table_lower)
+  if (is.null(concept_col)) {
+    concept_col <- domain
+  } else {
+    concept_col <- tolower(.validateIdentifier(concept_col, "concept column"))
+    if (!concept_col %in% blueprint$columns[[table_lower]]$column_name) {
+      stop("Concept column '", concept_col, "' not found in table '", table,
+           "'.", call. = FALSE)
+    }
+  }
+  surfacing <- !is.null(domain) && !identical(concept_col, domain) &&
+    ((!is.null(columns) && tolower(concept_col) %in% tolower(columns)) ||
+       (!is.null(filters) && .filterTreeReferencesColumn(filters, concept_col)))
+  list(column = concept_col, filter_column = if (surfacing) domain else concept_col)
 }
 
 #' Compile a SQL SELECT for a table extraction
@@ -747,49 +766,18 @@
     stop("No columns found for table '", table, "'.", call. = FALSE)
   }
 
-  # Concept scoping column: the domain concept by default, but a caller may
-  # override it to surface/aggregate by another concept column on the same table
-  # (e.g. unit_concept_id, *_type_concept_id, value_as_concept_id) for
-  # unit-harmonization extraction or value-by-unit/type distributions.
-  domain_concept_col <- .getDomainConceptColumn(bp, table_lower)
-  if (is.null(concept_col)) {
-    concept_col <- domain_concept_col
-  } else {
-    concept_col <- tolower(.validateIdentifier(concept_col, "concept column"))
-    if (!concept_col %in% col_df$column_name) {
-      stop("Concept column '", concept_col, "' not found in table '", table,
-           "'.", call. = FALSE)
-    }
-  }
+  concept_scope <- .conceptScopeColumns(bp, table, concept_col, columns, filters)
+  concept_col <- concept_scope$column
   has_concept_col <- !is.null(concept_col) && concept_col %in% col_df$column_name
   has_person_id <- "person_id" %in% col_df$column_name
-  safe_non_person_tables <- c(
-    "cdm_source", "metadata", "cohort_definition", "achilles_analysis"
-  )
-  is_safe_non_person <- identical(tbl_row$schema_category[1], "Vocabulary") ||
-    table_lower %in% safe_non_person_tables
+  is_safe_non_person <- .referenceTableSource(bp, table_lower)
   if (!has_person_id && !is_safe_non_person) {
     stop("Row-level extraction of non-person-keyed table '", table,
          "' is not permitted. A declared person join path and a distinct-",
          "person disclosure gate are required.", call. = FALSE)
   }
 
-  # Which column does the concept_set (concept_id list) match on? Normally the
-  # concept_col, so a caller can scope the set against an alternate concept column
-  # (e.g. concept_filter = 9529 with concept_col = unit_concept_id selects rows in
-  # that unit). BUT when the override column is a SURFACING choice — it is also a
-  # requested output column OR a custom filter independently scopes it — the
-  # concept_set values are DOMAIN concepts (e.g. glucose 3004501 surfaced by
-  # unit/route, with a unit/route filter): matching a domain concept on, say,
-  # route_concept_id would select nothing, so the set matches on the domain
-  # concept column instead. The override column is still selected/filtered. With
-  # no surfacing signal (concept_col is the genuine scoping column) this is a
-  # no-op, preserving the concept_col-as-scope contract.
-  surfacing_override <- !is.null(domain_concept_col) &&
-    !identical(concept_col, domain_concept_col) &&
-    ((!is.null(columns) && tolower(concept_col) %in% tolower(columns)) ||
-     (!is.null(filters) && .filterTreeReferencesColumn(filters, concept_col)))
-  concept_filter_col <- if (surfacing_override) domain_concept_col else concept_col
+  concept_filter_col <- concept_scope$filter_column
   has_concept_filter_col <- !is.null(concept_filter_col) &&
     concept_filter_col %in% col_df$column_name
 
@@ -2025,8 +2013,7 @@
       # Restrict formatting to the writer; chunk transforms and tokenisation
       # must continue to see the caller's numeric options.
       old_options <- options(scipen = 999)
-      tryCatch(utils::write.table(chunk, output_path,
-                  sep = ",", row.names = FALSE,
+      tryCatch(.stagedWriteCsv(chunk, output_path,
                   col.names = (n_rows == 0L),
                   append = (n_rows > 0L)),
                finally = options(old_options))
@@ -2050,7 +2037,7 @@
     column_types <- empty_column_types
     if (use_parquet) open_parquet_writer(empty)
     if (!use_parquet) {
-      utils::write.table(empty, output_path, sep = ",", row.names = FALSE,
+      .stagedWriteCsv(empty, output_path,
                   col.names = TRUE)
     }
   }
@@ -2088,6 +2075,7 @@
   list(
     file = output_path,
     format = fmt,
+    csv_encoding = if (!use_parquet) "backslash-v1" else NULL,
     layout = layout,
     parts = NULL,
     n_rows = n_rows,
@@ -2586,15 +2574,7 @@
     default_mode <- getOption("dsomop.default_date_handling", "remove")
     date_handling <- .normalizeDateHandling(default_mode)
   }
-  if (identical(date_handling$mode, "absolute")) {
-    allow <- getOption("dsomop.allow_absolute_dates",
-               getOption("default.dsomop.allow_absolute_dates", FALSE))
-    if (!isTRUE(allow)) {
-      stop("Absolute date handling is not permitted by the server. ",
-           "Contact the data controller to enable dsomop.allow_absolute_dates.",
-           call. = FALSE)
-    }
-  }
+
   if (identical(representation, "features")) {
     has_index_window <- !is.null(temporal$index_window)
     if (has_index_window && !identical(representation_grain, "episode")) {
@@ -2788,12 +2768,12 @@
         .toEpisodeFeatures(
           result, table, feature_specs, roster = feature_roster,
           date_col = feature_date_col,
-          default_concept_col = feature_concept_col
+          default_concept_col = feature_concept_col, handle = handle
         )
       } else {
         .toFeatures(
           result, table, feature_specs, person_ids = feature_person_ids,
-          date_col = feature_date_col, default_concept_col = feature_concept_col
+          date_col = feature_date_col, default_concept_col = feature_concept_col, handle = handle
         )
       }
       if (translate_concepts && is.data.frame(empty_feat)) {
@@ -2882,12 +2862,12 @@
       .toEpisodeFeatures(
         result, table, feature_specs, roster = feature_roster,
         date_col = feature_date_col,
-        default_concept_col = feature_concept_col
+        default_concept_col = feature_concept_col, handle = handle
       )
     } else {
       .toFeatures(
         result, table, feature_specs, person_ids = feature_person_ids,
-        date_col = feature_date_col, default_concept_col = feature_concept_col
+        date_col = feature_date_col, default_concept_col = feature_concept_col, handle = handle
       )
     },
     "sparse" = .toSparse(
@@ -3199,54 +3179,10 @@
          call. = FALSE)
   }
 
-  concept_name_map <- character(0)
-  numeric_concepts <- suppressWarnings(as.numeric(as.character(concepts)))
-  integer_concepts <- suppressWarnings(as.integer(as.character(concepts)))
-  exact_numeric <- length(concepts) > 0L & !is.na(integer_concepts) &
-    is.finite(numeric_concepts) & numeric_concepts == integer_concepts
-  if (isTRUE(translate_concepts) && !is.null(handle) && any(exact_numeric)) {
-    concept_rows <- tryCatch(
-      .vocabLookupConcepts(handle, unique(integer_concepts[exact_numeric])),
-      error = function(e) data.frame()
-    )
-    if (nrow(concept_rows) > 0L) {
-      concept_name_map <- stats::setNames(
-        as.character(concept_rows$concept_name),
-        as.character(concept_rows$concept_id)
-      )
-    }
-  }
-
-  label_for_concept <- stats::setNames(
-    vapply(concepts, function(concept) {
-      fallback <- .standardizeName(as.character(concept))
-      if (is.na(fallback) || !nzchar(fallback)) {
-        fallback <- paste0("concept_", concept)
-      }
-      if (!isTRUE(translate_concepts) || is.null(handle)) return(fallback)
-
-      numeric_id <- suppressWarnings(as.numeric(as.character(concept)))
-      integer_id <- suppressWarnings(as.integer(as.character(concept)))
-      if (length(numeric_id) != 1L || !is.finite(numeric_id) ||
-          is.na(integer_id) || numeric_id != integer_id) {
-        return(fallback)
-      }
-      readable_name <- unname(concept_name_map[as.character(integer_id)])
-      readable <- if (length(readable_name) == 1L && !is.na(readable_name)) {
-        .standardizeName(readable_name)
-      } else {
-        ""
-      }
-      if (is.na(readable) || !nzchar(readable)) readable <- "unknown"
-      paste0("concept_", integer_id, "__", readable)
-    }, character(1)),
-    as.character(concepts)
-  )
-  if (anyDuplicated(unname(label_for_concept))) {
-    stop("Wide concept labels are not unique; retain numeric concept IDs or ",
-         "narrow the concept set.", call. = FALSE)
-  }
-
+  # Stable untranslated keys survive until publication and federation naming.
+  label_for_concept <- setNames(vapply(concepts, function(id) .standardizeName(as.character(id)), ""), as.character(concepts))
+  contract <- list()
+  registry <- if (!is.null(handle)) .buildBlueprint(handle)$columns[[table]] else NULL
   for (concept in concepts) {
     concept_data <- df[df[[concept_col]] == concept, , drop = FALSE]
     concept_label <- unname(label_for_concept[[as.character(concept)]])
@@ -3254,6 +3190,16 @@
     for (vcol in value_cols) {
       if (vcol == ".seq") next
       col_name <- paste0(concept_label, ".", vcol)
+      desc <- .fragmentColumn(if (.conceptDeclaredColumn(vcol, registry)) "integer" else "numeric",
+                              TRUE, if (.conceptDeclaredColumn(vcol, registry)) "concept" else "measure")
+      attr(desc, "concept_name") <- list(id = as.character(concept), prefix = "", suffix = paste0(".", vcol), legacy = TRUE,
+                                         owner = NULL, declared = !is.null(expected_concepts))
+      observed_support <- if ("person_id" %in% names(concept_data)) length(unique(concept_data$person_id)) else 0L
+      permitted <- observed_support >= .omopDisclosureSettings()$nfilter_tab && tryCatch({
+        .assertSafeLevels(length(concepts), length(unique(df$person_id))); TRUE
+      }, error = function(e) FALSE)
+      attr(desc, "concept_name")$permitted <- permitted
+      contract[[col_name]] <- desc
       first_occ <- concept_data[concept_data$.seq == 1, c(group_cols, vcol),
                                 drop = FALSE]
       names(first_occ)[length(group_cols) + 1L] <- col_name
@@ -3266,6 +3212,10 @@
                                  sep = "\r"))
   wide <- wide[match(roster_key, landed_key), , drop = FALSE]
   rownames(wide) <- NULL
+  attr(wide, "omop_column_contract") <- contract
+  if (isTRUE(translate_concepts) && !is.null(handle)) {
+    wide <- .conceptPresent(list(handle = handle, ir = list()), wide, contract)
+  }
   wide
 }
 
@@ -3414,10 +3364,11 @@
 #' @param date_col Optional OMOP event date column resolved from the blueprint.
 #' @param default_concept_col Optional domain concept column resolved from the
 #'   blueprint; individual specs may override it with \code{concept_col}.
+#' @param handle Optional OMOP handle for declared concept classes.
 #' @return Data frame with one row per person
 #' @keywords internal
 .toFeatures <- function(df, table, specs = NULL, person_ids = NULL,
-                        date_col = NULL, default_concept_col = NULL) {
+                        date_col = NULL, default_concept_col = NULL, handle = NULL) {
   if (!"person_id" %in% names(df)) return(df)
 
   # Find concept column
@@ -3561,8 +3512,12 @@
     rep(NA_real_, length(persons))
   }
 
+  column_contract <- list()
+  registry <- if (!is.null(handle)) .buildBlueprint(handle)$columns[[table]] else NULL
+
   # Helper: generate one feature column
   .add_feature <- function(features, spec, concept_data, concept_str, df) {
+    before <- names(features)
     # Determine label
     if (!is.null(spec) && !is.null(spec$name) && nchar(spec$name) > 0) {
       label <- spec$name
@@ -3948,6 +3903,20 @@
       }
     }
 
+    for (col in setdiff(names(features), before)) {
+      desc <- .fragmentColumn("numeric", TRUE, "measure")
+      if (!is.null(spec_type) && spec_type %in% c("first_value", "latest_value", "min_value", "max_value") &&
+          .conceptDeclaredColumn(val_col, registry)) attr(desc, "concept") <- TRUE
+      if (is.null(spec_type)) {
+        support <- length(unique(concept_data$person_id))
+        attr(desc, "concept_name") <- list(id = concept_str, prefix = "", suffix = substring(col, nchar(label) + 1L),
+          legacy = TRUE, owner = NULL, declared = FALSE,
+          permitted = support >= .omopDisclosureSettings()$nfilter_tab && tryCatch({
+            .assertSafeLevels(length(unique(df[[concept_col]])), length(persons)); TRUE
+          }, error = function(e) FALSE))
+      }
+      column_contract[[col]] <<- desc
+    }
     features
   }
 
@@ -4105,6 +4074,7 @@
     stop("Features exceeded the server output-column cap after reduction.",
          call. = FALSE)
   }
+  if (length(column_contract)) attr(features, "omop_column_contract") <- column_contract
   features
 }
 
@@ -4122,11 +4092,12 @@
 #'   cohort episode, including episodes with no qualifying event.
 #' @param date_col Optional event date column.
 #' @param default_concept_col Optional default concept column.
+#' @param handle Optional OMOP handle for declared concept classes.
 #' @return Data frame with one row per cohort episode.
 #' @keywords internal
 .toEpisodeFeatures <- function(df, table, specs = NULL, roster,
                                date_col = NULL,
-                               default_concept_col = NULL) {
+                               default_concept_col = NULL, handle = NULL) {
   required_roster <- c("cohort_row_id", "person_id")
   if (!is.data.frame(roster) ||
       !all(required_roster %in% names(roster)) ||
@@ -4150,7 +4121,7 @@
     episode_df, table, specs,
     person_ids = roster$cohort_row_id,
     date_col = date_col,
-    default_concept_col = default_concept_col
+    default_concept_col = default_concept_col, handle = handle
   )
   zero_fill <- attr(features, "omop_zero_fill", exact = TRUE)
   names(features)[names(features) == "person_id"] <- "cohort_row_id"
@@ -4379,6 +4350,12 @@
       any(!covariates$rowId %in% person_ref$rowId)) {
     stop("Sparse covariates contain a rowId outside personRef.",
          call. = FALSE)
+  }
+  if (!is.null(concept_col)) {
+    ids <- unique(as.character(df[[concept_col]][!is.na(df[[concept_col]])]))
+    attr(covariateRef, "omop_reference_support") <- list(
+      counts = setNames(vapply(ids, function(id) length(unique(df$person_id[which(as.character(df[[concept_col]]) == id)])), 0L), ids),
+      total = length(unique(df$person_id)))
   }
   list(covariates = covariates, covariateRef = covariateRef,
        personRef = person_ref)
@@ -5124,31 +5101,18 @@
   result
 }
 
-#' Compute a comorbidity score
+#' Reviewed concept categories of the simple-weighted comorbidity scores
 #'
-#' Checks condition tables for the presence of category-defining concepts
-#' and computes a weighted sum per person. Supports simple weighted (Charlson,
-#' CHADS2, CHA2DS2-VASc), tiered (DCSI), and weighted binary (HFRS) modes.
+#' The FeatureExtraction-traced seeds and integer weights of Charlson,
+#' CHADS2 and CHA2DS2-VASc (before local descendant expansion), shared by
+#' the v1 adapter (\code{.computeComorbidityScore()}) and the native
+#' language 2.0 score variables (\code{.comorbidityDefinition()}, A-2).
 #'
-#' @param handle CDM handle
-#' @param score_type Character; "charlson", "chads2", "chadsvasc", "dcsi", "hfrs"
-#' @param person_ids Integer vector of person IDs
-#' @return Data frame with person_id and score columns
+#' @param score_type One of \code{"charlson"}, \code{"chads2"},
+#'   \code{"chadsvasc"}.
+#' @return Named list of list(concepts, weight).
 #' @keywords internal
-.computeComorbidityScore <- function(handle, score_type, person_ids = NULL,
-                                     reference_date = NULL) {
-  if (is.null(person_ids) || length(person_ids) == 0) return(NULL)
-
-  # --- Score definitions ---
-  # Concept seeds and analysis IDs are traced to OHDSI FeatureExtraction
-  # v3.14.0, commit 53266f0233c2ee7cae127e8669ad35b0d60406ae.
-  #
-  # This is a dsOMOP adapter, not an upstream-equivalent implementation:
-  # FeatureExtraction uses condition_era, cohort-relative windows and
-  # index-specific inclusion/exclusion rules. dsOMOP reads condition_occurrence,
-  # uses its explicit reference_date where age is required, and applies the
-  # local vocabulary/descendant rules below.
-
+.comorbidityCategories <- function(score_type) {
   # Charlson Comorbidity Index (analysis_id = 901)
   # Source: FeatureExtraction/inst/sql/sql_server/CharlsonIndex.sql
   if (score_type == "charlson") {
@@ -5205,6 +5169,41 @@
                                         317305L, 321886L, 314659L,
                                         321887L, 437312L, 134057L), weight = 1L)
     )
+  } else {
+    stop("Unknown simple-weighted score type: '", score_type, "'.", call. = FALSE)
+  }
+  categories
+}
+
+#' Compute a comorbidity score
+#'
+#' Checks condition tables for the presence of category-defining concepts
+#' and computes a weighted sum per person. Supports simple weighted (Charlson,
+#' CHADS2, CHA2DS2-VASc), tiered (DCSI), and weighted binary (HFRS) modes.
+#'
+#' @param handle CDM handle
+#' @param score_type Character; "charlson", "chads2", "chadsvasc", "dcsi", "hfrs"
+#' @param person_ids Integer vector of person IDs
+#' @return Data frame with person_id and score columns
+#' @keywords internal
+.computeComorbidityScore <- function(handle, score_type, person_ids = NULL,
+                                     reference_date = NULL) {
+  if (is.null(person_ids) || length(person_ids) == 0) return(NULL)
+
+  # --- Score definitions ---
+  # Concept seeds and analysis IDs are traced to OHDSI FeatureExtraction
+  # v3.14.0, commit 53266f0233c2ee7cae127e8669ad35b0d60406ae.
+  #
+  # This is a dsOMOP adapter, not an upstream-equivalent implementation:
+  # FeatureExtraction uses condition_era, cohort-relative windows and
+  # index-specific inclusion/exclusion rules. dsOMOP reads condition_occurrence,
+  # uses its explicit reference_date where age is required, and applies the
+  # local vocabulary/descendant rules below.
+
+  # Charlson (analysis_id = 901), CHADS2 (903), CHA2DS2-VASc (904): the
+  # FeatureExtraction-traced categories of .comorbidityCategories().
+  if (score_type %in% c("charlson", "chads2", "chadsvasc")) {
+    categories <- .comorbidityCategories(score_type)
 
   # DCSI (analysis_id = 902) — vocabulary-resolved via concept_relationship
   } else if (score_type == "dcsi") {
@@ -5564,231 +5563,6 @@
   result
 }
 
-# --- Survival Extraction ---
-
-#' Extract survival (time-to-event) data for cohort members
-#'
-#' Two-query approach: gets cohort members and outcome events separately,
-#' then computes time-to-event on the R side.
-#'
-#' @param handle CDM handle
-#' @param cohort_table Character; temp table name with cohort members
-#' @param outcome List with \code{table} and \code{concept_set}
-#' @param tar List with \code{start_offset} and \code{end_offset}
-#' @param event_order Character; "first" or "last"
-#' @param filters List; optional custom filter DSL tree narrowing which outcome
-#'   events qualify (e.g. a value range). Validated fail-closed via
-#'   \code{\link{.assertCustomFilterSafe}} and ANDed into the outcome-event
-#'   SELECT. It only restricts events; the cohort (one row per member) and its
-#'   distinct-person gate are unaffected, so this can never widen disclosure.
-#' @return Data frame with row_id/cohort_row_id, person_id, event (0/1),
-#'   time_to_event_days
-#' @keywords internal
-.extractSurvival <- function(handle, cohort_table, outcome, tar = NULL,
-                              event_order = "first", filters = NULL) {
-  if (is.null(cohort_table)) {
-    warning("Survival output requires a cohort; returning NULL.", call. = FALSE)
-    return(NULL)
-  }
-
-  if (!is.character(event_order) || length(event_order) != 1L ||
-      is.na(event_order) || !tolower(event_order) %in% c("first", "last")) {
-    stop("event_order must be 'first' or 'last'.", call. = FALSE)
-  }
-  event_order <- tolower(event_order)
-
-  tar <- tar %||% list()
-  if (!is.list(tar) ||
-      (length(tar) > 0L && (is.null(names(tar)) || any(!nzchar(names(tar))) ||
-                             anyDuplicated(names(tar))))) {
-    stop("tar must be a uniquely named list.", call. = FALSE)
-  }
-  unknown_tar <- setdiff(names(tar),
-                         c("start_offset", "end_offset", "censoring"))
-  if (length(unknown_tar) > 0L) {
-    stop("Unknown TAR field(s): ", paste(unknown_tar, collapse = ", "), ".",
-         call. = FALSE)
-  }
-  exact_offset <- function(value, field, default = NULL) {
-    if (is.null(value)) return(default)
-    numeric_value <- suppressWarnings(as.numeric(value))
-    integer_value <- suppressWarnings(as.integer(value))
-    if (length(value) != 1L || length(numeric_value) != 1L ||
-        !is.finite(numeric_value) || length(integer_value) != 1L ||
-        is.na(integer_value) || numeric_value != integer_value) {
-      stop("tar$", field, " must be one finite exact integer day offset.",
-           call. = FALSE)
-    }
-    integer_value
-  }
-  start_offset <- exact_offset(tar$start_offset, "start_offset", 0L)
-  end_offset <- exact_offset(tar$end_offset, "end_offset", NULL)
-  if (!is.null(end_offset) && start_offset > end_offset) {
-    stop("tar$start_offset must not be after tar$end_offset.", call. = FALSE)
-  }
-  censoring <- tolower(tar$censoring %||% "cohort_end")
-  if (!is.character(censoring) || length(censoring) != 1L ||
-      is.na(censoring) || !identical(censoring, "cohort_end")) {
-    stop("tar$censoring currently supports only 'cohort_end'.", call. = FALSE)
-  }
-  if (!is.null(end_offset) && "censoring" %in% names(tar)) {
-    stop("tar$censoring cannot be combined with an explicit end_offset.",
-         call. = FALSE)
-  }
-
-  if (!is.list(outcome) || is.null(names(outcome)) ||
-      any(!nzchar(names(outcome))) || anyDuplicated(names(outcome)) ||
-      !setequal(names(outcome), c("table", "concept_set")) ||
-      length(names(outcome)) != 2L) {
-    stop("outcome must contain exactly table and concept_set.", call. = FALSE)
-  }
-
-  cohort_table <- .validateIdentifier(cohort_table, "survival cohort table")
-  bp <- .buildBlueprint(handle)
-
-  # Query 1: cohort members
-  cohort_sql <- paste0(
-    "SELECT c.cohort_row_id, c.subject_id AS person_id, ",
-    "c.cohort_start_date, c.cohort_end_date",
-    " FROM ", .rankedCohortSql(cohort_table, handle), " AS c",
-    " ORDER BY c.cohort_row_id"
-  )
-
-
-  cohort_df <- .executeQuery(handle, cohort_sql)
-  if (nrow(cohort_df) == 0) return(cohort_df)
-
-  cohort_start <- suppressWarnings(as.Date(cohort_df$cohort_start_date))
-  cohort_end <- suppressWarnings(as.Date(cohort_df$cohort_end_date))
-  if (any(is.na(cohort_start)) || any(is.na(cohort_end)) ||
-      any(cohort_end < cohort_start)) {
-    stop("Survival cohort episodes require valid dates with end >= start.",
-         call. = FALSE)
-  }
-
-  cohort_df$cohort_row_id <- as.integer(cohort_df$cohort_row_id)
-  cohort_df$row_id <- cohort_df$cohort_row_id
-
-  # Query 2: outcome events
-  outcome_table <- tolower(.validateIdentifier(outcome$table, "outcome table"))
-  outcome_concepts <- .resolveConceptSet(handle, outcome$concept_set)
-  if (length(outcome_concepts) == 0L) {
-    stop("Outcome concept_set resolved to no concepts.", call. = FALSE)
-  }
-
-  tbl_row <- bp$tables[bp$tables$table_name == outcome_table, , drop = FALSE]
-  if (nrow(tbl_row) == 0 || !tbl_row$present_in_db[1]) {
-    stop("Outcome table '", outcome$table, "' not found.", call. = FALSE)
-  }
-
-  date_col <- .getDateColumn(bp, outcome_table)
-  concept_col <- .getDomainConceptColumn(bp, outcome_table)
-  outcome_columns <- bp$columns[[outcome_table]]$column_name
-  if (is.null(date_col) || !date_col %in% outcome_columns ||
-      is.null(concept_col) || !concept_col %in% outcome_columns) {
-    stop("Outcome table requires reviewed event-date and domain-concept columns.",
-         call. = FALSE)
-  }
-  schema <- .resolveTableSchema(handle, outcome_table,
-                                 tbl_row$schema_category[1])
-  qualified <- .qualifyTable(handle, outcome_table, schema)
-
-  concept_ids_str <- .sqlIdList(outcome_concepts)
-
-  outcome_sql <- paste0(
-    "SELECT t.person_id, t.", date_col, " AS outcome_date",
-    " FROM ", qualified, " AS t",
-    " WHERE t.", concept_col, " IN (", concept_ids_str, ")",
-    " AND EXISTS (SELECT 1 FROM ", cohort_table,
-    " AS c WHERE c.subject_id = t.person_id)"
-  )
-
-  # Custom filter DSL on the outcome events. Validated fail-closed (identifier/
-  # blocked columns and narrow fingerprinting ops rejected) before any SQL is
-  # emitted, then ANDed onto the outcome WHERE (alias t). Only narrows the
-  # qualifying events; the final publication boundary checks the output
-  # unaffected, so the suppression can never be bypassed.
-  if (!is.null(filters) && length(filters) > 0) {
-    valid_cols <- .filterableColumns(bp, outcome_table)
-    .assertCustomFilterSafe(filters, valid_cols, handle = handle,
-                            table = outcome_table)
-    filter_sql <- .compileFilter(handle, filters, "t", valid_cols)
-    if (!is.null(filter_sql) && nchar(filter_sql) > 0) {
-      outcome_sql <- paste0(outcome_sql, " AND ", filter_sql)
-    }
-  }
-
-  outcome_df <- .executeQuery(handle, outcome_sql)
-
-  # TAR boundaries. Inputs were validated as exact integers before any query;
-  # cohort dates were validated above rather than allowing NA/negative follow-up
-  # to be interpreted as ordinary censoring.
-  cohort_df$tar_start <- cohort_start + start_offset
-  if (!is.null(end_offset)) {
-    cohort_df$tar_end <- cohort_start + end_offset
-  } else {
-    cohort_df$tar_end <- cohort_end
-  }
-  if (any(is.na(cohort_df$tar_end)) ||
-      any(cohort_df$tar_end < cohort_df$tar_start)) {
-    stop("Survival TAR end must not be before TAR start for any episode.",
-         call. = FALSE)
-  }
-
-  # Merge and process outcomes
-  if (nrow(outcome_df) > 0) {
-    raw_outcome_date <- outcome_df$outcome_date
-    outcome_df$outcome_date <- suppressWarnings(as.Date(raw_outcome_date))
-    if (any(!is.na(raw_outcome_date) & is.na(outcome_df$outcome_date))) {
-      stop("Outcome table contains an invalid event date.", call. = FALSE)
-    }
-    merged <- merge(cohort_df, outcome_df, by = "person_id", all.x = TRUE)
-  } else {
-    merged <- cohort_df
-    merged$outcome_date <- as.Date(NA)
-  }
-
-  # Filter outcomes within TAR window
-  merged$in_tar <- !is.na(merged$outcome_date) &
-    merged$outcome_date >= merged$tar_start &
-    merged$outcome_date <= merged$tar_end
-
-  # For each cohort episode, find the first/last outcome in its own TAR.
-  result_list <- lapply(split(merged, merged$cohort_row_id), function(sub) {
-    tar_events <- sub[sub$in_tar, , drop = FALSE]
-    if (nrow(tar_events) > 0) {
-      if (event_order == "last") {
-        chosen <- tar_events[which.max(tar_events$outcome_date), , drop = FALSE]
-      } else {
-        chosen <- tar_events[which.min(tar_events$outcome_date), , drop = FALSE]
-      }
-      data.frame(
-        row_id = sub$row_id[1],
-        cohort_row_id = sub$cohort_row_id[1],
-        person_id = sub$person_id[1],
-        event = 1L,
-        time_to_event_days = as.integer(chosen$outcome_date[1] -
-                                         sub$tar_start[1]),
-        stringsAsFactors = FALSE
-      )
-    } else {
-      data.frame(
-        row_id = sub$row_id[1],
-        cohort_row_id = sub$cohort_row_id[1],
-        person_id = sub$person_id[1],
-        event = 0L,
-        time_to_event_days = as.integer(sub$tar_end[1] - sub$tar_start[1]),
-        stringsAsFactors = FALSE
-      )
-    }
-  })
-
-  result <- do.call(rbind, result_list)
-  result <- result[order(result$cohort_row_id), , drop = FALSE]
-  rownames(result) <- NULL
-  result
-}
-
 # --- Cohort Membership Extraction ---
 
 #' Extract standard OHDSI cohort membership table
@@ -5811,14 +5585,7 @@
       getOption("dsomop.default_date_handling", "remove")
     )
   }
-  if (identical(date_handling$mode, "absolute")) {
-    allow <- getOption("dsomop.allow_absolute_dates",
-      getOption("default.dsomop.allow_absolute_dates", FALSE))
-    if (!isTRUE(allow)) {
-      stop("Absolute date handling is not permitted by the server.",
-           call. = FALSE)
-    }
-  }
+
   if (is.null(cohort_table)) {
     warning("Cohort membership output requires a cohort; returning NULL.",
             call. = FALSE)
@@ -5854,150 +5621,6 @@
                        "cohort_end_date")]
   .applyDateHandling(result, date_handling,
                      index_date_col = "cohort_start_date")
-}
-
-# --- Intervals Long Extraction ---
-
-#' Extract interval data from multiple tables relative to index date
-#'
-#' For each table, joins to the cohort, computes start/end days relative
-#' to cohort_start_date, and combines into a single long data frame.
-#'
-#' @param handle CDM handle
-#' @param cohort_table Character; temp table name with cohort members
-#' @param tables Character vector; table names to extract intervals from
-#' @param concept_filter Named list; per-table concept ID filters
-#' @return Data frame with row_id, cohort_row_id, subject_id, interval_type,
-#'   concept_id, start_days_from_index, end_days_from_index
-#' @keywords internal
-.extractIntervalsLongLegacy <- function(handle, cohort_table, tables,
-                                         concept_filter = NULL,
-                                         filters = NULL) {
-  if (!is.character(tables) || length(tables) == 0L || anyNA(tables) ||
-      any(!nzchar(tables)) || anyDuplicated(tolower(tables))) {
-    stop("intervals_long tables must be a non-empty, unique character vector.",
-         call. = FALSE)
-  }
-  if (is.null(cohort_table)) {
-    warning("Intervals output requires a cohort; returning NULL.",
-            call. = FALSE)
-    return(NULL)
-  }
-
-
-  bp <- .buildBlueprint(handle)
-  all_intervals <- list()
-
-  for (tbl_name in tables) {
-    tbl_lower <- tolower(tbl_name)
-
-    # A requested table is part of the output contract. In strict mode an
-    # unavailable table or non-interval shape aborts instead of returning a
-    # deceptively partial multi-table result.
-    tbl_row <- bp$tables[bp$tables$table_name == tbl_lower, , drop = FALSE]
-    if (nrow(tbl_row) == 0 || !tbl_row$present_in_db[1]) {
-      message <- paste0("Intervals table '", tbl_name, "' is unavailable.")
-      if (isTRUE(.omopDisclosureSettings()$query_strict)) {
-        stop(message, call. = FALSE)
-      }
-      warning(message, call. = FALSE)
-      next
-    }
-
-    # Get date pair.
-    date_pair <- .getDatePair(bp, tbl_lower)
-    if (is.null(date_pair)) {
-      message <- paste0("Intervals table '", tbl_name,
-                        "' has no start/end date pair.")
-      if (isTRUE(.omopDisclosureSettings()$query_strict)) {
-        stop(message, call. = FALSE)
-      }
-      warning(message, call. = FALSE)
-      next
-    }
-
-    # Get domain concept column — use concept_role to avoid
-    # returning type_concept columns (e.g. period_type_concept_id)
-    col_df <- bp$columns[[tbl_lower]]
-    domain_cols <- col_df$column_name[col_df$concept_role == "domain_concept"]
-    concept_col <- if (length(domain_cols) > 0) domain_cols[1] else NULL
-
-    # Apply per-table concept filter
-    tbl_concepts <- concept_filter[[tbl_lower]] %||%
-      concept_filter[[tbl_name]]
-    if (!is.null(tbl_concepts) && is.null(concept_col)) {
-      stop("Table '", tbl_name,
-           "' has no domain concept column for its concept_filter.",
-           call. = FALSE)
-    }
-
-    # Reuse the normal extraction compiler so custom date/value filters receive
-    # the same identifier allowlist, date-sentinel resolution, and SQL escaping
-    # as event-level outputs. add_cohort_date forces the required cohort join.
-    select_cols <- c(date_pair$start, date_pair$end, concept_col)
-    sql <- .compileSelect(
-      handle, tbl_lower,
-      columns = select_cols,
-      concept_filter = tbl_concepts,
-      cohort_table = cohort_table,
-      add_cohort_date = TRUE,
-      filters = filters,
-      block_sensitive = TRUE,
-      add_event_order_id = TRUE
-    )
-
-    tbl_df <- .executeQuery(handle, sql)
-    if (nrow(tbl_df) == 0) next
-    if (!"dsomop_event_order_id" %in% names(tbl_df)) {
-      stop("Intervals table '", tbl_name,
-           "' has no standard OMOP primary key for deterministic row order.",
-           call. = FALSE)
-    }
-
-    # Compute relative days
-    start_dates <- as.Date(tbl_df[[date_pair$start]])
-    end_dates <- as.Date(tbl_df[[date_pair$end]])
-    index_dates <- as.Date(tbl_df$cohort_start_date)
-
-    interval_df <- data.frame(
-      cohort_row_id = as.integer(tbl_df$cohort_row_id),
-      subject_id = tbl_df$person_id,
-      .event_order_id = tbl_df$dsomop_event_order_id,
-      interval_type = rep(tbl_lower, nrow(tbl_df)),
-      concept_id = if (!is.null(concept_col))
-        as.integer(tbl_df[[concept_col]])
-      else
-        rep(NA_integer_, nrow(tbl_df)),
-      start_days_from_index = as.integer(start_dates - index_dates),
-      end_days_from_index = as.integer(end_dates - index_dates),
-      stringsAsFactors = FALSE
-    )
-
-    all_intervals[[tbl_lower]] <- interval_df
-  }
-
-  if (length(all_intervals) == 0) {
-    return(data.frame(
-      row_id = integer(0), cohort_row_id = integer(0),
-      subject_id = integer(0),
-      interval_type = character(0), concept_id = integer(0),
-      start_days_from_index = integer(0),
-      end_days_from_index = integer(0),
-      stringsAsFactors = FALSE
-    ))
-  }
-
-  result <- do.call(rbind, all_intervals)
-  rownames(result) <- NULL
-  table_order <- match(result$interval_type, tolower(tables))
-  result <- result[order(table_order, result$cohort_row_id,
-                         result$.event_order_id, na.last = TRUE), , drop = FALSE]
-  rownames(result) <- NULL
-  result$row_id <- seq_len(nrow(result))
-  result$.event_order_id <- NULL
-
-  result[, c("row_id", "cohort_row_id", "subject_id", "interval_type",
-             "concept_id", "start_days_from_index", "end_days_from_index")]
 }
 
 # --- Temporal Covariates ---
@@ -6299,6 +5922,13 @@
     }
   }
 
+  if (is.null(resolved_concepts)) {
+    ids <- as.character(concepts)
+    attr(covariate_ref, "omop_reference_support") <- list(
+      counts = setNames(vapply(ids, function(id) length(unique(events$person_id[
+        which(as.character(events[[concept_col]]) == id)])), 0L), ids),
+      total = length(unique(person_ref$person_id)))
+  }
   list(
     temporalCovariates = covariates,
     covariateRef = covariate_ref,

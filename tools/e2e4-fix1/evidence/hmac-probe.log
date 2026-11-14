@@ -1,0 +1,7 @@
+using C compiler: ‘cc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0’
+cc -I"/usr/share/R/include" -DNDEBUG       -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2  -c probe-hmac.c -o probe-hmac.o
+cc -shared -L/usr/lib/R/lib -Wl,-Bsymbolic-functions -flto=auto -ffat-lto-objects -flto=auto -Wl,-z,relro -o probe-hmac.so probe-hmac.o -lcrypto -L/usr/lib/R/lib -lR
+   user  system elapsed 
+  4.047   0.070   4.118 
+   user  system elapsed 
+  0.399   0.004   0.402 

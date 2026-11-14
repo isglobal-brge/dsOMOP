@@ -355,49 +355,22 @@
   .conceptIdList(x)
 }
 
-#' Translate concept_id columns in a data frame to concept names
+#' Present declared concept columns as labelled factors
 #'
 #' @param handle CDM handle
 #' @param df Data frame
-#' @return Data frame with concept IDs replaced by names
+#' @return Data frame with concept factors and retained private ID contracts
 #' @keywords internal
 .vocabTranslateColumns <- function(handle, df) {
-  concept_cols <- grep("_concept_id$", names(df), value = TRUE)
-  if (length(concept_cols) == 0) return(df)
-
-  all_ids <- unique(unlist(lapply(concept_cols, function(col) {
-    vals <- df[[col]]
-    vals[!is.na(vals)]
-  })))
-
-  if (length(all_ids) == 0) return(df)
-
-  concepts <- tryCatch(
-    .vocabLookupConcepts(handle, all_ids),
-    error = function(e) {
-      stop("Concept translation failed: ", conditionMessage(e),
-           call. = FALSE)
-    }
-  )
-
-  concept_map <- stats::setNames(concepts$concept_name,
-                                  as.character(concepts$concept_id))
-
-  for (col in concept_cols) {
-    original <- as.character(df[[col]])
-    translated <- concept_map[original]
-    translated[is.na(translated) & !is.na(original)] <-
-      paste0("concept_", original[is.na(translated) & !is.na(original)])
-    # Keep the human-readable concept_name verbatim, so the VALUE shown here
-    # matches the catalog (value.counts / concept.prevalence / concept.summary)
-    # exactly. Do NOT standardize the value: .standardizeName is for turning a
-    # concept into a syntactically-valid COLUMN NAME, which .toWide/.toFeatures
-    # apply independently at the naming step (and idempotently), so wide/feature
-    # headers stay clean regardless.
-    df[[col]] <- unname(translated)
-  }
-
-  df
+  contract <- attr(df, "omop_column_contract")
+  if (!is.null(contract)) return(.conceptPresent(list(handle = handle, ir = list(options = list(), variables = list())), df, contract))
+  bp <- .buildBlueprint(handle)
+  declared <- unique(unlist(lapply(bp$columns, function(registry) {
+    registry$column_name[vapply(registry$column_name, .conceptDeclaredColumn, logical(1), registry = registry)]
+  }), use.names = FALSE))
+  columns <- setNames(lapply(intersect(names(df), declared), function(x) .fragmentColumn("integer", TRUE, "concept")),
+                      intersect(names(df), declared))
+  .conceptPresent(list(handle = handle, ir = list()), df, columns)
 }
 
 #' Get the ancestors and descendants of a set of concepts

@@ -1,0 +1,34 @@
+[
+  {
+    "package": "dsOMOP",
+    "commit": "7f536fe5e074fa9c9c02a0962cb29bdc1bc6e94a",
+    "sibling_commit": "acdfc75b5b5558fc6eda66cd84c91f8819182385",
+    "filter": "^(ir-legacy-empty|ir-owned-cohort|ir-review|ws2f-base-seed|ws2f-membership-results|ws0-schema)$",
+    "files": [
+      "test-ir-legacy-empty.R",
+      "test-ir-owned-cohort.R",
+      "test-ir-review.R",
+      "test-ws2f-base-seed.R",
+      "test-ws2f-membership-results.R",
+      "test-ws0-schema.R"
+    ]
+  },
+  {
+    "package": "dsOMOPClient",
+    "commit": "acdfc75b5b5558fc6eda66cd84c91f8819182385",
+    "sibling_commit": "7f536fe5e074fa9c9c02a0962cb29bdc1bc6e94a",
+    "filter": "^ws0-schema$",
+    "files": [
+      "test-ws0-schema.R"
+    ]
+  },
+  {
+    "package": "dsOMOP",
+    "commit": "0ae44f8266e6f6eafbacf096c7896a1d8b5b94da",
+    "sibling_commit": "acdfc75b5b5558fc6eda66cd84c91f8819182385",
+    "filter": "^ir-review$",
+    "files": [
+      "test-ir-review.R"
+    ]
+  }
+]

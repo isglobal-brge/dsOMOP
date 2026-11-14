@@ -253,14 +253,13 @@
       !nzchar(version)) return(NULL)
   pattern <- "[0-9]+\\.[0-9]+(?:\\.[0-9]+)?"
   if (identical(family, "mariadb")) {
-    tagged <- regmatches(version, regexec(
-      paste0("(", pattern, ")-mariadb"), version, ignore.case = TRUE,
-      perl = TRUE))[[1L]]
-    if (length(tagged) == 2L) return(tagged[[2L]])
-    version <- sub("^5\\.5\\.5-", "", version)
+    tagged <- regmatches(version, regexpr(paste0(pattern, "(?=-MariaDB)"),
+                                          version, perl = TRUE))
+    if (length(tagged) == 1L) return(tagged)
   }
-  found <- regmatches(version, regexpr(pattern, version, perl = TRUE))
-  if (length(found) == 1L && nzchar(found)) found else NULL
+  matches <- regmatches(version, gregexpr(pattern, version, perl = TRUE))[[1L]]
+  if (length(matches) == 0L || identical(matches, "")) return(NULL)
+  if (identical(family, "mariadb")) matches[[length(matches)]] else matches[[1L]]
 }
 
 #' Compare a vendor version string with a minimum version
@@ -270,9 +269,8 @@
 #' \code{"-0ubuntu0.22.04.1"} or \code{"-0+deb12u1"}) or behind the
 #' \code{"5.5.5-"} replication-protocol prefix that MySQL client libraries
 #' show (\code{"5.5.5-10.11.6-MariaDB"}). The server version is the token
-#' immediately before \code{"-MariaDB"}; without that tag the protocol prefix
-#' is dropped and the first version is read. A package suffix such as
-#' \code{"0.22.04"} is never taken for the server version.
+#' immediately before \code{"-MariaDB"}. Untagged MariaDB strings retain
+#' the last dotted version fallback; other families use the first version.
 #'
 #' @param version Version string reported by the server.
 #' @param minimum Minimum version, e.g. \code{"10.2.0"}.

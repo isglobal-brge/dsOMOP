@@ -2,7 +2,7 @@
 % Please edit documentation in R/vocabulary.R
 \name{.vocabTranslateColumns}
 \alias{.vocabTranslateColumns}
-\title{Translate concept_id columns in a data frame to concept names}
+\title{Present declared concept columns as labelled factors}
 \usage{
 .vocabTranslateColumns(handle, df)
 }
@@ -12,9 +12,9 @@
 \item{df}{Data frame}
 }
 \value{
-Data frame with concept IDs replaced by names
+Data frame with concept factors and retained private ID contracts
 }
 \description{
-Translate concept_id columns in a data frame to concept names
+Present declared concept columns as labelled factors
 }
 \keyword{internal}

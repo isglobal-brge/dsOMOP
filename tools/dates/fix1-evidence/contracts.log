@@ -1,0 +1,4 @@
+Source: server cc22077; client 37dc927
+Command: PYTHONDONTWRITEBYTECODE=1 python3 tools/ws0/check_contracts.py . ../dsOMOPClient
+checked 3 schemas, 2 examples, 224 probes, 15 acceptance plans, 12 digest vectors, 18 normalised fixtures, 34 numbers, 11043 corpus doubles
+all contract checks passed

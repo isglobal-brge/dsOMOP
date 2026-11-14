@@ -1,0 +1,6 @@
+Writing 'NAMESPACE'
+ℹ Loading dsOMOP
+Error in getDLLRegisteredRoutines.DLLInfo(dll, addNames = FALSE) : 
+  must specify DLL via a “DLLInfo” object. See getLoadedDLLs()
+Calls: <Anonymous> ... assignNativeRoutines -> getDLLRegisteredRoutines.DLLInfo
+Execution halted

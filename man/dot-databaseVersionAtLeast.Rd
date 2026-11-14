@@ -23,8 +23,7 @@ distribution builds append a package suffix such as
 \code{"-0ubuntu0.22.04.1"} or \code{"-0+deb12u1"}) or behind the
 \code{"5.5.5-"} replication-protocol prefix that MySQL client libraries
 show (\code{"5.5.5-10.11.6-MariaDB"}). The server version is the token
-immediately before \code{"-MariaDB"}; without that tag the protocol prefix
-is dropped and the first version is read. A package suffix such as
-\code{"0.22.04"} is never taken for the server version.
+immediately before \code{"-MariaDB"}. Untagged MariaDB strings retain
+the last dotted version fallback; other families use the first version.
 }
 \keyword{internal}
