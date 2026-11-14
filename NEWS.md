@@ -1,5 +1,10 @@
 # dsOMOP 2.10.5 (2026-11-14)
 
+- Corrected (generated date factor review): prospective codebooks apply recipe
+  category defaults to generated date endpoints, including ordering, recodes,
+  public levels, reference and contrasts in nested and joined outputs. Rebuild
+  affected codebooks; recipe declarations and published data do not change.
+
 - Corrected (date/category schema review): prospective codebooks include native
   date endpoints before final selection, with their effective presentation types
   and order, including nested survival and joined outputs. Rebuild affected
