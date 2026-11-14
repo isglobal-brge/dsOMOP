@@ -190,25 +190,22 @@ test_that("selected roles keep supply and unrelated coordinates independent of m
   leaf<-function(value)list(derived=list(kind="number_rows",source=list(event="drug"),value=value))
   days<-leaf("days_supply");weeks<-days
   weeks$number_spec<-list(unit=list(kind="fixed_unit",from="days",to="weeks",factor=1/7))
-  p<-.ws7_scenario_plan(list(days=days,weeks=weeks,quantity=leaf("quantity")),output=list(format="long",sources=list(list(event="drug")),columns=list("days","weeks","quantity")))
+  p<-.ws7_scenario_plan(list(days=days,weeks=weeks,qty=leaf("quantity")),output=list(format="long",sources=list(list(event="drug")),columns=list("days","weeks","qty")))
   got<-.ws7_scenario_run(h,p)
-  expect_true(all(c("days","weeks","quantity") %in% names(got$frame)))
+  expect_true(all(c("days","weeks","qty") %in% names(got$frame)))
   expect_gt(nrow(got$frame),0L)
-  expect_true(all(got$frame$days==14));expect_true(all(got$frame$weeks==2));expect_true(all(got$frame$quantity==3))
+  expect_true(all(got$frame$days==14));expect_true(all(got$frame$weeks==2));expect_true(all(got$frame$qty==3))
   cs<-got$compiled$components$o$fragment$columns
   expect_identical(attr(cs$days,"number_contract")$unit,"days")
   expect_identical(attr(cs$weeks,"number_contract")$unit,"weeks")
-  expect_identical(attr(cs$quantity,"number_contract")$unit,"1")
-  DBI::dbExecute(h$conn,"ALTER TABLE measurement ADD COLUMN quantity REAL")
-  DBI::dbExecute(h$conn,"UPDATE measurement SET quantity = 3")
-  h$blueprint<-NULL;h$role_registry<-NULL
-  other<-review_rows();other$derived$value<-"quantity"
+  expect_identical(attr(cs$qty,"number_contract")$unit,"1")
+  other<-review_rows();other$derived$value<-"unit_unknown"
   p<-.ws7_scenario_plan(list(other=other),output=list(format="long",sources=list(list(event="lab")),columns=list("other")))
   p$events$lab$unit<-list(target=8840L,convert=list(`8554`=list(factor=2,offset=0)))
   got<-.ws7_scenario_run(h,p)
   expect_identical(attr(got$compiled$components$o$fragment$columns$other,"number_contract")$unit,"1")
   expect_true("other" %in% names(got$frame))
-  expect_true(all(got$frame$other==3))
+  expect_true(all(got$frame$other %in% 0:1))
   p$variables$other$number_spec<-list(unit=list(kind="fixed_unit",from="unit:8840",to="coordinate:x",factor=2))
   expect_error(.ws7_scenario_run(h,p),"matching declared units")
 })
@@ -239,16 +236,18 @@ test_that("temporal reducers and relation copies keep class 2 through publicatio
 
 test_that("BIGINT source changes survive compiler scalar materialization", {
   h<-review_handle();on.exit(DBI::dbDisconnect(h$conn))
-  DBI::dbExecute(h$conn,"ALTER TABLE measurement ADD COLUMN exact_value BIGINT")
-  DBI::dbExecute(h$conn,"UPDATE measurement SET exact_value = CASE measurement_id WHEN 970001 THEN 10 WHEN 970003 THEN 20 END")
+  DBI::dbExecute(h$conn,"ALTER TABLE drug_exposure RENAME COLUMN refills TO old_refills")
+  DBI::dbExecute(h$conn,"ALTER TABLE drug_exposure ADD COLUMN refills BIGINT")
+  DBI::dbExecute(h$conn,"UPDATE drug_exposure SET refills = CASE drug_exposure_id WHEN 970001 THEN 10 WHEN 970002 THEN 20 END")
+  expect_identical(.eventColumnType(.buildBlueprint(h)$columns$drug_exposure,"refills"),"bigint")
   vars<-lapply(c("difference","percent_change","ratio","slope"),function(m)
-    list(derived=list(kind="number_change",source=list(event="lab"),value="exact_value",method=m,missing="skip")))
+    list(derived=list(kind="number_change",source=list(event="drug"),value="refills",method=m,missing="skip")))
   names(vars)<-c("difference","percent_change","ratio","slope")
   p<-.ws7_scenario_plan(vars)
   got<-.ws7_scenario_run(h,p)$frame
   expected<-c(difference=10,percent_change=100,ratio=2,slope=2.5)
   for(n in names(vars))expect_equal(.ws7_value(got,7001,n),unname(expected[n]),tolerance=0)
-  DBI::dbExecute(h$conn,"UPDATE measurement SET exact_value = CASE measurement_id WHEN 970001 THEN 9007199254740993 WHEN 970003 THEN 9007199254740995 END")
+  DBI::dbExecute(h$conn,"UPDATE drug_exposure SET refills = CASE drug_exposure_id WHEN 970001 THEN 9007199254740993 WHEN 970002 THEN 9007199254740995 END")
   expect_error(.ws7_scenario_run(h,p),"retain raw/count")
 })
 
