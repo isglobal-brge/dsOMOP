@@ -137,19 +137,10 @@
       code = "unavailable_capability", field = "/concept_sets")
   }
   if (is.null(handle)) return(invisible(NULL))
-  walk <- function(x, path) {
-    if (!is.list(x)) return(invisible(NULL))
-    if (!is.null(x[["validity_policy"]]) && "concepts" %in% names(x)) {
-      .ohdsiValidityPolicy(x[["validity_policy"]])
-      .resolveConceptSetNode(handle, x, path)
-      return(invisible(NULL))
-    }
-    for (i in seq_along(x)) {
-      if (!is.null(names(x)) && names(x)[[i]] %in% c("meta", "metadata", "circe_provenance")) next
-      walk(x[[i]], paste0(path, "/", i))
-    }
-  }
-  walk(plan, "")
+  .ohdsiWalkValidity(plan, function(node, path) {
+    .ohdsiValidityPolicy(node[["validity_policy"]])
+    .resolveConceptSetNode(handle, node, path)
+  })
   invisible(NULL)
 }
 

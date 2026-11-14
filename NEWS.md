@@ -1,5 +1,11 @@
 # dsOMOP / dsOMOPClient 2.10.5 (development)
 
+* **Corrected:** imported-vocabulary capability and preflight traversal now
+  distinguishes declaration registries from advisory metadata. Event and
+  concept-set names such as `meta`, `metadata`, and `circe_provenance` retain
+  identical validation and capability requirements. Existing names remain
+  valid; use a capable server and valid vocabulary references for these plans.
+
 * **Corrected / newly refused:** both OHDSI import paths attach the executable
   `ohdsi-import-1` vocabulary policy. Explicit included/excluded concepts must
   exist as valid public vocabulary records (including concept 0); invalid
