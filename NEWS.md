@@ -1,4 +1,17 @@
-# dsOMOP 2.10.5 (2026-11-14)
+# dsOMOP 2.10.5 (2026-11-15)
+
+- Release: paired server/client 2.10.5, with checked numeric expressions,
+  typed categories and shared codebooks, versioned clinical formulas and
+  recorded-day reduction. Republish server methods and Options after upgrading;
+  retain existing private roots. Broader workflow/declaration-library work is
+  deferred.
+
+Release validation: [Opal contract run 43661271157](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43661271157)
+and [end-to-end run 43661274062](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43661274062).
+The release pipeline records both as successful; the end-to-end artifacts cover
+fresh installation and upgrade from 2.10.4 on Opal 6.2.1, including preservation
+of the existing DP noise root. These runs do not establish live execution on
+every SQL dialect or exercise the separate numeric scenario N.
 
 - Corrected (integration): imported OHDSI validity has a complete dialect
   capability mapping. Ordinary reducer schemas stay identical when a source
@@ -92,7 +105,7 @@
   their original numeric declarations; already rounded coefficients cannot be
   recovered from saved text.
 - Scope: broader A-31 deliverables are deferred as listed in
-  the issue tracker. Real Opal acceptance belongs to integration e2e.
+  the issue tracker. Real Opal evidence is cited above; numeric scenario N was not exercised there.
 
 - Corrected (audit prerequisite integration): imported vocabulary validity
   remains executable in category rollup domains, including exclusions.

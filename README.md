@@ -1,5 +1,33 @@
 # dsOMOP
 
+## Release 2.10.5
+
+Install matching dsOMOP and dsOMOPClient 2.10.5 and republish the server's methods
+and Options in Opal after upgrading. Check installed and published versions with
+`ds.omop.server.version(conns)`. Existing private roots remain valid; this release
+requires no new privacy configuration, epoch change or database TLS setting.
+
+This release adds checked recursive numeric expressions and exact signed64
+transport, typed categorical presentation and shared prospective/executed
+codebooks, four versioned clinical formulas, and explicit recorded-day numeric
+reduction. It also repairs staging ownership/cleanup, final DP provenance seals,
+and the supported OHDSI/Circe bridge. The broader workflow/declaration-library
+redesign is deferred.
+
+Re-run affected recipes and rebuild codebooks. Keep native row keys as opaque
+character strings. Arithmetic that would lose integer precision is refused;
+retain raw/count identity representation when exact binary64 conversion is not
+possible. Re-import OHDSI definitions to obtain the executable validity policy,
+and use a server advertising the required capabilities. See NEWS for each
+corrected or newly refused case and its migration path.
+
+Release validation: [Opal contract run 43661271157](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43661271157)
+and [end-to-end run 43661274062](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43661274062).
+The release pipeline records both as successful; the end-to-end artifacts cover
+fresh installation and upgrade from 2.10.4 on Opal 6.2.1, including preservation
+of the existing DP noise root. These runs do not establish live execution on
+every SQL dialect or exercise the separate numeric scenario N.
+
 ## Introduction
 
 <img src="man/figures/dsomop_logo.png" align="left" width="110" style="margin-right: 10px;" />
@@ -394,9 +422,9 @@ You can then install the `dsOMOP` package using the following command:
 dsadmin.install_github_package(o, 'dsOMOP', username='isglobal-brge', ref='main')
 ```
 
-#### Upgrading to 2.10.4 on Opal
+#### Upgrading to 2.10.5 on Opal
 
-The release pairs dsOMOP 2.10.4 with dsOMOPClient 2.10.4. It includes the
+The release pairs dsOMOP 2.10.5 with dsOMOPClient 2.10.5. It includes the
 OHDSI protected-release corrections and recipe language 2. Existing secrets are
 reused automatically; no state-directory setting, privacy tuning, epoch bump,
 ETL hook or TLS change is part of this upgrade.
@@ -408,7 +436,7 @@ Publish, also available as `dsadmin.publish_package(o, 'dsOMOP')`). This is the
 ordinary Opal package-publication lifecycle. `ds.omop.server.version(conns)`
 reports installed and published versions and distinguishes a stale profile from
 an old package. Language-2 execution refuses a profile missing its protocol
-before assignment; publication of an installed 2.10.4 makes that protocol
+before assignment; publication of an installed 2.10.5 makes that protocol
 available without another upgrade.
 
 Supported legacy recipes retain their v1 execution path. Language-2 plans need
@@ -492,7 +520,7 @@ Resources created with the dsOMOP 1.x form (format `omop.cdm.db`, URL
 2.x resource, with the same checks. The form only creates 2.x resources;
 re-create old ones with it whenever convenient.
 
-### Database support contract for 2.10.4
+### Database support contract for 2.10.5
 
 The following matrix separates executable backend support from rendered SQL
 contracts. The release evidence below records the tested environments. A plan is admitted only when every typed
