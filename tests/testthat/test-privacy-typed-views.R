@@ -120,7 +120,7 @@ test_that("masks never enter noise identity; the domain does (R04)", {
 
 test_that("weighted numeric views derive from one projection with a protected total (R05)", {
   .release_state()
-  # Astra's fixture: 2,000 people, one record each, 500 at 0 and 1,500 at 100.
+  # regression fixture: 2,000 people, one record each, 500 at 0 and 1,500 at 100.
   x <- .tv_table(data.frame(person_id = 1:2000,
                             measurement = c(rep(0, 500), rep(100, 1500))))
   spec <- list(statistic = "numeric_histogram", variable = "measurement",

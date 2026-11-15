@@ -88,6 +88,7 @@
                               "integer_literal", "window_functions",
                               "lossless_key", "nulls_last")
 .SQL_OPERATION_CONSTRUCTS <- list(
+  vocabulary.ohdsi_import_validity = character(0),
   concept_set = character(0),
   event = c("date_add_days"),
   event.unit = character(0),
@@ -110,6 +111,10 @@
   variable.derived = c("calendar", "date_diff_days"),
   variable.raw = character(0),
   variable.population_column = character(0),
+  category.presentation = character(0), category.rollup = character(0), category.indicators = character(0), category.reduce = character(0), layout.repeated = character(0), output.codebook_metadata = character(0),
+  number.presentation = character(0), number.rows = character(0), number.count = character(0),
+  number.daily = character(0),
+  number.change = character(0), number.expression = character(0), number.columns = character(0),
   date.presentation = character(0), date.elapsed = character(0),
   output.concept_labels = character(0),
   output.wide = character(0),

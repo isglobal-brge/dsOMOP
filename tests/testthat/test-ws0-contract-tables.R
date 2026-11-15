@@ -119,7 +119,7 @@ test_that("the v1 corpus classes are reviewed per plan instance and keyed by sta
   expect_true(all(cls$review == "reviewed"))
   expect_false(anyDuplicated(cls$plan_id) > 0)
   # stable keys: package:file:<test_that description>[@k][#sub-row]; baseline_line is informational (pinned 2.10.2 commits,
-  # tools/ws0/corpus_baseline.json): editing a live test never changes this fixture, a reclassification edits corpus_decisions.csv
+  # tests/fixtures/contracts/corpus_baseline.json): editing a live test never changes this fixture, a reclassification edits corpus_decisions.csv
   expect_true(all(grepl("^dsOMOP(Client)?:test-[A-Za-z0-9-]+\\.R:.+", cls$plan_id)))
   expect_true(all(startsWith(cls$plan_id, paste0(cls$package, ":", cls$file, ":", cls$test))))
   expect_true(all(cls$baseline_line == as.integer(cls$baseline_line) & cls$baseline_line >= 1L))
@@ -183,6 +183,6 @@ test_that("the v1 corpus classes are reviewed per plan instance and keyed by sta
   for (f in c("test-factor-harmonization.R", "test-privacy-dp.R", "test-staging-contract.R", "test-phase1-leak-gates.R", "test-disclosure.R", "test-phase-b.R")) {
     expect_true(f %in% cls$file[cls$package == "dsOMOP"], info = f)
   }
-  # the baseline anchoring itself (pinned commits, strict join) is verified by tools/ws0/review_corpus_classes.py --check,
-  # which tools/ws0/check_contracts.py runs; this suite only reads the frozen fixture
+  # the baseline anchoring itself (pinned commits, strict join) is verified by tests/fixtures/contracts/review_corpus_classes.py --check,
+  # which tests/fixtures/contracts/check_contracts.py runs; this suite only reads the frozen fixture
 })

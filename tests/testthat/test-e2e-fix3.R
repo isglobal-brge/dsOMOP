@@ -2,7 +2,7 @@ test_that("bulk entropy consumption preserves scalar bits across block boundarie
   key <- as.raw(0:31)
   context <- list(test = "e2e-fix3", unicode = "雪")
   baseline <- new.env(parent = environment(.dsomopDpBitStream))
-  sys.source(test_path("../../tools/e2e-fix3/baseline-sampler.R"), baseline)
+  sys.source(test_path("../../tests/fixtures/privacy-baseline/baseline-sampler.R"), baseline)
   for (start in c("0", "18446744073709551617")) {
     old <- baseline$.dsomopDpBitStream(key, context, 3, start)
     new <- .dsomopDpBitStream(key, context, 3, start)
@@ -17,7 +17,7 @@ test_that("bulk entropy consumption preserves scalar bits across block boundarie
 test_that("bulk uniform sampling preserves rejection and the subsequent cursor", {
   key <- as.raw(31:0)
   baseline <- new.env(parent = environment(.dsomopDpBitStream))
-  sys.source(test_path("../../tools/e2e-fix3/baseline-sampler.R"), baseline)
+  sys.source(test_path("../../tests/fixtures/privacy-baseline/baseline-sampler.R"), baseline)
   old <- baseline$.dsomopDpBitStream(key, list(test = "uniform"), 1)
   new <- .dsomopDpBitStream(key, list(test = "uniform"), 1)
   for (denominator in c("1", "3", "257", "18446744073709551617", paste0("1", strrep("0", 100)))) {
@@ -50,7 +50,7 @@ test_that("canonical person token fast path preserves the framed HMAC contract",
 
 test_that("two-digit rational coins match arbitrary precision including bit consumption", {
   baseline <- new.env(parent = environment(.dsomopDpBitStream))
-  sys.source(test_path("../../tools/e2e-fix3/baseline-sampler.R"), baseline)
+  sys.source(test_path("../../tests/fixtures/privacy-baseline/baseline-sampler.R"), baseline)
   key <- as.raw(0:31)
   denominators <- c("1", "2", "3", "4294967295", "4294967296", "4294967297",
                     "9007199254740993", "144115188075855872", "18446744073709551615",

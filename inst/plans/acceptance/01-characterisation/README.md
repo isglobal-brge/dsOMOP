@@ -1,6 +1,6 @@
 # 01 characterisation
 
-Status: plan validated against plan-v2.json; expected.json computed by tools/ws0/acceptance_expected.R on the extended reach fixture (tests/fixtures/create_reach_db.R + extend_reach_db.R), an independent SQL/base-R computation.
+Status: plan validated against plan-v2.json; expected.json computed by tests/fixtures/contracts/acceptance_expected.R on the extended reach fixture (tests/fixtures/create_reach_db.R + extend_reach_db.R), an independent SQL/base-R computation.
 
 ## Semantics of the expected results
 Rows: every episode of results cohort 1 (index 2020-01-01, end 2025-12-31; the reach

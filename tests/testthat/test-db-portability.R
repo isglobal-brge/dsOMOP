@@ -799,8 +799,8 @@ test_that("resource URLs validate ports and bracketed IPv6", {
 
 test_that("connector argument helpers do not invent malformed endpoints", {
   expect_equal(.compactConnectionArgs(list(host = "db", port = NULL,
-                                            user = "alice")),
-               list(host = "db", user = "alice"))
+                                            user = "analyst")),
+               list(host = "db", user = "analyst"))
   expect_equal(.hostWithOptionalPort("db.example", NULL, ","), "db.example")
   expect_equal(.hostWithOptionalPort("db.example", 1433L, ","),
                "db.example,1433")

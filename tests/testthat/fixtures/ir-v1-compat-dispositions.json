@@ -1,5 +1,5 @@
 {
-  "review": "Astra WS-2c final compatibility disposition, 12 Nov 2026",
+  "review": "regression WS-2c final compatibility disposition, 12 Nov 2026",
   "baseline": "30b7905617dbe3de5d06699c324095635c68011f",
   "cases": {
     "A.version.str": {

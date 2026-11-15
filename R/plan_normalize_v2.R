@@ -2,7 +2,7 @@
 #
 # This file is a frozen WS-0 artefact vendored BYTE-IDENTICALLY in dsOMOP and
 # dsOMOPClient (test-ws0-schema.R pins the identity); the Python reference is
-# tools/ws0/normalize_reference.py and inst/schema/normalized-vectors.json pins
+# tests/fixtures/contracts/normalize_reference.py and inst/schema/normalized-vectors.json pins
 # the normal forms of the canonical examples and the acceptance plans. The
 # semantic digest (R/semantic_digest.R) hashes this normal form, so the
 # federation harmonisation signature and the DP provenance capsule agree on
@@ -166,6 +166,8 @@
   }
   x <- .pnv2ApplyDefaults(root, x, root)
   x <- .datePlanNormalize(x)
+  x <- .numberPlanNormalize(x)
+  .categoryPlanCheck(x)
   if (is.null(x$publish)) x["publish"] <- list(.pnv2Array(names(x$outputs)))
   plan_cov <- x$options$coverage
   for (id in names(x$populations)) {
@@ -185,7 +187,7 @@
       o$grain <- if (.pnv2PopulationIndexed(x$populations, o$rows)) "episode" else "person"
     }
     if (identical(o$format, "wide") && is.null(o$columns)) {
-      o["columns"] <- list(.pnv2Array(names(x$variables)))
+      o["columns"] <- list(.pnv2Array(c(names(x$variables),names(o$category_columns))))
     }
     if (identical(o$format, "survival")) {
       if (is.null(o$options)) o["options"] <- list(empty)
@@ -208,4 +210,22 @@
 #' @keywords internal
 .planNormalizedDigest <- function(plan, schema = NULL) {
   .planSemanticDigest(.planNormalizeV2(plan, schema))
+}
+
+# Native static result columns, shared by validation, execution and codebooks.
+.pnv2VariableColumns <- function(name, variable) {
+  r <- variable$reducer %||% variable$derived$reducer
+  if (identical(r$fn, "nth_value")) {
+    n <- as.integer(unlist(r$n %||% 1L))
+    if (length(n) > 1L || (is.list(r$n) && is.null(names(r$n))))
+      return(paste0(name, "_", n))
+  }
+  name
+}
+.pnv2ColumnVariables <- function(columns, variables) {
+  unique(unlist(lapply(columns, function(key) {
+    if (key %in% names(variables)) return(key)
+    names(variables)[vapply(names(variables), function(name)
+      key %in% .pnv2VariableColumns(name, variables[[name]]), logical(1))]
+  }), use.names = FALSE))
 }

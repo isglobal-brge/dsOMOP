@@ -287,6 +287,9 @@
 #' @return Integer vector of expanded concept IDs
 #' @keywords internal
 .vocabExpandConceptSet <- function(handle, concept_set) {
+  if (.ohdsiHasImportedValidity(concept_set)) {
+    return(.resolveConceptSetNode(handle, concept_set)$ids)
+  }
   base_ids <- .conceptIdList(concept_set$concepts %||% integer(0))
   include_descendants <- concept_set$include_descendants %||% FALSE
   include_mapped <- concept_set$include_mapped %||% FALSE

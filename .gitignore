@@ -50,8 +50,6 @@ rsconnect/
 .Rproj.user
 errorReportSql.txt
 __pycache__/
-tools/ws2/artifacts/
-tools/ws7/artifacts/
 
 # Local native compilation
 src/Makevars

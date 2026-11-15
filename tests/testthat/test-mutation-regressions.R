@@ -98,7 +98,7 @@ test_that("integer arithmetic is exact before range checks and promotes past 32 
 
 test_that("datetime branch prototypes preserve class, instants and timezone", {
   withr::local_options(.mfix_options)
-  stamp <- as.POSIXct("2020-01-01 12:00:00", tz = "America/New_York") + 1:5
+  stamp <- as.POSIXct("2020-01-01 12:00:00", tz = "EST5EDT") + 1:5
   for (kind in c("POSIXct", "POSIXlt")) {
     x <- .mfix_frame(flag = c(1L, 0L, 1L, 0L, NA))
     x$stamp <- if (kind == "POSIXlt") as.POSIXlt(stamp) else stamp
@@ -296,13 +296,16 @@ test_that("nested results are type-checked before a parent can coerce them", {
   evaluate_node <- dsOMOP:::.mutateEvalNode
   published <- FALSE
   testthat::local_mocked_bindings(
-    .mutateEvalNode = function(expr, df, types) {
+    .mutateEvalNode = function(expr, df, types, ...) {
       if (identical(dsOMOP:::.mutateVariant(expr), "col")) return(as.numeric(df[[expr$col]]))
-      evaluate_node(expr, df, types)
+      evaluate_node(expr, df, types, ...)
     },
     .publishStandalone = function(...) { published <<- TRUE; stop("published") }, .package = "dsOMOP")
   expect_error(.mfix_mut(x, list(coalesce = list(.mfix_col("v"), .mfix_lit(NULL, "integer")))),
                "inferred type 'integer'", class = "dsomop_plan_rejection")
+  expect_error(dsOMOP:::.numberExpression(
+    .mfix_req(list(coalesce = list(.mfix_col("v"), .mfix_lit(NULL, "integer")))),
+    data.frame(v = 1:5)), "inferred type 'integer'", class = "dsomop_plan_rejection")
   expect_false(published)
 })
 

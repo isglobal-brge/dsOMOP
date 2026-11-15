@@ -10,8 +10,8 @@ test_that("million-person builder retains exact output while reducing latency", 
   policy <- .dsomopDpPolicy()
   policy$data_generation <- strrep("a", 64)
   old <- new.env(parent = environment(.dsomopReleaseBuild))
-  sys.source(test_path("../../tools/e2e-fix3/baseline-build.R"), old)
-  sys.source(test_path("../../tools/e2e-fix3/baseline-sampler.R"), old)
+  sys.source(test_path("../../tests/fixtures/privacy-baseline/baseline-build.R"), old)
+  sys.source(test_path("../../tests/fixtures/privacy-baseline/baseline-sampler.R"), old)
   old$.dsomopReleaseNoisyComponent <- .dsomopReleaseNoisyComponent
   environment(old$.dsomopReleaseNoisyComponent) <- old
   for (name in ls(old, all.names = TRUE)) old[[name]] <- compiler::cmpfun(old[[name]])

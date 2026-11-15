@@ -1,0 +1,10 @@
+{
+  "package": "CohortMethod",
+  "version": "6.0.3",
+  "commit": "dd1a2a856ef608547a99d3db2d60d5c872f80dc6",
+  "source": "https://raw.githubusercontent.com/OHDSI/CohortMethod/dd1a2a856ef608547a99d3db2d60d5c872f80dc6/inst/csv/resultsDataModelSpecification.csv",
+  "source_sha256": "59b842708f715f93002d7dfcfbecd13e78a966f9547388a06121219a6f52a048",
+  "fixture_sha256": "28bda979e19d87426e71ef60f017d8e4f34adc74918f479bbfc9f21d728e89fd",
+  "fixture_kind": "verbatim structural fields from upstream schema, not a patient export",
+  "license": "Apache-2.0"
+}

@@ -1,0 +1,1790 @@
+[
+  {
+    "label": "identity",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          },
+          "number_spec": {}
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    },
+    "normalized": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ],
+            "include_descendants": false,
+            "include_mapped": false,
+            "exclude": null
+          },
+          "concept_col": null,
+          "where": null,
+          "visit": null,
+          "value": null,
+          "unit": null,
+          "end": null,
+          "on_missing_table": "error"
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria",
+          "parent": null,
+          "where": null,
+          "cohort_definition_id": null,
+          "episode_policy": null,
+          "coverage": {
+            "policy": "unique",
+            "on_ambiguous": "drop",
+            "on_missing": "drop",
+            "gap": 0
+          }
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean",
+            "value": null,
+            "window": null,
+            "which": null,
+            "n": 1,
+            "side": "either",
+            "missing": "skip",
+            "distinct": null,
+            "p": null,
+            "agg": null,
+            "reference": null,
+            "predicate": null,
+            "reference_date": null,
+            "unit": "day",
+            "coverage": "recorded",
+            "fills": "start_in_window",
+            "observed_only": false
+          },
+          "number_spec": {
+            "pipeline": [
+              {
+                "kind": "transform",
+                "method": "identity"
+              }
+            ]
+          },
+          "broadcast": false,
+          "labels": {},
+          "column_names": {}
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide",
+          "collapse": null,
+          "columns": [
+            "x"
+          ],
+          "sources": [],
+          "options": {
+            "time_window": null,
+            "date_handling": {
+              "mode": "relative",
+              "reference": "index",
+              "bin_width": null,
+              "date_columns": null
+            }
+          },
+          "result_symbol": null,
+          "grain": "person"
+        }
+      },
+      "options": {
+        "translate_concepts": true,
+        "block_sensitive": true,
+        "factor_concepts": true,
+        "labels": {},
+        "column_names": {}
+      },
+      "concept_sets": {},
+      "intervals": {},
+      "publish": [
+        "o"
+      ]
+    },
+    "digest_sha256": "3765cc7d2ac8f0895e0098f667a1ca2b509e9e6a74b69276c3cefee53dda8c5b"
+  },
+  {
+    "label": "floor-shorthand",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          },
+          "number_spec": {
+            "rounding": {
+              "method": "floor"
+            }
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    },
+    "normalized": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ],
+            "include_descendants": false,
+            "include_mapped": false,
+            "exclude": null
+          },
+          "concept_col": null,
+          "where": null,
+          "visit": null,
+          "value": null,
+          "unit": null,
+          "end": null,
+          "on_missing_table": "error"
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria",
+          "parent": null,
+          "where": null,
+          "cohort_definition_id": null,
+          "episode_policy": null,
+          "coverage": {
+            "policy": "unique",
+            "on_ambiguous": "drop",
+            "on_missing": "drop",
+            "gap": 0
+          }
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean",
+            "value": null,
+            "window": null,
+            "which": null,
+            "n": 1,
+            "side": "either",
+            "missing": "skip",
+            "distinct": null,
+            "p": null,
+            "agg": null,
+            "reference": null,
+            "predicate": null,
+            "reference_date": null,
+            "unit": "day",
+            "coverage": "recorded",
+            "fills": "start_in_window",
+            "observed_only": false
+          },
+          "number_spec": {
+            "pipeline": [
+              {
+                "kind": "round",
+                "method": "floor"
+              }
+            ]
+          },
+          "broadcast": false,
+          "labels": {},
+          "column_names": {}
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide",
+          "collapse": null,
+          "columns": [
+            "x"
+          ],
+          "sources": [],
+          "options": {
+            "time_window": null,
+            "date_handling": {
+              "mode": "relative",
+              "reference": "index",
+              "bin_width": null,
+              "date_columns": null
+            }
+          },
+          "result_symbol": null,
+          "grain": "person"
+        }
+      },
+      "options": {
+        "translate_concepts": true,
+        "block_sensitive": true,
+        "factor_concepts": true,
+        "labels": {},
+        "column_names": {}
+      },
+      "concept_sets": {},
+      "intervals": {},
+      "publish": [
+        "o"
+      ]
+    },
+    "digest_sha256": "48b3f8cc650e1eff99337923cb84be75eb2f4bf834dd256499101f6829a9cdf8"
+  },
+  {
+    "label": "floor-pipeline",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          },
+          "number_spec": {
+            "pipeline": [
+              {
+                "kind": "round",
+                "method": "floor"
+              }
+            ]
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    },
+    "normalized": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ],
+            "include_descendants": false,
+            "include_mapped": false,
+            "exclude": null
+          },
+          "concept_col": null,
+          "where": null,
+          "visit": null,
+          "value": null,
+          "unit": null,
+          "end": null,
+          "on_missing_table": "error"
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria",
+          "parent": null,
+          "where": null,
+          "cohort_definition_id": null,
+          "episode_policy": null,
+          "coverage": {
+            "policy": "unique",
+            "on_ambiguous": "drop",
+            "on_missing": "drop",
+            "gap": 0
+          }
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean",
+            "value": null,
+            "window": null,
+            "which": null,
+            "n": 1,
+            "side": "either",
+            "missing": "skip",
+            "distinct": null,
+            "p": null,
+            "agg": null,
+            "reference": null,
+            "predicate": null,
+            "reference_date": null,
+            "unit": "day",
+            "coverage": "recorded",
+            "fills": "start_in_window",
+            "observed_only": false
+          },
+          "number_spec": {
+            "pipeline": [
+              {
+                "kind": "round",
+                "method": "floor"
+              }
+            ]
+          },
+          "broadcast": false,
+          "labels": {},
+          "column_names": {}
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide",
+          "collapse": null,
+          "columns": [
+            "x"
+          ],
+          "sources": [],
+          "options": {
+            "time_window": null,
+            "date_handling": {
+              "mode": "relative",
+              "reference": "index",
+              "bin_width": null,
+              "date_columns": null
+            }
+          },
+          "result_symbol": null,
+          "grain": "person"
+        }
+      },
+      "options": {
+        "translate_concepts": true,
+        "block_sensitive": true,
+        "factor_concepts": true,
+        "labels": {},
+        "column_names": {}
+      },
+      "concept_sets": {},
+      "intervals": {},
+      "publish": [
+        "o"
+      ]
+    },
+    "digest_sha256": "48b3f8cc650e1eff99337923cb84be75eb2f4bf834dd256499101f6829a9cdf8"
+  },
+  {
+    "label": "bins",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          },
+          "number_spec": {
+            "representation": "bins",
+            "grid": "count_1_2_5"
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    },
+    "normalized": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ],
+            "include_descendants": false,
+            "include_mapped": false,
+            "exclude": null
+          },
+          "concept_col": null,
+          "where": null,
+          "visit": null,
+          "value": null,
+          "unit": null,
+          "end": null,
+          "on_missing_table": "error"
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria",
+          "parent": null,
+          "where": null,
+          "cohort_definition_id": null,
+          "episode_policy": null,
+          "coverage": {
+            "policy": "unique",
+            "on_ambiguous": "drop",
+            "on_missing": "drop",
+            "gap": 0
+          }
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean",
+            "value": null,
+            "window": null,
+            "which": null,
+            "n": 1,
+            "side": "either",
+            "missing": "skip",
+            "distinct": null,
+            "p": null,
+            "agg": null,
+            "reference": null,
+            "predicate": null,
+            "reference_date": null,
+            "unit": "day",
+            "coverage": "recorded",
+            "fills": "start_in_window",
+            "observed_only": false
+          },
+          "number_spec": {
+            "pipeline": [
+              {
+                "kind": "bins",
+                "breaks": [
+                  "-Inf",
+                  0,
+                  1,
+                  2,
+                  5,
+                  10,
+                  20,
+                  50,
+                  100,
+                  "Inf"
+                ],
+                "closed": "left"
+              }
+            ]
+          },
+          "broadcast": false,
+          "labels": {},
+          "column_names": {}
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide",
+          "collapse": null,
+          "columns": [
+            "x"
+          ],
+          "sources": [],
+          "options": {
+            "time_window": null,
+            "date_handling": {
+              "mode": "relative",
+              "reference": "index",
+              "bin_width": null,
+              "date_columns": null
+            }
+          },
+          "result_symbol": null,
+          "grain": "person"
+        }
+      },
+      "options": {
+        "translate_concepts": true,
+        "block_sensitive": true,
+        "factor_concepts": true,
+        "labels": {},
+        "column_names": {}
+      },
+      "concept_sets": {},
+      "intervals": {},
+      "publish": [
+        "o"
+      ]
+    },
+    "digest_sha256": "9b50d2939e5570be5459d5bb31afaca874d4aff85791f877211f7239785893db"
+  },
+  {
+    "label": "manual-category",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          },
+          "number_spec": {
+            "representation": "category",
+            "thresholds": [
+              5,
+              10
+            ]
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    },
+    "normalized": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ],
+            "include_descendants": false,
+            "include_mapped": false,
+            "exclude": null
+          },
+          "concept_col": null,
+          "where": null,
+          "visit": null,
+          "value": null,
+          "unit": null,
+          "end": null,
+          "on_missing_table": "error"
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria",
+          "parent": null,
+          "where": null,
+          "cohort_definition_id": null,
+          "episode_policy": null,
+          "coverage": {
+            "policy": "unique",
+            "on_ambiguous": "drop",
+            "on_missing": "drop",
+            "gap": 0
+          }
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean",
+            "value": null,
+            "window": null,
+            "which": null,
+            "n": 1,
+            "side": "either",
+            "missing": "skip",
+            "distinct": null,
+            "p": null,
+            "agg": null,
+            "reference": null,
+            "predicate": null,
+            "reference_date": null,
+            "unit": "day",
+            "coverage": "recorded",
+            "fills": "start_in_window",
+            "observed_only": false
+          },
+          "number_spec": {
+            "pipeline": [
+              {
+                "kind": "category",
+                "range": "thresholds",
+                "thresholds": [
+                  5,
+                  10
+                ],
+                "labels": [
+                  "low",
+                  "normal",
+                  "high"
+                ]
+              }
+            ]
+          },
+          "broadcast": false,
+          "labels": {},
+          "column_names": {}
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide",
+          "collapse": null,
+          "columns": [
+            "x"
+          ],
+          "sources": [],
+          "options": {
+            "time_window": null,
+            "date_handling": {
+              "mode": "relative",
+              "reference": "index",
+              "bin_width": null,
+              "date_columns": null
+            }
+          },
+          "result_symbol": null,
+          "grain": "person"
+        }
+      },
+      "options": {
+        "translate_concepts": true,
+        "block_sensitive": true,
+        "factor_concepts": true,
+        "labels": {},
+        "column_names": {}
+      },
+      "concept_sets": {},
+      "intervals": {},
+      "publish": [
+        "o"
+      ]
+    },
+    "digest_sha256": "72d8f3a49698a637a2f00c1d10abf037f627e13f13098e7c72b77eaf8e27d042"
+  },
+  {
+    "label": "map",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          },
+          "number_spec": {
+            "unit": {
+              "kind": "event_unit",
+              "spec": {
+                "target": 8840,
+                "convert": {
+                  "8713": {
+                    "factor": 1000,
+                    "offset": 0
+                  }
+                }
+              }
+            },
+            "rounding": {
+              "method": "decimals",
+              "digits": 1
+            }
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    },
+    "normalized": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ],
+            "include_descendants": false,
+            "include_mapped": false,
+            "exclude": null
+          },
+          "concept_col": null,
+          "where": null,
+          "visit": null,
+          "value": null,
+          "unit": null,
+          "end": null,
+          "on_missing_table": "error"
+        },
+        "num56998992edd984bb29db478e": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ],
+            "include_descendants": false,
+            "include_mapped": false,
+            "exclude": null
+          },
+          "concept_col": null,
+          "where": null,
+          "visit": null,
+          "value": null,
+          "unit": {
+            "target": 8840,
+            "convert": {
+              "8713": {
+                "factor": 1000,
+                "offset": 0
+              }
+            },
+            "unknown": "missing",
+            "censored": "keep"
+          },
+          "end": null,
+          "on_missing_table": "error"
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria",
+          "parent": null,
+          "where": null,
+          "cohort_definition_id": null,
+          "episode_policy": null,
+          "coverage": {
+            "policy": "unique",
+            "on_ambiguous": "drop",
+            "on_missing": "drop",
+            "gap": 0
+          }
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "num56998992edd984bb29db478e"
+          },
+          "reducer": {
+            "fn": "mean",
+            "value": null,
+            "window": null,
+            "which": null,
+            "n": 1,
+            "side": "either",
+            "missing": "skip",
+            "distinct": null,
+            "p": null,
+            "agg": null,
+            "reference": null,
+            "predicate": null,
+            "reference_date": null,
+            "unit": "day",
+            "coverage": "recorded",
+            "fills": "start_in_window",
+            "observed_only": false
+          },
+          "number_spec": {
+            "pipeline": [
+              {
+                "kind": "event_unit",
+                "spec": {
+                  "target": 8840,
+                  "convert": {
+                    "8713": {
+                      "factor": 1000,
+                      "offset": 0
+                    }
+                  },
+                  "unknown": "missing",
+                  "censored": "keep"
+                }
+              },
+              {
+                "kind": "round",
+                "method": "decimals",
+                "digits": 1
+              }
+            ]
+          },
+          "broadcast": false,
+          "labels": {},
+          "column_names": {}
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide",
+          "collapse": null,
+          "columns": [
+            "x"
+          ],
+          "sources": [],
+          "options": {
+            "time_window": null,
+            "date_handling": {
+              "mode": "relative",
+              "reference": "index",
+              "bin_width": null,
+              "date_columns": null
+            }
+          },
+          "result_symbol": null,
+          "grain": "person"
+        }
+      },
+      "options": {
+        "translate_concepts": true,
+        "block_sensitive": true,
+        "factor_concepts": true,
+        "labels": {},
+        "column_names": {}
+      },
+      "concept_sets": {},
+      "intervals": {},
+      "publish": [
+        "o"
+      ]
+    },
+    "digest_sha256": "e2a9389bd7cbdbe0c8b0a5bd29e983ee4bab4c44b56b4a5ab300c6ce0080b071"
+  },
+  {
+    "label": "recipe-default",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          },
+          "number_spec": {}
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      },
+      "options": {
+        "number_spec": {
+          "rounding": {
+            "method": "floor"
+          }
+        }
+      }
+    },
+    "normalized": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ],
+            "include_descendants": false,
+            "include_mapped": false,
+            "exclude": null
+          },
+          "concept_col": null,
+          "where": null,
+          "visit": null,
+          "value": null,
+          "unit": null,
+          "end": null,
+          "on_missing_table": "error"
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria",
+          "parent": null,
+          "where": null,
+          "cohort_definition_id": null,
+          "episode_policy": null,
+          "coverage": {
+            "policy": "unique",
+            "on_ambiguous": "drop",
+            "on_missing": "drop",
+            "gap": 0
+          }
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean",
+            "value": null,
+            "window": null,
+            "which": null,
+            "n": 1,
+            "side": "either",
+            "missing": "skip",
+            "distinct": null,
+            "p": null,
+            "agg": null,
+            "reference": null,
+            "predicate": null,
+            "reference_date": null,
+            "unit": "day",
+            "coverage": "recorded",
+            "fills": "start_in_window",
+            "observed_only": false
+          },
+          "number_spec": {
+            "pipeline": [
+              {
+                "kind": "round",
+                "method": "floor"
+              }
+            ]
+          },
+          "broadcast": false,
+          "labels": {},
+          "column_names": {}
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide",
+          "collapse": null,
+          "columns": [
+            "x"
+          ],
+          "sources": [],
+          "options": {
+            "time_window": null,
+            "date_handling": {
+              "mode": "relative",
+              "reference": "index",
+              "bin_width": null,
+              "date_columns": null
+            }
+          },
+          "result_symbol": null,
+          "grain": "person"
+        }
+      },
+      "options": {
+        "number_spec": {
+          "rounding": {
+            "method": "floor"
+          }
+        },
+        "translate_concepts": true,
+        "block_sensitive": true,
+        "factor_concepts": true,
+        "labels": {},
+        "column_names": {}
+      },
+      "concept_sets": {},
+      "intervals": {},
+      "publish": [
+        "o"
+      ]
+    },
+    "digest_sha256": "506f8c1d72ab8d1c3c8b80ab853cde5f8d8eba8966a9511797937449ec6e694e"
+  },
+  {
+    "label": "reset",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          },
+          "number_spec": {
+            "pipeline": [
+              {
+                "kind": "transform",
+                "method": "identity"
+              }
+            ]
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      },
+      "options": {
+        "number_spec": {
+          "rounding": {
+            "method": "floor"
+          }
+        }
+      }
+    },
+    "normalized": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ],
+            "include_descendants": false,
+            "include_mapped": false,
+            "exclude": null
+          },
+          "concept_col": null,
+          "where": null,
+          "visit": null,
+          "value": null,
+          "unit": null,
+          "end": null,
+          "on_missing_table": "error"
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria",
+          "parent": null,
+          "where": null,
+          "cohort_definition_id": null,
+          "episode_policy": null,
+          "coverage": {
+            "policy": "unique",
+            "on_ambiguous": "drop",
+            "on_missing": "drop",
+            "gap": 0
+          }
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean",
+            "value": null,
+            "window": null,
+            "which": null,
+            "n": 1,
+            "side": "either",
+            "missing": "skip",
+            "distinct": null,
+            "p": null,
+            "agg": null,
+            "reference": null,
+            "predicate": null,
+            "reference_date": null,
+            "unit": "day",
+            "coverage": "recorded",
+            "fills": "start_in_window",
+            "observed_only": false
+          },
+          "number_spec": {
+            "pipeline": [
+              {
+                "kind": "transform",
+                "method": "identity"
+              }
+            ]
+          },
+          "broadcast": false,
+          "labels": {},
+          "column_names": {}
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide",
+          "collapse": null,
+          "columns": [
+            "x"
+          ],
+          "sources": [],
+          "options": {
+            "time_window": null,
+            "date_handling": {
+              "mode": "relative",
+              "reference": "index",
+              "bin_width": null,
+              "date_columns": null
+            }
+          },
+          "result_symbol": null,
+          "grain": "person"
+        }
+      },
+      "options": {
+        "number_spec": {
+          "rounding": {
+            "method": "floor"
+          }
+        },
+        "translate_concepts": true,
+        "block_sensitive": true,
+        "factor_concepts": true,
+        "labels": {},
+        "column_names": {}
+      },
+      "concept_sets": {},
+      "intervals": {},
+      "publish": [
+        "o"
+      ]
+    },
+    "digest_sha256": "42e1f583b36acb70751e5f76489bb14933d23ba7da8346beb8d07f4af4161647"
+  },
+  {
+    "label": "derive",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "derived": {
+            "kind": "number_derive",
+            "inputs": [
+              {
+                "alias": "a",
+                "stage": "canonical",
+                "variable": {
+                  "source": {
+                    "event": "lab"
+                  },
+                  "reducer": {
+                    "fn": "mean"
+                  }
+                }
+              }
+            ],
+            "exprs": {
+              "version": 1,
+              "assign": [
+                {
+                  "name": "y",
+                  "expr": {
+                    "op": "*",
+                    "args": [
+                      {
+                        "col": "a"
+                      },
+                      {
+                        "lit": 2
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            "unit": "coordinate:doubled"
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    },
+    "normalized": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ],
+            "include_descendants": false,
+            "include_mapped": false,
+            "exclude": null
+          },
+          "concept_col": null,
+          "where": null,
+          "visit": null,
+          "value": null,
+          "unit": null,
+          "end": null,
+          "on_missing_table": "error"
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria",
+          "parent": null,
+          "where": null,
+          "cohort_definition_id": null,
+          "episode_policy": null,
+          "coverage": {
+            "policy": "unique",
+            "on_ambiguous": "drop",
+            "on_missing": "drop",
+            "gap": 0
+          }
+        }
+      },
+      "variables": {
+        "x": {
+          "derived": {
+            "kind": "number_derive",
+            "inputs": [
+              {
+                "alias": "a",
+                "stage": "canonical",
+                "variable": {
+                  "source": {
+                    "event": "lab"
+                  },
+                  "reducer": {
+                    "fn": "mean",
+                    "value": null,
+                    "window": null,
+                    "which": null,
+                    "n": 1,
+                    "side": "either",
+                    "missing": "skip",
+                    "distinct": null,
+                    "p": null,
+                    "agg": null,
+                    "reference": null,
+                    "predicate": null,
+                    "reference_date": null,
+                    "unit": "day",
+                    "coverage": "recorded",
+                    "fills": "start_in_window",
+                    "observed_only": false
+                  },
+                  "broadcast": false,
+                  "labels": {},
+                  "column_names": {}
+                }
+              }
+            ],
+            "exprs": {
+              "version": 1,
+              "assign": [
+                {
+                  "name": "y",
+                  "expr": {
+                    "op": "*",
+                    "args": [
+                      {
+                        "col": "a"
+                      },
+                      {
+                        "lit": 2
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            "unit": "coordinate:doubled",
+            "result": "y"
+          },
+          "broadcast": false
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide",
+          "collapse": null,
+          "columns": [
+            "x"
+          ],
+          "sources": [],
+          "options": {
+            "time_window": null,
+            "date_handling": {
+              "mode": "relative",
+              "reference": "index",
+              "bin_width": null,
+              "date_columns": null
+            }
+          },
+          "result_symbol": null,
+          "grain": "person"
+        }
+      },
+      "options": {
+        "translate_concepts": true,
+        "block_sensitive": true,
+        "factor_concepts": true,
+        "labels": {},
+        "column_names": {}
+      },
+      "concept_sets": {},
+      "intervals": {},
+      "publish": [
+        "o"
+      ]
+    },
+    "digest_sha256": "dde07bbd60041e7b23332cff368507e42beaca9852648e8b70e9d8549556f4c7"
+  },
+  {
+    "label": "columns",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide",
+          "number_columns": {
+            "copy": {
+              "derived": {
+                "kind": "number_column",
+                "column": "x"
+              },
+              "number_spec": {
+                "rounding": {
+                  "method": "floor"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "normalized": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ],
+            "include_descendants": false,
+            "include_mapped": false,
+            "exclude": null
+          },
+          "concept_col": null,
+          "where": null,
+          "visit": null,
+          "value": null,
+          "unit": null,
+          "end": null,
+          "on_missing_table": "error"
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria",
+          "parent": null,
+          "where": null,
+          "cohort_definition_id": null,
+          "episode_policy": null,
+          "coverage": {
+            "policy": "unique",
+            "on_ambiguous": "drop",
+            "on_missing": "drop",
+            "gap": 0
+          }
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean",
+            "value": null,
+            "window": null,
+            "which": null,
+            "n": 1,
+            "side": "either",
+            "missing": "skip",
+            "distinct": null,
+            "p": null,
+            "agg": null,
+            "reference": null,
+            "predicate": null,
+            "reference_date": null,
+            "unit": "day",
+            "coverage": "recorded",
+            "fills": "start_in_window",
+            "observed_only": false
+          },
+          "broadcast": false,
+          "labels": {},
+          "column_names": {}
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide",
+          "number_columns": {
+            "copy": {
+              "derived": {
+                "kind": "number_column",
+                "column": "x"
+              },
+              "number_spec": {
+                "pipeline": [
+                  {
+                    "kind": "round",
+                    "method": "floor"
+                  }
+                ]
+              },
+              "broadcast": false
+            }
+          },
+          "collapse": null,
+          "columns": [
+            "x"
+          ],
+          "sources": [],
+          "options": {
+            "time_window": null,
+            "date_handling": {
+              "mode": "relative",
+              "reference": "index",
+              "bin_width": null,
+              "date_columns": null
+            }
+          },
+          "result_symbol": null,
+          "grain": "person"
+        }
+      },
+      "options": {
+        "translate_concepts": true,
+        "block_sensitive": true,
+        "factor_concepts": true,
+        "labels": {},
+        "column_names": {}
+      },
+      "concept_sets": {},
+      "intervals": {},
+      "publish": [
+        "o"
+      ]
+    },
+    "digest_sha256": "0117f0fc6487cb628e6d74ad6e44966b722bc8c55a44b89a7a4a51d0dd3f368b"
+  }
+]

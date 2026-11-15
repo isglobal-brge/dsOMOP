@@ -1493,10 +1493,11 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 
   .omopAnalysisEntry(
     name        = name,
-    description = paste0("Incidence rate over a scoped at-risk cohort: ",
-                         "persons-at-risk, person-days, outcomes, ",
-                         "person-outcomes, cumulative-incidence proportion and ",
-                         "rate, optionally by age/gender/calendar-year strata."),
+    description = paste0("Descriptive first-target-episode incidence: persons with an event ",
+                         "over full-window person-days (no clean-period subtraction). ",
+                         "Recurrent event counts are separate; protected contribution caps ",
+                         "are not scientific risk-window limits. Ordinary time/rate ",
+                         "masking and protected contracts remain route-specific."),
     domain      = "general",
     params      = list(
       list(name = "outcome_concept_id", type = "concept_id", required = FALSE,
@@ -1511,7 +1512,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
            default = "start", choices = c("start", "end")),
       list(name = "tar_anchor_end", type = "enum", required = FALSE,
            default = "end", choices = c("start", "end")),
-      list(name = "clean_window", type = "int", required = FALSE, default = "0"),
+      list(name = "clean_window", type = "int", required = FALSE, default = "0",
+           choices = "0", description = "Only 0: descriptive first episode, no clean-period subtraction."),
       list(name = "strat_by_age", type = "bool", required = FALSE, default = "0"),
       list(name = "strat_by_gender", type = "bool", required = FALSE, default = "0"),
       list(name = "strat_by_year", type = "bool", required = FALSE, default = "0"),
@@ -2497,7 +2499,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   .omopAnalysisEntry(
     name        = name,
     description = paste0("Per-covariate distinct-person count and proportion ",
-                         "over the scoped cohort, for a selectable domain ",
+                         "over all-history events among scoped cohort members, with no cohort-relative date predicate, for a selectable domain ",
                          "(condition/drug/procedure/measurement/observation). ",
                          "Proportion is coupled to the suppressed numerator."),
     domain      = "general",
@@ -2506,7 +2508,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
            choices = c("0", "1", "2", "3", "4"),
            description = "Covariate domain (0 condition,1 drug,2 procedure,3 measurement,4 observation)."),
       list(name = "time_windows", type = "int", required = FALSE, default = "0",
-           description = "Reserved window selector (0 = anytime in cohort)."),
+           choices = "0", description = "Only 0: all-history events among scoped members; no cohort-relative date predicate."),
       list(name = "top_n", type = "int", required = FALSE, default = "50")
     ),
     compute = list(
@@ -4477,6 +4479,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
        anyDuplicated(names(params))))) {
     stop("Analysis parameters must be a uniquely named list.", call. = FALSE)
   }
+  params <- .auditEffectiveSettings(entry$name, params, entry$meta$alias_target)
   specs <- entry$params %||% list()
   spec_names <- vapply(specs, function(p) p$name, character(1))
   unknown <- setdiff(names(params), spec_names)
@@ -5277,6 +5280,11 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   effective_schema <- function(value) {
     if (bare_schemas || is.null(value) || !nzchar(value)) "" else value
   }
+  # Presentation may change column attributes as well as values. Seal the
+  # final published frame inside this same loader snapshot, never its input.
+  assigned <- .publishStandalone(assigned, handle = handle,
+                                 caller = "omopAnalysisRunAssignDS",
+                                 already_tokenized = TRUE)
   assigned <- .dsomopDpBestEffort(
     assigned,
     .dsomopDpSealToolOutput(handle, .dsomopDpSealAnalysisAssign(
@@ -5304,9 +5312,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     )),
     "analysis output"
   )
-  .publishStandalone(assigned, handle = handle,
-                     caller = "omopAnalysisRunAssignDS",
-                     already_tokenized = TRUE)
+  assigned
 }
 
 #' THE single fail-closed run path for catalog analyses
@@ -5337,6 +5343,11 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 .omopAnalysisRun <- function(handle, name, params = list(), scope = NULL,
                              combine = "union", assign = FALSE,
                              assign_date_handling = NULL) {
+  params <- .auditEffectiveSettings(name, params)
+  # Reject unsupported public settings before opening a snapshot or preparing a
+  # protected request. Canonical resolution also covers unique catalogue suffixes.
+  entry <- .omopAnalysisResolve(handle, name)
+  sanitized <- .omopAnalysisSanitizeParams(entry, params)
   # One read snapshot for the whole run (dsOMOP 2.10.3, review R03): support,
   # owners, overlays and the fixed-synopsis generation read one data state.
   if (!.dsomopReadSnapshotActive(handle)) {
@@ -5350,8 +5361,6 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     .dropTempTablesCreatedSince(handle, temp_tables_before),
     add = TRUE
   )
-  entry <- .omopAnalysisResolve(handle, name)
-
   # Mode admission: the aggregate path refuses assign-only entries and vice versa.
   if (assign && !identical(entry$mode, "assign")) {
     stop("Analysis '", name, "' is not an assign-mode loader.", call. = FALSE)
@@ -5360,8 +5369,6 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     stop("Analysis '", name, "' is assign-only; use the assign run path.",
          call. = FALSE)
   }
-
-  sanitized <- .omopAnalysisSanitizeParams(entry, params)
 
   # Public quantization of free numeric parameters (tools_release.R): every
   # aggregate request evaluates, and reports, the effective estimand on the

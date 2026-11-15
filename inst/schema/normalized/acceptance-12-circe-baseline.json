@@ -13,6 +13,7 @@
       ],
       "include_descendants": true,
       "include_mapped": false,
+      "validity_policy": "ohdsi-import-1",
       "exclude": null
     }
   },

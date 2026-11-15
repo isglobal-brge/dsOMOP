@@ -65,6 +65,14 @@
       event_complement = pairs(statistic_basis$event_complement)
     )
   }
+  optional <- setdiff(normalise(public_columns),
+                     unique(c(normalise(filter_columns), normalise(count_columns),
+                              normalise(person_columns))))
+  optional_types <- stats::setNames(rep("double", length(optional)), optional)
+  optional_types[intersect(optional, c("concept_name", "visit_context"))] <- "character"
+  if (length(setdiff(optional, c(normalise(statistic_columns), "concept_name", "visit_context")))) {
+    stop("An optional physical result column requires an explicit type contract.", call. = FALSE)
+  }
   list(
     release = release,
     unit = unit,
@@ -74,7 +82,9 @@
     count_columns = normalise(count_columns),
     person_columns = normalise(person_columns),
     statistic_columns = normalise(statistic_columns),
-    statistic_basis = basis
+    statistic_basis = basis,
+    optional_columns = optional,
+    optional_types = optional_types
   )
 }
 
@@ -500,7 +510,8 @@
       found$table_name[[i]], registry[[tool_id]]
     )
     length(canonical) == 1L &&
-      identical(registry[[tool_id]]$contracts[[canonical]]$release, "public")
+      identical(registry[[tool_id]]$contracts[[canonical]]$release, "public") &&
+      (is.null(found$schema_status) || identical(found$schema_status[[i]], "supported"))
   }, logical(1))
   found[keep, , drop = FALSE]
 }
@@ -519,7 +530,8 @@
   empty <- data.frame(
     table_name = character(0), tool_id = character(0),
     tool_name = character(0), qualified_name = character(0),
-    n_rows = integer(0), stringsAsFactors = FALSE
+    n_rows = integer(0), schema_status = character(), layout_id = character(),
+    upstream_version = character(), structural_fingerprint = character(), stringsAsFactors = FALSE
   )
 
   schema <- .effectiveResultsSchema(handle)
@@ -532,11 +544,16 @@
     if (is.null(tid)) next
     tool <- registry[[tid]]
     qualified <- .qualifyTable(handle, actual_name, schema)
-    n <- tryCatch({
+    schema_contract <- .ohdsiInspectResultSchema(handle, actual_name, tid)
+    n <- if (identical(schema_contract$status, "supported")) tryCatch({
       sql <- paste0("SELECT COUNT(*) AS n FROM ", qualified)
       as.integer(.executeQuery(handle, sql)$n[1])
-    }, error = function(e) 0L)
+    }, error = function(e) NA_integer_) else NA_integer_
     rows[[length(rows) + 1L]] <- data.frame(
+      schema_status = schema_contract$status,
+      layout_id = schema_contract$layout_id,
+      upstream_version = schema_contract$upstream_version,
+      structural_fingerprint = schema_contract$structural_fingerprint,
       table_name = actual_name, tool_id = tid,
       tool_name = tool$tool_name, qualified_name = qualified,
       n_rows = n, stringsAsFactors = FALSE
@@ -891,6 +908,9 @@
   actual_cols <- .ohdsiBlueprintColumns(
     physical$blueprint, physical$table_name, handle
   )
+  identity_cols <- .ohdsiIdentitySchema(resolved, actual_cols)
+  .ohdsiIdentityTypes(handle, physical, identity_cols)
+  schema_contract <- .ohdsiInspectResultSchema(handle, physical$table_name, resolved$tool_id)
   required_basis <- unique(c(resolved$contract$count_columns,
                              resolved$contract$person_columns))
   missing_basis <- setdiff(required_basis, actual_cols)
@@ -901,6 +921,10 @@
          if (length(missing_basis) > 0L) paste0(": ",
            paste(missing_basis, collapse = ", ")) else "",
          ".", call. = FALSE)
+  }
+  if (isTRUE(resolved$strict) && !identical(schema_contract$status, "supported")) {
+    stop("unsupported_results_schema: physical columns do not match a supported result layout; ",
+         "use a listed supported export.", call. = FALSE)
   }
   entry <- list(meta = list(
     tool_id = resolved$tool_id,
@@ -963,7 +987,13 @@
   finish <- function(x) {
     if (strict && is.null(columns) && is.data.frame(x)) {
       for (column in setdiff(contract$public_columns, names(x))) {
-        x[[column]] <- rep(NA, nrow(x))
+        if (!column %in% contract$optional_columns) {
+          stop("results_schema_integrity: required physical-result columns cannot be completed; ",
+               "use a complete supported physical export.", call. = FALSE)
+        }
+        missing_value <- switch(contract$optional_types[[column]],
+                                character = NA_character_, double = NA_real_)
+        x[[column]] <- rep(missing_value, nrow(x))
       }
       x <- x[, contract$public_columns, drop = FALSE]
     }
@@ -971,6 +1001,7 @@
       attr(x, "dsomop.disclosure_safe") <- FALSE
       attr(x, "dsomop.release_mode") <- "admin_development"
     }
+    attr(x, "dsomop.results_schema") <- schema_contract
     x
   }
 
@@ -995,6 +1026,10 @@
     stop("Could not inspect columns for OHDSI result table '", table_name,
          "'.", call. = FALSE)
   }
+
+  identity_cols <- .ohdsiIdentitySchema(resolved, actual_cols)
+  .ohdsiIdentityTypes(handle, physical, identity_cols)
+  schema_contract <- .ohdsiInspectResultSchema(handle, physical$table_name, resolved$tool_id)
 
   if (strict) {
     table_count_cols <- contract$count_columns
@@ -1027,6 +1062,12 @@
       table_person_cols
     )
   }
+
+  if (isTRUE(resolved$strict) && !identical(schema_contract$status, "supported")) {
+    stop("unsupported_results_schema: physical columns do not match a supported result layout; ",
+         "use a listed supported export.", call. = FALSE)
+  }
+  .ohdsiValidateUniqueResultKeys(handle, physical, identity_cols)
 
   # Build SELECT columns
   if (is.null(columns)) {
@@ -1081,7 +1122,7 @@
                           actual_cols)
   output_cols <- select_cols
   query_cols <- unique(c(select_cols, table_count_cols, table_person_cols,
-                         basis_cols))
+                         basis_cols, identity_cols))
 
   # Express the row cap in OHDSI/SQL Server form, then translate it through the
   # package's dialect layer (TOP for SQL Server, FETCH FIRST for Oracle, LIMIT
@@ -1092,8 +1133,20 @@
     stop("limit must be one positive integer.", call. = FALSE)
   }
   limit <- min(as.integer(limit_num), 5000L)
+  query_expr <- query_cols
+  integer_keys <- setdiff(identity_cols, .ohdsiTextIdentityKeys())
+  if (identical(handle$target_dialect, "sqlite")) {
+    # SQLite's INTEGER declaration does not constrain storage classes. Fetch
+    # exact text before DBI can truncate a mixed INTEGER/REAL/TEXT column or
+    # round BIGINT. Do not turn a BLOB or REAL into a valid integer identity.
+    for (key in integer_keys) {
+      query_expr[query_cols == key] <- paste0(
+        "CASE WHEN TYPEOF(", key, ") = 'integer' THEN CAST(",
+        key, " AS TEXT) ELSE NULL END AS ", key)
+    }
+  }
   sql <- paste0("SELECT TOP ", limit, " ",
-                paste(query_cols, collapse = ", "), " FROM ", qualified)
+                paste(query_expr, collapse = ", "), " FROM ", qualified)
 
   # WHERE clause
   where_parts <- character(0)
@@ -1159,6 +1212,26 @@
            call. = FALSE)
     }
   )
+  # SQLite cannot infer expression types from an empty result. The physical
+  # column types have already been checked, so restore its declared key types.
+  if (nrow(result) == 0L && identical(handle$target_dialect, "sqlite")) {
+    for (key in integer_keys) result[[key]] <- integer(0)
+    for (key in intersect(identity_cols, .ohdsiTextIdentityKeys())) {
+      result[[key]] <- character(0)
+    }
+  }
+  .ohdsiValidateResultIdentity(result, identity_cols, table_count_cols)
+  if (identical(handle$target_dialect, "sqlite")) {
+    # Retain the established int32 representation where it is exact. Larger
+    # keys stay canonical decimal text, including values beyond binary64.
+    for (key in integer_keys) {
+      x <- result[[key]]
+      if (is.character(x) && all(nchar(sub("^-", "", x)) <= 10L)) {
+        small <- as.numeric(x)
+        if (all(abs(small) <= 2147483647)) result[[key]] <- as.integer(small)
+      }
+    }
+  }
   if (nrow(result) == 0) {
     return(finish(
       result[, intersect(output_cols, names(result)), drop = FALSE]
@@ -1193,7 +1266,8 @@
 #' @return Named list with per-tool availability
 #' @keywords internal
 .ohdsiStatus <- function(handle) {
-  found <- .ohdsiFilterPublicInventory(.ohdsiFindResultTables(handle))
+  inventory <- .ohdsiFindResultTables(handle)
+  found <- .ohdsiFilterPublicInventory(inventory)
 
   registry <- .ohdsi_tool_registry()
   status <- list()
@@ -1207,7 +1281,10 @@
       n_tables = nrow(tool_tables),
       # Result-table row counts are not person counts (one person can generate
       # many rows) and have no person gate, so they are not released.
-      total_rows = NA_real_
+      total_rows = NA_real_,
+      schema_contracts = inventory[inventory$tool_id == tid,
+        c("table_name", "schema_status", "layout_id", "upstream_version", "structural_fingerprint"),
+        drop = FALSE]
     )
   }
 

@@ -10,7 +10,7 @@ test_that("million-person complete releases match the pre-acceleration builder",
   policy <- .dsomopDpPolicy()
   policy$data_generation <- strrep("a", 64)
   old <- new.env(parent = environment(.dsomopReleaseBuild))
-  sys.source(test_path("../../tools/e2e4-fix1/baseline-hashing.R"), old)
+  sys.source(test_path("../../tests/fixtures/privacy-baseline/baseline-hashing.R"), old)
   old$.dsomopReleaseBuild <- .dsomopReleaseBuild
   environment(old$.dsomopReleaseBuild) <- old
   for (name in ls(old, all.names = TRUE)) old[[name]] <- compiler::cmpfun(old[[name]])

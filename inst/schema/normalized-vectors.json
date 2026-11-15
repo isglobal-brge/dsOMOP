@@ -83,8 +83,8 @@
     {
       "label": "acceptance-12-circe-baseline",
       "source": "../plans/acceptance/12-circe-baseline/plan.json",
-      "normalized_sha256": "ffd3255ab332308cb9f176bb2312e28b4e49239a03d8ffc0a5bf3028849ea208",
-      "digest_sha256": "747ef9497344488a5b0605db843d8bea2f41ba428339320db31334054e654684"
+      "normalized_sha256": "5bc3369c62d9a9784baa6b124b86ca18664662c4d3bb93e38658e8e76608e2bb",
+      "digest_sha256": "edfe0195ea135ab07a1e78aac3c70842099c50d7f33667eb664b5ee3d0ef025c"
     },
     {
       "label": "acceptance-13-parametrised",

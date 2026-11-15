@@ -201,6 +201,7 @@
   if (is.null(x)) return(NULL)
   if (.v1IsObject(x) && length(x) > 0L) {
     out <- list(concepts = .v1IdList(x[["concepts"]]))
+    if (!is.null(x[["validity_policy"]])) out$validity_policy <- .ohdsiValidityPolicy(.v1Scalar(x[["validity_policy"]]))
     for (flag in c("include_descendants", "include_mapped")) {
       if (!is.null(x[[flag]])) out[[flag]] <- isTRUE(.v1Scalar(x[[flag]]))
     }

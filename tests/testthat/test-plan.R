@@ -344,6 +344,8 @@ test_that("empty staged date handling preserves the non-empty schema contract", 
       "empty_dates", basename(staging_dir)
     )
   )
+  # The public reader accepts committed manifest members, including empty files.
+  .writeStagingManifest(staging_dir, list(empty_dates = descriptor))
   if (identical(info$format, "parquet")) {
     expect_identical(descriptor$metadata$layout, "file")
     expect_identical(
@@ -704,7 +706,7 @@ test_that("failed staged plans remove every partial output", {
   expect_length(handle$staging_dirs, 0L)
 })
 
-test_that("staged plan count and per-handle directory caps fail closed", {
+test_that("staged plan output cap fails closed", {
   handle <- create_test_handle()
   set_test_person_key(handle)
   on.exit(cleanup_handle(handle), add = TRUE)
@@ -721,21 +723,204 @@ test_that("staged plan count and per-handle directory caps fail closed", {
   expect_error(
     .planExecute(handle, list(outputs = list(a = one, b = one)), list(),
                  output_mode = "staged"),
-    "caps"
+    "output cap"
   )
   expect_false(dir.exists(base))
 
+})
+
+test_that("the ninth and twentieth staged executions retain all live outputs", {
+  handle <- create_test_handle()
+  set_test_person_key(handle)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  base <- tempfile("dsstaging_unlimited_")
+  on.exit(unlink(base, recursive = TRUE), add = TRUE)
   withr::local_options(list(
-    dsomop.max_staged_outputs = 10L,
+    dsstaging.base_dir = base, nfilter.subset = 3,
+    # Retired configuration must have no effect, even below the old default 8.
     dsomop.max_staging_dirs_per_handle = 1L
   ))
-  tracked <- .createStagingDir(.generateStagingToken())
-  handle$staging_dirs <- tracked
-  expect_error(
-    .planExecute(handle, list(outputs = list(a = one)), list(),
-                 output_mode = "staged"),
-    "directory cap"
+  plan <- list(outputs = list(events = list(
+    type = "event_level", table = "condition_occurrence",
+    representation = list(format = "long"), filters = list()
+  )))
+  descriptors <- vector("list", 20L)
+  for (i in seq_len(20L)) {
+    result <- .planExecute(handle, plan, list(events = "events"),
+                           output_mode = "staged")
+    descriptors[[i]] <- result$events
+    expect_s3_class(result$events, "FlowerDatasetDescriptor")
+    if (i %in% c(9L, 20L)) {
+      expect_length(handle$staging_dirs, i)
+      expect_true(all(dir.exists(handle$staging_dirs)))
+      for (descriptor in descriptors[seq_len(i)]) {
+        expect_silent(omopStagedDatasetPath(descriptor))
+      }
+    }
+  }
+
+  # Disk/row protections still refuse execution without damaging older output.
+  withr::with_options(list(dsomop.max_staged_bytes = 1), {
+    expect_error(.planExecute(handle, plan, list(events = "events"),
+                              output_mode = "staged"), "disk quota")
+  })
+  withr::with_options(list(dsomop.max_staged_rows = 1L), {
+    expect_error(.planExecute(handle, plan, list(events = "events"),
+                              output_mode = "staged"), "row quota")
+  })
+  expect_length(handle$staging_dirs, 20L)
+  expect_length(list.dirs(base, recursive = FALSE), 20L)
+  for (descriptor in descriptors) expect_silent(omopStagedDatasetPath(descriptor))
+})
+
+test_that("new staging reclaims terminal owned directories but never live work", {
+  handle <- create_test_handle()
+  set_test_person_key(handle)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  base <- tempfile("dsstaging_reclaim_")
+  on.exit(unlink(base, recursive = TRUE), add = TRUE)
+  withr::local_options(list(dsstaging.base_dir = base, nfilter.subset = 3))
+  output <- list(type = "event_level", table = "condition_occurrence",
+                 representation = list(format = "long"), filters = list())
+  execute <- function() .planExecute(handle,
+    list(outputs = list(first = output, second = output)),
+    list(first = "first", second = "second"), output_mode = "staged")
+  expire <- function(directory, members) {
+    path <- file.path(directory, "manifest.json")
+    manifest <- jsonlite::fromJSON(path, simplifyVector = FALSE)
+    for (name in members) manifest$outputs[[name]]$expires_at <-
+      "2000-01-01T00:00:00.000Z"
+    writeLines(jsonlite::toJSON(manifest, auto_unbox = TRUE, null = "null"), path)
+  }
+
+  # Build every fixture while still live so no earlier execution reclaims it.
+  staged <- lapply(seq_len(7L), function(i) execute())
+  dirs <- vapply(staged, function(x) dirname(x$first$metadata$file), character(1))
+  live_files <- vapply(staged[4:6], function(x) x$second$metadata$file, character(1))
+  live_hashes <- tools::md5sum(live_files)
+  active <- .planContext(handle, list())
+  on.exit(.planContextClose(active), add = TRUE)
+  .publishStagingDir(active)
+  .writeStagingManifest(active$staging_dir, list())
+  expire(dirs[1L], c("first", "second"))
+  unlink(vapply(staged[[2L]], function(x) x$metadata$file, character(1)))
+  expect_error(.readStagingManifest(file.path(dirs[1L], "manifest.json")),
+               "expired")
+  expect_error(omopStagedDatasetPath(staged[[2L]]$first), "unavailable or unsafe")
+  for (descriptor in staged[[3L]]) expect_true(omopStagedRevokeDS(descriptor))
+  expire(dirs[4L], "first") # A live sibling protects even an ancient directory.
+  Sys.setFileTime(dirs[4L], Sys.time() - 7 * 86400)
+  expect_true(omopStagedRevokeDS(staged[[5L]]$first))
+  unlink(staged[[6L]]$first$metadata$file)
+  writeLines("invalid manifest", file.path(dirs[7L], "manifest.json"))
+
+  untracked <- .createStagingDir(.generateStagingToken())
+  .writeStagingManifest(untracked, list())
+  pending <- .createStagingDir(.generateStagingToken())
+  absent <- file.path(base, .generateStagingToken())
+  handle$staging_dirs <- c(handle$staging_dirs, pending, absent)
+
+  result <- execute()
+  expect_false(any(dir.exists(dirs[1:3])))
+  expect_false(any(dirs[1:3] %in% handle$staging_dirs))
+  expect_true(all(dir.exists(c(dirs[4:7], untracked, pending, active$staging_dir))))
+  expect_false(absent %in% handle$staging_dirs)
+  expect_identical(tools::md5sum(live_files), live_hashes)
+  # The public resolver validates every manifest member, so mixed expired or
+  # consumed manifests are not readable as a whole; their live files survive.
+  expect_silent(omopStagedDatasetPath(staged[[5L]]$second))
+  expect_silent(omopStagedDatasetPath(result$first))
+  expect_silent(omopStagedDatasetPath(result$second))
+})
+
+test_that("parseable malformed staging members preserve their whole directory", {
+  handle <- create_test_handle()
+  set_test_person_key(handle)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  base <- tempfile("dsstaging_malformed_")
+  on.exit(unlink(base, recursive = TRUE), add = TRUE)
+  withr::local_options(list(dsstaging.base_dir = base, nfilter.subset = 3))
+  output <- list(type = "event_level", table = "condition_occurrence",
+                 representation = list(format = "long"), filters = list())
+  execute <- function() .planExecute(handle,
+    list(outputs = list(first = output, second = output)),
+    list(first = "first", second = "second"), output_mode = "staged")
+  cases <- list(
+    missing_version = function(d) { d$contract_version <- NULL; d },
+    wrong_origin = function(d) { d$origin <- "not-dsOMOP"; d },
+    invalid_format = function(d) { d$metadata$format <- "garbage"; d },
+    invalid_file_name = function(d) {
+      d$metadata$file <- file.path(dirname(d$metadata$file), "not-data.txt")
+      d
+    },
+    missing_semantics = function(d) { d$metadata$semantic_contract <- NULL; d },
+    missing_bundle = function(d) { d$metadata$bundle_contract <- NULL; d },
+    wrong_source_kind = function(d) { d$source_kind <- "staged_other"; d },
+    invalid_layout = function(d) { d$metadata$layout <- "directory"; d },
+    missing_pseudonymization = function(d) {
+      d$metadata$pseudonymization <- NULL
+      d
+    }
   )
+  # Create live fixtures first; then corrupt one member beside an expired one.
+  fixtures <- lapply(cases, function(change) execute())
+  files <- unlist(lapply(fixtures, function(outputs) {
+    vapply(outputs, function(d) d$metadata$file, character(1))
+  }), use.names = FALSE)
+  hashes <- tools::md5sum(files)
+  for (name in names(cases)) {
+    directory <- dirname(fixtures[[name]]$first$metadata$file)
+    path <- file.path(directory, "manifest.json")
+    manifest <- jsonlite::fromJSON(path, simplifyVector = FALSE)
+    manifest$outputs$first$expires_at <- "2000-01-01T00:00:00.000Z"
+    descriptor <- cases[[name]](manifest$outputs$second)
+    # The invalid filename must not turn a future-dated file into consumed work.
+    # Every other malformed descriptor must not be accepted merely as expired.
+    if (name != "invalid_file_name") {
+      descriptor$expires_at <- "2000-01-01T00:00:00.000Z"
+    }
+    manifest$outputs$second <- descriptor
+    writeLines(jsonlite::toJSON(manifest, auto_unbox = TRUE, null = "null"), path)
+    entry <- .stagedManifestDescriptor(
+      .readStagingManifestEnvelope(path)$outputs$second
+    )
+    expect_error(.validateStagedDescriptorContract(entry), info = name)
+    expect_error(.readStagingManifest(path), info = name)
+  }
+
+  fresh <- execute()
+  expect_silent(omopStagedDatasetPath(fresh$first))
+  for (name in names(cases)) {
+    directory <- dirname(fixtures[[name]]$first$metadata$file)
+    expect_true(dir.exists(directory), info = name)
+    expect_true(directory %in% handle$staging_dirs, info = name)
+  }
+  expect_true(all(file.exists(files)))
+  expect_identical(tools::md5sum(files), hashes)
+})
+
+test_that("automatic staging cleanup keeps failed deletions tracked for retry", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  base <- tempfile("dsstaging_reclaim_retry_")
+  on.exit(unlink(base, recursive = TRUE), add = TRUE)
+  withr::local_options(list(dsstaging.base_dir = base))
+  directory <- .createStagingDir(.generateStagingToken())
+  handle$staging_dirs <- directory
+  .writeStagingManifest(directory, list())
+  ctx <- .planContext(handle, list())
+  on.exit(.planContextClose(ctx), add = TRUE)
+  with_mocked_bindings(
+    expect_error(.publishStagingDir(ctx), "deletion was not confirmed"),
+    .unlinkStagingDirectory = function(...) 1L,
+    .package = "dsOMOP"
+  )
+  expect_identical(handle$staging_dirs, directory)
+  expect_true(dir.exists(directory))
+  expect_null(ctx$staging_dir)
+  expect_true(dir.exists(.publishStagingDir(ctx)))
+  expect_false(dir.exists(directory))
+  expect_identical(handle$staging_dirs, ctx$staging_dir)
 })
 
 test_that("staged preflight rejects and retains an unsafe tracked path", {

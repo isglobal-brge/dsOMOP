@@ -1,4 +1,4 @@
-# Regressions of Astra's 2.10.3 implementation review (astra-p0-review.md):
+# Protected-release regression cases:
 # B03 public marginal hierarchy, B06 scientific person-time owners, B09
 # always-protected threshold view, B10 protected horizon, N01 view reference
 # year, B12/B14 release source and delta claims. Each reproduction failed on

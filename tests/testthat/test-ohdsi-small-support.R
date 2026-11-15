@@ -1,8 +1,7 @@
 # Regression tests for the small-support findings G-04 (OHDSI reader statistic
 # support) and G-05 (cohort overlap union, MDRR next to a suppressed arm) of
 # the dsOMOP 2.10.3 OHDSI-tools audit. The fixtures reproduce the audit's
-# attacks (design/2.10.5/astra-scratch/small-support/sccs-overlap.R and
-# exp4_mdrr.R) through the real reader, catalog run path and DataSHIELD method.
+# attacks through the real reader, catalog run path and DataSHIELD method.
 
 ss_opts <- function(...) {
   utils::modifyList(list(nfilter.subset = 3, nfilter.tab = 3,

@@ -1,0 +1,1098 @@
+[
+  {
+    "id": "Cwire1",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "custom-order",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A30-contract-fixture"
+      },
+      "events": {
+        "e": {
+          "table": "observation",
+          "concept_set": {
+            "concepts": [
+              45000120
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "e"
+          },
+          "reducer": {
+            "fn": "last_value",
+            "value": "value_as_concept_id"
+          },
+          "category_spec": {
+            "levels": [
+              "concept:20",
+              "concept:10",
+              "concept:30"
+            ],
+            "order": {
+              "kind": "category_order",
+              "keys": [
+                "concept:20",
+                "concept:10",
+                "concept:30"
+              ]
+            },
+            "ordered": true
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Cwire2",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "public-concept-set",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A30-contract-fixture"
+      },
+      "events": {
+        "e": {
+          "table": "observation",
+          "concept_set": {
+            "concepts": [
+              45000120
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "e"
+          },
+          "reducer": {
+            "fn": "last_value",
+            "value": "value_as_concept_id"
+          },
+          "category_spec": {
+            "rollup": {
+              "kind": "atc",
+              "level": 5,
+              "domain": {
+                "concepts": [
+                  1,
+                  2
+                ],
+                "include_descendants": true
+              },
+              "multiple": "priority",
+              "priority": [
+                "concept:10",
+                "concept:20"
+              ],
+              "unmatched": "missing"
+            }
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Cwire3",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "missing-keep-keep",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A30-contract-fixture"
+      },
+      "events": {
+        "e": {
+          "table": "observation",
+          "concept_set": {
+            "concepts": [
+              45000120
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "e"
+          },
+          "reducer": {
+            "fn": "last_value",
+            "value": "value_as_concept_id"
+          },
+          "category_spec": {
+            "missing": {
+              "kind": "category_missing",
+              "na": "keep",
+              "unknown": "keep",
+              "labels": {
+                "missing": "Missing",
+                "unknown": "Unknown"
+              }
+            }
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Cwire4",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "missing-keep-level",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A30-contract-fixture"
+      },
+      "events": {
+        "e": {
+          "table": "observation",
+          "concept_set": {
+            "concepts": [
+              45000120
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "e"
+          },
+          "reducer": {
+            "fn": "last_value",
+            "value": "value_as_concept_id"
+          },
+          "category_spec": {
+            "missing": {
+              "kind": "category_missing",
+              "na": "keep",
+              "unknown": "level",
+              "labels": {
+                "missing": "Missing",
+                "unknown": "Unknown"
+              }
+            }
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Cwire5",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "missing-keep-missing",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A30-contract-fixture"
+      },
+      "events": {
+        "e": {
+          "table": "observation",
+          "concept_set": {
+            "concepts": [
+              45000120
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "e"
+          },
+          "reducer": {
+            "fn": "last_value",
+            "value": "value_as_concept_id"
+          },
+          "category_spec": {
+            "missing": {
+              "kind": "category_missing",
+              "na": "keep",
+              "unknown": "missing",
+              "labels": {
+                "missing": "Missing",
+                "unknown": "Unknown"
+              }
+            }
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Cwire6",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "missing-level-keep",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A30-contract-fixture"
+      },
+      "events": {
+        "e": {
+          "table": "observation",
+          "concept_set": {
+            "concepts": [
+              45000120
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "e"
+          },
+          "reducer": {
+            "fn": "last_value",
+            "value": "value_as_concept_id"
+          },
+          "category_spec": {
+            "missing": {
+              "kind": "category_missing",
+              "na": "level",
+              "unknown": "keep",
+              "labels": {
+                "missing": "Missing",
+                "unknown": "Unknown"
+              }
+            }
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Cwire7",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "missing-level-level",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A30-contract-fixture"
+      },
+      "events": {
+        "e": {
+          "table": "observation",
+          "concept_set": {
+            "concepts": [
+              45000120
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "e"
+          },
+          "reducer": {
+            "fn": "last_value",
+            "value": "value_as_concept_id"
+          },
+          "category_spec": {
+            "missing": {
+              "kind": "category_missing",
+              "na": "level",
+              "unknown": "level",
+              "labels": {
+                "missing": "Missing",
+                "unknown": "Unknown"
+              }
+            }
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Cwire8",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "missing-level-missing",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A30-contract-fixture"
+      },
+      "events": {
+        "e": {
+          "table": "observation",
+          "concept_set": {
+            "concepts": [
+              45000120
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "e"
+          },
+          "reducer": {
+            "fn": "last_value",
+            "value": "value_as_concept_id"
+          },
+          "category_spec": {
+            "missing": {
+              "kind": "category_missing",
+              "na": "level",
+              "unknown": "missing",
+              "labels": {
+                "missing": "Missing",
+                "unknown": "Unknown"
+              }
+            }
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Cwire9",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "binary-integer",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A30-contract-fixture"
+      },
+      "events": {
+        "e": {
+          "table": "observation",
+          "concept_set": {
+            "concepts": [
+              45000120
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "e"
+          },
+          "reducer": {
+            "fn": "binary"
+          },
+          "category_spec": {
+            "binary": {
+              "kind": "category_binary",
+              "as": "integer",
+              "labels": [
+                "no",
+                "yes"
+              ]
+            }
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Cwire10",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "binary-logical",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A30-contract-fixture"
+      },
+      "events": {
+        "e": {
+          "table": "observation",
+          "concept_set": {
+            "concepts": [
+              45000120
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "e"
+          },
+          "reducer": {
+            "fn": "binary"
+          },
+          "category_spec": {
+            "binary": {
+              "kind": "category_binary",
+              "as": "logical",
+              "labels": [
+                "no",
+                "yes"
+              ]
+            }
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Cwire11",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "binary-factor",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A30-contract-fixture"
+      },
+      "events": {
+        "e": {
+          "table": "observation",
+          "concept_set": {
+            "concepts": [
+              45000120
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "e"
+          },
+          "reducer": {
+            "fn": "binary"
+          },
+          "category_spec": {
+            "binary": {
+              "kind": "category_binary",
+              "as": "factor",
+              "labels": [
+                "no",
+                "yes"
+              ]
+            }
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Cwire12",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "language-style",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A30-contract-fixture"
+      },
+      "events": {
+        "e": {
+          "table": "observation",
+          "concept_set": {
+            "concepts": [
+              45000120
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "e"
+          },
+          "reducer": {
+            "fn": "last_value",
+            "value": "value_as_concept_id"
+          },
+          "category_spec": {
+            "language": {
+              "kind": "category_language",
+              "language_concept_id": 4180186
+            },
+            "label_style": "code_name"
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Cwire13",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "repeated-bins",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A30-contract-fixture"
+      },
+      "events": {
+        "e": {
+          "table": "observation",
+          "concept_set": {
+            "concepts": [
+              45000120
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "derived": {
+            "kind": "repeated",
+            "source": {
+              "event": "e"
+            },
+            "values": [
+              {
+                "name": "value",
+                "variable": {
+                  "derived": {
+                    "kind": "number_rows",
+                    "source": {
+                      "event": "e"
+                    },
+                    "value": "value"
+                  },
+                  "number_spec": {
+                    "representation": "bins",
+                    "breaks": [
+                      0,
+                      5,
+                      10
+                    ]
+                  }
+                }
+              }
+            ],
+            "timepoints": {
+              "kind": "timepoints",
+              "anchor": "index",
+              "reuse": false,
+              "points": [
+                {
+                  "name": "m6",
+                  "point": {
+                    "kind": "timepoint",
+                    "offset": 6,
+                    "unit": "months",
+                    "tolerance": [
+                      -7,
+                      7
+                    ],
+                    "select": "closest"
+                  }
+                }
+              ]
+            },
+            "missing": "skip_any",
+            "point": "m6",
+            "value": "value"
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Cwire14",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "column-default-projection",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A30-contract-fixture"
+      },
+      "events": {
+        "e": {
+          "table": "observation",
+          "concept_set": {
+            "concepts": [
+              45000120
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "e"
+          },
+          "reducer": {
+            "fn": "last_value",
+            "value": "value_as_concept_id"
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide",
+          "category_columns": {
+            "copy": {
+              "derived": {
+                "kind": "category_column",
+                "column": "x"
+              },
+              "category_spec": {
+                "ordered": true
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "Cwire15",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "label": "unknown-field",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A30-contract-fixture"
+      },
+      "events": {
+        "e": {
+          "table": "observation",
+          "concept_set": {
+            "concepts": [
+              45000120
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "e"
+          },
+          "reducer": {
+            "fn": "last_value",
+            "value": "value_as_concept_id"
+          },
+          "category_spec": {
+            "sql": "select 1"
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Cwire16",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "label": "duplicate-order",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A30-contract-fixture"
+      },
+      "events": {
+        "e": {
+          "table": "observation",
+          "concept_set": {
+            "concepts": [
+              45000120
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "e"
+          },
+          "reducer": {
+            "fn": "last_value",
+            "value": "value_as_concept_id"
+          },
+          "category_spec": {
+            "order": {
+              "kind": "category_order",
+              "keys": [
+                "concept:1",
+                "concept:1"
+              ]
+            }
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Cwire17",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "label": "two-order-sources",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A30-contract-fixture"
+      },
+      "events": {
+        "e": {
+          "table": "observation",
+          "concept_set": {
+            "concepts": [
+              45000120
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "e"
+          },
+          "reducer": {
+            "fn": "last_value",
+            "value": "value_as_concept_id"
+          },
+          "category_spec": {
+            "order": {
+              "kind": "category_order",
+              "keys": [
+                "concept:1"
+              ],
+              "metadata": "identity"
+            }
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Cwire18",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "label": "leading-zero",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A30-contract-fixture"
+      },
+      "events": {
+        "e": {
+          "table": "observation",
+          "concept_set": {
+            "concepts": [
+              45000120
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "e"
+          },
+          "reducer": {
+            "fn": "last_value",
+            "value": "value_as_concept_id"
+          },
+          "category_spec": {
+            "levels": [
+              "concept:01"
+            ]
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Cwire19",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "label": "executable-language",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A30-contract-fixture"
+      },
+      "events": {
+        "e": {
+          "table": "observation",
+          "concept_set": {
+            "concepts": [
+              45000120
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "e"
+          },
+          "reducer": {
+            "fn": "last_value",
+            "value": "value_as_concept_id"
+          },
+          "category_spec": {
+            "language": {
+              "kind": "category_language",
+              "language_concept_id": "system()"
+            }
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  }
+]

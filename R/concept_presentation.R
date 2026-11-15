@@ -62,6 +62,10 @@
 }
 
 .conceptPresent <- function(ctx, frame, columns) {
+  for(n in intersect(names(frame),names(columns))) {
+    mask<-attr(frame[[n]],"category_defined")
+    if(!is.null(mask))attr(columns[[n]],"category_defined")<-mask
+  }
   for (col in intersect(names(frame), names(columns))) {
     domain <- attr(columns[[col]], "category_domain")
     if (!is.null(domain)) {
@@ -76,7 +80,19 @@
     }
   }
   frame <- .dateCapture(frame, columns)
-  if (!.reduceTranslate(ctx)) return(frame)
+  for(col in names(frame)) {
+    consumed<-attr(frame[[col]],"category_consumed")
+    if(!is.null(consumed)) {
+      contracts<-attr(frame,"omop_concepts") %||% list();contracts[[col]]<-consumed
+      attr(frame,"omop_concepts")<-contracts
+    }
+  }
+  frame <- .numberCapture(frame, columns)
+  if (!.reduceTranslate(ctx)) {
+    frame<-.categoryPresent(ctx,frame,columns)
+    if(.categoryNative(ctx$ir)||length(.categoryCapabilities(ctx$ir)))attr(frame,"omop_codebook_schema")<-.categoryReleaseSchema(ctx,frame,columns)
+    return(frame)
+  }
   contracts <- attr(frame, "omop_concepts") %||% list()
   for (col in intersect(names(columns), names(frame))) {
     if (!.conceptColumn(columns[[col]])) next
@@ -109,6 +125,8 @@
       frame$concept_name <- as.character(frame$concept_id)
     }
   }
+  frame <- .categoryPresent(ctx, frame, columns)
+  contracts <- attr(frame,"omop_concepts") %||% contracts
   frame <- .conceptReferenceNames(frame, contracts)
   generated <- list()
   for (key in intersect(names(columns), names(frame))) {
@@ -132,6 +150,7 @@
   if (length(contracts) || length(generated)) {
     attr(frame, "omop_presentation_handle") <- .conceptHandleKey(ctx)
   }
+  if(.categoryNative(ctx$ir)||length(.categoryCapabilities(ctx$ir)))attr(frame,"omop_codebook_schema")<-.categoryReleaseSchema(ctx,frame,columns)
   frame
 }
 
@@ -139,7 +158,8 @@
   ids <- contract$ids
   if (length(ids) != nrow(df)) stop("Incomplete concept identity metadata.", call. = FALSE)
   observed <- unique(ids[!is.na(ids)])
-  if (identical(contract$kind, "date") && all(observed %in% contract$declared)) return(list(levels = contract$declared, safe = TRUE))
+  if(!is.null(contract$upstream_safe))return(list(levels=union(observed,contract$upstream_admitted),safe=isTRUE(contract$upstream_safe)))
+  if (((contract$kind %||% "") %in% c("date","number") || identical(contract$kind,"category") && contract$category$producer$kind %in% c("date","number","flag")) && all(observed %in% contract$declared)) return(list(levels = contract$declared, safe = TRUE))
   if (isTRUE(attr(df, "omop_concept_reference"))) {
     support <- attr(df, "omop_reference_support")
     if (is.null(support)) return(list(levels = observed, safe = TRUE))
@@ -175,6 +195,7 @@
     out$levels[[col]] <- permitted
     out$concepts[[col]] <- unname(c$records[permitted])
     if (identical(c$kind, "date")) out$calendars[[col]] <- c$calendar
+    if (identical(c$kind, "category")) out$categories[[col]] <- c$category
     if (length(c$reference_keys)) out$reference_names[[col]] <- unique(unname(c$reference_keys))
   }
   generated <- refreshed$generated
@@ -188,7 +209,9 @@
     g[c("declared", "permitted")] <- NULL
     out$generated[[key]] <- g
   }
+  out$numbers <- attr(df,"omop_numbers") %||% list()
   out$keys <- names(attr(df, "omop_column_names")) %||% names(df)
+  if(!is.null(attr(df,"omop_codebook_schema")))out$schema<-attr(df,"omop_codebook_schema")
   out$evidence <- .conceptEvidence(out)
   out
 }
@@ -207,6 +230,8 @@
   }
   original <- df
   .conceptCheckEvidence(.conceptLevelReport(df), spec, !is.null(attr(df, "omop_presentation_handle")))
+  # Legacy factor-only calls leave numeric values and semantics untouched.
+  if ("numbers" %in% names(spec)) .numberValidateShared(attr(df,"omop_numbers"), spec$numbers)
   refreshed <- .conceptRefresh(attr(df, "omop_concepts") %||% list(), attr(df, "omop_generated_columns") %||% list(), attr(df, "omop_presentation_handle"))
   attr(df, "omop_concepts") <- refreshed$contracts
   attr(df, "omop_generated_columns") <- refreshed$generated
@@ -221,12 +246,13 @@
     c <- contracts[[col]]
     shared <- spec$columns[[col]]
     if (identical(c$kind, "date") && !identical(.jcsCanonical(shared$calendar), .jcsCanonical(c$calendar))) .dateReject("Changed shared calendar identity.")
+    if(identical(c$kind,"category")&&!identical(.jcsCanonical(shared$category),.jcsCanonical(c$category))) .categoryReject("Changed category contract.","category_domain_incompatible")
     .conceptValidateResolution(shared, c$records)
     ids <- as.character(unlist(shared$ids, use.names = FALSE))
-    labels <- as.character(unlist(shared$labels, use.names = FALSE))
+    labels <- unname(.categoryNullableStrings(shared$labels))
     levels <- as.character(unlist(shared$levels, use.names = FALSE))
-    if (length(ids) != length(labels) || anyNA(ids) || anyNA(labels) ||
-        anyDuplicated(ids) || anyDuplicated(levels) || !setequal(unique(labels), levels) ||
+    if (length(ids) != length(labels) || anyNA(ids) || (!identical(c$kind,"category") && anyNA(labels)) ||
+        anyDuplicated(ids) || anyDuplicated(levels) || !setequal(unique(labels[!is.na(labels)]), levels) ||
         length(ids) > cap || length(levels) > cap) {
       stop("Invalid or excessive shared concept levels.", call. = FALSE)
     }
@@ -235,12 +261,12 @@
       stop("Concept reconciliation cannot certify complete disclosure-safe coverage.", call. = FALSE)
     }
     keys <- intersect(.PERSON_KEY_COLS(), names(df))
-    density_levels <- if (identical(c$kind, "date")) length(setdiff(ids, c$declared)) else length(ids)
+    density_levels <- if ((c$kind %||% "") %in% c("date","number","category")) length(setdiff(ids, c$declared)) else length(ids)
     if (length(keys) && nrow(df)) .assertSafeLevels(density_levels, length(unique(df[[keys[[1L]]]])))
     reference_support <- attr(df, "omop_reference_support")
     if (!is.null(reference_support)) .assertSafeLevels(length(ids), reference_support$total)
     values <- labels[match(c$ids, ids)]
-    df[[col]] <- if (identical(c$kind, "date")) .dateOrdered(values, levels = levels) else .conceptFactor(values, levels = levels)
+    df[[col]] <- if (identical(c$kind,"category")) .categoryFactor(values,shared) else if ((c$kind %||% "") %in% c("date","number")) .dateOrdered(values, levels = levels) else .conceptFactor(values, levels = levels)
     if (identical(col, table_column)) {
       # One token per resolved category, including deliberate recode merges.
       # Only ASCII tokens cross dsBase's comma-delimited level transport.
@@ -348,7 +374,7 @@
   handle <- .getHandle(key)
   for (col in names(contracts)) {
     old <- contracts[[col]]$records
-    if (identical(contracts[[col]]$kind, "date")) next
+    if ((contracts[[col]]$kind %||% "") %in% c("date","number","category")) next
     fresh <- .conceptVocabulary(handle, names(old))
     for (id in names(old)) if (old[[id]]$origin %in% c('variable','recipe')) {
       fresh[[id]]$origin <- old[[id]]$origin; fresh[[id]]$label <- old[[id]]$label
@@ -360,7 +386,9 @@
 }
 
 .conceptEvidence <- function(report) {
-  as.character(openssl::sha256(charToRaw(.conceptEncode(report[c('concepts','generated','keys','reference_names')]))))
+  keys<-c("concepts","generated","keys","reference_names","numbers","schema","categories")
+  evidence<-setNames(lapply(keys,function(k)report[[k]]),keys)
+  as.character(openssl::sha256(charToRaw(.conceptEncode(evidence))))
 }
 
 .conceptCheckEvidence <- function(report, spec, required = FALSE) {

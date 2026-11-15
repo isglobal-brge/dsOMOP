@@ -769,17 +769,17 @@
     age_range = c("min", "max", "reference_date"),
     age_group = c("groups", "reference_date"),
     cohort = "cohort_definition_id",
-    has_concept = c("concept_id", "concept_ids", "table", "concept_name",
+    has_concept = c("concept_set", "concept_id", "concept_ids", "table", "concept_name",
                     "window", "min_count", "reference_date"),
-    not_has_concept = c("concept_id", "concept_ids", "table", "concept_name",
+    not_has_concept = c("concept_set", "concept_id", "concept_ids", "table", "concept_name",
                         "window", "reference_date"),
-    concept_count = c("concept_id", "concept_ids", "table", "concept_name",
+    concept_count = c("concept_set", "concept_id", "concept_ids", "table", "concept_name",
                       "window", "min_count", "reference_date"),
     prior_observation = c("min_days", "reference_date"),
     followup = c("min_days", "reference_date"),
     visit_count = c("min_count", "visit_concept_id", "visit_concept_ids",
                     "window", "reference_date"),
-    has_measurement = c("concept_id", "concept_ids", "min_value", "max_value",
+    has_measurement = c("concept_set", "concept_id", "concept_ids", "min_value", "max_value",
                         "safe_scope", "window", "reference_date"),
     missing_measurement = c("concept_id", "concept_ids", "window",
                             "reference_date"),
@@ -1482,7 +1482,8 @@
     ))
 
   } else if (ftype == "has_concept") {
-    concept_ids <- .conceptIdList(params$concept_ids %||% params$concept_id)
+    concept_ids <- if (!is.null(params$concept_set)) .resolveConceptSet(handle, params$concept_set) else
+      .conceptIdList(params$concept_ids %||% params$concept_id)
     min_count <- integer_param(params$min_count, "min_count", default = 1L,
                                minimum = 1L)
     table_name <- tolower(params$table %||% "")
@@ -1510,7 +1511,8 @@
                   ") >= ", min_count))
 
   } else if (ftype == "not_has_concept") {
-    concept_ids <- .conceptIdList(params$concept_ids %||% params$concept_id)
+    concept_ids <- if (!is.null(params$concept_set)) .resolveConceptSet(handle, params$concept_set) else
+      .conceptIdList(params$concept_ids %||% params$concept_id)
     table_name <- tolower(params$table %||% "")
     if (!nzchar(table_name)) fail("table is required.")
     if (length(concept_ids) == 0) fail("concept_id(s) are required.")
@@ -1530,7 +1532,8 @@
                   concept_predicate, win, ")"))
 
   } else if (ftype == "concept_count") {
-    concept_ids <- .conceptIdList(params$concept_ids %||% params$concept_id)
+    concept_ids <- if (!is.null(params$concept_set)) .resolveConceptSet(handle, params$concept_set) else
+      .conceptIdList(params$concept_ids %||% params$concept_id)
     min_count <- integer_param(params$min_count, "min_count", default = 1L,
                                minimum = 1L)
     table_name <- tolower(params$table %||% "")
@@ -1615,7 +1618,8 @@
                   sub_where, win, ") >= ", min_count))
 
   } else if (ftype == "has_measurement") {
-    concept_ids <- .conceptIdList(params$concept_ids %||% params$concept_id)
+    concept_ids <- if (!is.null(params$concept_set)) .resolveConceptSet(handle, params$concept_set) else
+      .conceptIdList(params$concept_ids %||% params$concept_id)
     if (length(concept_ids) == 0) fail("concept_id(s) are required.")
     required <- c("person_id", "measurement_concept_id",
       if (!is.null(params$min_value) || !is.null(params$max_value))
@@ -1656,7 +1660,8 @@
                   sub_where, win, ")"))
 
   } else if (ftype == "missing_measurement") {
-    concept_ids <- .conceptIdList(params$concept_ids %||% params$concept_id)
+    concept_ids <- if (!is.null(params$concept_set)) .resolveConceptSet(handle, params$concept_set) else
+      .conceptIdList(params$concept_ids %||% params$concept_id)
     if (length(concept_ids) == 0) fail("concept_id(s) are required.")
     m_row <- table_row("measurement",
       c("person_id", "measurement_concept_id", "value_as_number"))
@@ -1793,7 +1798,25 @@
   }
   valid_location <- nzchar(expected) && identical(canonical_path, expected) &&
     grepl("^stg_[0-9a-f]{32}$", token)
-  if (!valid_location || .isSymbolicLink(canonical_path)) {
+  # A registered root can outlive the configured base. Recheck its filesystem
+  # identity before following it, including symlinks in its ancestor chain.
+  valid_base <- identical(normalizePath(base, winslash = "/", mustWork = FALSE), base) &&
+    !.isSymbolicLink(base)
+  ancestor <- base
+  while (valid_base) {
+    if (.isSymbolicLink(ancestor)) { valid_base <- FALSE; break }
+    parent <- dirname(ancestor)
+    if (identical(parent, ancestor)) break
+    ancestor <- parent
+  }
+  if (valid_base && (file.exists(base) || dir.exists(base))) {
+    info <- file.info(base)
+    valid_base <- isTRUE(info$isdir[[1L]])
+    if (.Platform$OS.type != "windows") valid_base <- valid_base &&
+      identical(as.integer(info$uid[[1L]]), .dsomopEffectiveUid()) &&
+      identical(as.integer(info$mode[[1L]]), as.integer(strtoi("700", base = 8L)))
+  }
+  if (!valid_location || !valid_base || .isSymbolicLink(canonical_path)) {
     return(list(state = "unsafe", path = canonical_path))
   }
   if (!file.exists(canonical_path) && !dir.exists(canonical_path)) {
@@ -1841,7 +1864,7 @@
   remaining <- tracked
   failures <- character(0)
   for (path in dirs) {
-    inspection <- .inspectOwnedStagingPath(path, base)
+    inspection <- .inspectOwnedStagingPath(path, handle$staging_bases[[path]] %||% base)
     canonical_path <- inspection$path
 
     # A previously removed, valid owned path is an idempotent success.
@@ -1865,11 +1888,47 @@
     }
   }
   handle$staging_dirs <- remaining
+  handle$staging_bases <- handle$staging_bases[intersect(names(handle$staging_bases), remaining)]
   if (length(failures) > 0L) {
     stop("Could not clean every owned staging directory: ",
          paste(unique(failures), collapse = "; "), call. = FALSE)
   }
   invisible(NULL)
+}
+
+# Reclaim only tracked, terminal directories. Missing/malformed manifests are
+# inconclusive (including in-flight work), never evidence that a directory died.
+.cleanupInactiveHandleStaging <- function(handle) {
+  tracked <- unique(handle$staging_dirs %||% character(0))
+  if (!length(tracked)) return(invisible(NULL))
+  base <- .stagingBaseDir()
+  active <- unlist(lapply(ls(.planContextRegistry, all.names = TRUE), function(id) {
+    ctx <- get(id, .planContextRegistry, inherits = FALSE)
+    if (!isTRUE(ctx$closed)) ctx$owned$directories else character(0)
+  }), use.names = FALSE)
+  now <- Sys.time()
+  removable <- vapply(tracked, function(path) {
+    state <- .inspectOwnedStagingPath(path, handle$staging_bases[[path]] %||% base)$state
+    # Delegate absent/unsafe paths to the existing idempotence and safety checks.
+    if (state != "directory") return(TRUE)
+    if (path %in% active) return(FALSE)
+    tryCatch({
+      manifest <- .readStagingManifestEnvelope(file.path(path, "manifest.json"))
+      all(vapply(manifest$outputs, function(entry) {
+        entry <- .stagedManifestDescriptor(entry)
+        contract <- .validateStagedDescriptorContract(entry)
+        if (!identical(contract$token, basename(path))) return(FALSE)
+        file <- contract$file
+        if (!identical(file, file.path(path, basename(file))) ||
+            .isSymbolicLink(file)) return(FALSE)
+        expiry <- contract$expires
+        # Consumption removes the committed data file; revocation removes the
+        # manifest member. One remaining live member preserves the whole dir.
+        expiry <= now || (!file.exists(file) && !dir.exists(file))
+      }, logical(1)))
+    }, error = function(e) FALSE)
+  }, logical(1))
+  .cleanupHandleStaging(handle, paths = tracked[removable])
 }
 
 #' Build a server-local staged dataset descriptor
@@ -2003,17 +2062,10 @@
   invisible(manifest_path)
 }
 
-#' Read and validate a v2 staging manifest
-#'
-#' Reconstructs descriptor classes and canonical vector fields after JSON
-#' parsing, then runs the same fail-closed resolver used by downstream server
-#' packages. This is the supported manifest round-trip; consumers must not
-#' reconstruct descriptors from a partial JSON projection.
-#'
-#' @param manifest_path Absolute path returned by \code{.writeStagingManifest}.
-#' @return A manifest list whose \code{outputs} are validated staged descriptors.
-#' @keywords internal
-.readStagingManifest <- function(manifest_path) {
+# Read only the authenticated manifest envelope, without resolving files or
+# rejecting expired descriptors. Cleanup needs those terminal states; readers
+# still validate every descriptor below before returning any output.
+.readStagingManifestEnvelope <- function(manifest_path) {
   manifest_path <- .stagedScalarString(manifest_path, "manifest path")
   if (!.stagedIsAbsolutePath(manifest_path) ||
       !file.exists(manifest_path) || .isSymbolicLink(manifest_path) ||
@@ -2054,37 +2106,60 @@
     stop("Invalid staging manifest creation timestamp.", call. = FALSE)
   }
 
-  outputs <- lapply(manifest$outputs, function(entry) {
-    if (!is.list(entry) || !is.list(entry$metadata)) {
-      stop("Invalid staged descriptor in manifest.", call. = FALSE)
-    }
-    entry$metadata$columns <- unname(as.character(
-      unlist(entry$metadata$columns, use.names = FALSE)
+  manifest
+}
+
+# Restore the same JSON descriptor representation for readers and lifecycle
+# inspection before either validates the full structural contract.
+.stagedManifestDescriptor <- function(entry) {
+  if (!is.list(entry) || !is.list(entry$metadata)) {
+    stop("Invalid staged descriptor in manifest.", call. = FALSE)
+  }
+  entry$metadata$columns <- unname(as.character(
+    unlist(entry$metadata$columns, use.names = FALSE)
+  ))
+  if (!is.null(entry$metadata$column_types)) {
+    entry$metadata$column_types <- unlist(
+      entry$metadata$column_types, use.names = TRUE
+    )
+  }
+  if (!is.null(entry$metadata$parts)) {
+    entry$metadata$parts <- unname(as.character(unlist(
+      entry$metadata$parts, use.names = FALSE
+    )))
+  }
+  if (!is.null(entry$metadata$semantic_contract$age_breaks)) {
+    entry$metadata$semantic_contract$age_breaks <- unname(as.integer(
+      unlist(entry$metadata$semantic_contract$age_breaks, use.names = FALSE)
     ))
-    if (!is.null(entry$metadata$column_types)) {
-      entry$metadata$column_types <- unlist(
-        entry$metadata$column_types, use.names = TRUE
-      )
-    }
-    if (!is.null(entry$metadata$parts)) {
-      entry$metadata$parts <- unname(as.character(unlist(
-        entry$metadata$parts, use.names = FALSE
+  }
+  if (!is.null(entry$metadata$bundle_contract$semantic_contract$age_breaks)) {
+    entry$metadata$bundle_contract$semantic_contract$age_breaks <-
+      unname(as.integer(unlist(
+        entry$metadata$bundle_contract$semantic_contract$age_breaks,
+        use.names = FALSE
       )))
-    }
-    if (!is.null(entry$metadata$semantic_contract$age_breaks)) {
-      entry$metadata$semantic_contract$age_breaks <- unname(as.integer(
-        unlist(entry$metadata$semantic_contract$age_breaks, use.names = FALSE)
-      ))
-    }
-    if (!is.null(entry$metadata$bundle_contract$semantic_contract$age_breaks)) {
-      entry$metadata$bundle_contract$semantic_contract$age_breaks <-
-        unname(as.integer(unlist(
-          entry$metadata$bundle_contract$semantic_contract$age_breaks,
-          use.names = FALSE
-        )))
-    }
-    class(entry) <- c("FlowerDatasetDescriptor",
-                      "OMOPStagedDatasetDescriptor")
+  }
+  class(entry) <- c("FlowerDatasetDescriptor",
+                    "OMOPStagedDatasetDescriptor")
+  entry
+}
+
+#' Read and validate a v2 staging manifest
+#'
+#' Reconstructs descriptor classes and canonical vector fields after JSON
+#' parsing, then runs the same fail-closed resolver used by downstream server
+#' packages. This is the supported manifest round-trip; consumers must not
+#' reconstruct descriptors from a partial JSON projection.
+#'
+#' @param manifest_path Absolute path returned by \code{.writeStagingManifest}.
+#' @return A manifest list whose \code{outputs} are validated staged descriptors.
+#' @keywords internal
+.readStagingManifest <- function(manifest_path) {
+  manifest <- .readStagingManifestEnvelope(manifest_path)
+
+  outputs <- lapply(manifest$outputs, function(entry) {
+    entry <- .stagedManifestDescriptor(entry)
     invisible(.omopStagedDatasetPath(entry, check_manifest = FALSE))
     entry
   })
@@ -2493,7 +2568,7 @@
       # set (one shared resolver, .resolveConceptSet()).
       unknown_cs <- setdiff(names(cs),
                             c("concepts", "include_descendants",
-                              "include_mapped", "exclude"))
+                              "include_mapped", "exclude", "validity_policy"))
       if (length(unknown_cs) > 0L) {
         stop("Unknown index-event concept-set field(s): ",
              paste(unknown_cs, collapse = ", "), ".", call. = FALSE)
@@ -3084,37 +3159,11 @@
     max_outputs <- suppressWarnings(as.numeric(
       getOption("dsomop.max_staged_outputs", 100L)
     ))
-    max_dirs <- suppressWarnings(as.numeric(
-      getOption("dsomop.max_staging_dirs_per_handle", 8L)
-    ))
     if (length(max_outputs) != 1L || is.na(max_outputs) ||
         !is.finite(max_outputs) || max_outputs != floor(max_outputs) ||
-        max_outputs < 1L || length(outputs) > max_outputs ||
-        length(max_dirs) != 1L || is.na(max_dirs) || !is.finite(max_dirs) ||
-        max_dirs != floor(max_dirs) || max_dirs < 1L) {
-      stop("Staged output/directory caps must be positive server integers and ",
-           "the plan must stay within them.", call. = FALSE)
-    }
-    live_dirs <- unique(handle$staging_dirs %||% character(0))
-    if (length(live_dirs) > 0L) {
-      base <- .stagingBaseDir()
-      states <- vapply(
-        live_dirs,
-        function(path) .inspectOwnedStagingPath(path, base)$state,
-        character(1)
-      )
-      not_live <- live_dirs[states != "directory"]
-      if (length(not_live) > 0L) {
-        # Valid paths already absent are removed idempotently. Invalid paths and
-        # symlinks remain owned and abort preflight so they cannot be forgotten.
-        .cleanupHandleStaging(handle, paths = not_live)
-      }
-      live_dirs <- unique(handle$staging_dirs %||% character(0))
-    }
-    if (length(live_dirs) >= max_dirs) {
-      stop("This OMOP handle has reached its staged-directory cap; clean up ",
-           "expired/consumed staged outputs before creating more.",
-           call. = FALSE)
+        max_outputs < 1L || length(outputs) > max_outputs) {
+      stop("The staged output cap must be a positive server integer and ",
+           "the plan must stay within it.", call. = FALSE)
     }
     staging_dir <- .publishStagingDir(ctx)
     staging_token <- ctx$staging_token

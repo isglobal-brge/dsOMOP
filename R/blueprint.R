@@ -670,6 +670,7 @@
   handle$temp_tables     <- character(0)
   handle$temp_connection <- NULL
   handle$staging_dirs    <- character(0)
+  handle$staging_bases   <- list()
   handle$dbms_version    <- NULL
   handle$physical_table_names <- list()
   .assertAnalyticDbmsSupport(handle, "dsOMOP connection")
@@ -2080,7 +2081,7 @@
 
 #' Find the CDM and vocabulary schemas of a resource that names none
 #'
-#' Plug and play (David, 11 Nov 2026): a resource that leaves the CDM schema
+#' Plug and play: a resource that leaves the CDM schema
 #' empty uses the engine's default schema when that holds the person table,
 #' and otherwise the single schema that does (OHDSI Broadsea keeps its CDM in
 #' demo_cdm). Several candidates are never guessed between: the data owner

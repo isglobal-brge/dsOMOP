@@ -72,12 +72,6 @@
 }
 .dateBirthSource <- function() list(kind="date_components",year=list(kind="column",name="year_of_birth"),month=list(kind="column",name="month_of_birth"),day=list(kind="column",name="day_of_birth"),which="first",n=1L,scope="person")
 .dateExact <- function(x) { d<-x$lo;d[is.na(x$hi)|d!=x$hi]<-NA;d }
-.dateResultType <- function(s,d) {
-  if(d$kind %in% c("time_between","age_at")) return(if(isTRUE(d$bands))"text" else if(d$unit %in% c("weeks","decimal_years"))"numeric" else "integer")
-  probe<-list(lo=as.Date("2024-02-29"),hi=as.Date("2024-02-29"))
-  val<-.datePresent(probe,s,d$part,as.Date("1970-01-01"))
-  if(inherits(val,"Date"))"date" else if(is.factor(val))"text" else if(is.integer(val))"integer" else "numeric"
-}
 .reduceDateVariable <- function(ctx,node,name,cons) {
   d<-node$derived;s<-node$date_spec %||% .dateEffective(NULL,ctx$ir$options$date_spec,d$kind,d$part)
   type<-.dateResultType(s,d);column<-.fragmentColumn(type,TRUE,"measure")
@@ -175,13 +169,14 @@
   if(length(.dateOutputVariables(ctx,node)) && node$format %in% c("sparse","temporal_covariates","dictionary")) .dateReject(paste0("Format '",node$format,"' has no roster date-variable slot; use a wide typed companion output and join it for analysis."))
   invisible(NULL)
 }
-.dateOutputCovariates <- function(ctx,node,inputs,co) {
-  vars<-.dateOutputVariables(ctx,node)
+.dateOutputCovariates <- function(ctx,node,inputs,co,vars=.dateOutputVariables(ctx,node)) {
   if(!length(vars)) return(co)
   pop<-inputs$population;name<-.compileNodeName(node,"output")
   cons<-.reduceConsumer(ctx,name,pop$roster,pop$coverage,node$grain)
   for(v in vars) {
-    rec<-.compileVariable(ctx,.irNamedNode(ctx$ir,"variable",v),pop$roster,cons);values<-rec$evaluate()
+    rec<-.compileVariable(ctx,.irNamedNode(ctx$ir,"variable",v),pop$roster,cons)
+    if(isTRUE(rec$event_grain)) .numberReject("Roster covariates require explicit event reduction.","number_dependency_invalid")
+    values<-rec$evaluate()
     for(cn in names(co$components)) {
       part<-co$components[[cn]];frame<-part$frame
       if("cohort_row_id" %in% names(frame)) {

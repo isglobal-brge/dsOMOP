@@ -923,11 +923,13 @@ omopStagedDatasetPath <- function(descriptor, expected_key_id = NULL,
                          expected_semantic_contract, expected_bundle_contract)
 }
 
-.omopStagedDatasetPath <- function(descriptor, expected_key_id = NULL,
-                                  expected_epoch = NULL,
-                                  expected_semantic_contract = NULL,
-                                  expected_bundle_contract = NULL,
-                                  check_manifest = TRUE) {
+# Validate the descriptor contract independently of its current lifecycle.
+# Cleanup may inspect expired or consumed members, but must prove the same
+# identity, semantic, bundle, pseudonymization and filename contract as readers.
+.validateStagedDescriptorContract <- function(descriptor, expected_key_id = NULL,
+                                               expected_epoch = NULL,
+                                               expected_semantic_contract = NULL,
+                                               expected_bundle_contract = NULL) {
   if (!is.list(descriptor) ||
       !inherits(descriptor, c("FlowerDatasetDescriptor",
                              "OMOPStagedDatasetDescriptor"))) {
@@ -969,9 +971,6 @@ omopStagedDatasetPath <- function(descriptor, expected_key_id = NULL,
     stop("Invalid staged descriptor column contract.", call. = FALSE)
   }
   expires <- .stagedExpiry(descriptor$expires_at)
-  if (expires <= Sys.time()) {
-    stop("The staged dataset descriptor has expired.", call. = FALSE)
-  }
   semantic_contract <- metadata$semantic_contract
   if (version >= 2L && is.null(semantic_contract)) {
     stop("A v2 staged dataset lacks its semantic contract.", call. = FALSE)
@@ -1027,6 +1026,69 @@ omopStagedDatasetPath <- function(descriptor, expected_key_id = NULL,
     stop("The staged descriptor file name does not match its format.",
          call. = FALSE)
   }
+  pseudonymization <- metadata$pseudonymization
+  person_bearing <- any(tolower(columns) %in% .PERSON_KEY_COLS())
+  if (person_bearing &&
+      (version < 2L || !is.list(pseudonymization) ||
+       !identical(pseudonymization$token_protocol,
+                  "dsomop-person-token-v2"))) {
+    stop("A person-bearing staged dataset lacks its pseudonymization contract.",
+         call. = FALSE)
+  }
+  if (!is.null(pseudonymization)) {
+    pseudonymization <- .validateStagedPseudonymization(pseudonymization)
+  }
+  if (person_bearing && !isTRUE(pseudonymization$resource_scoped)) {
+    stop("A person-bearing staged dataset requires a resource-scoped ",
+         "pseudonymization provider.", call. = FALSE)
+  }
+  if (!is.null(expected_key_id)) {
+    expected_key_id <- .stagedScalarString(expected_key_id,
+                                            "expected key identifier")
+    if (!grepl("^dsomop-person-key-v1:[0-9a-f]{64}$", expected_key_id)) {
+      stop("Invalid staged descriptor expected key identifier.",
+           call. = FALSE)
+    }
+    if (!is.list(pseudonymization) ||
+        !identical(pseudonymization$key_id, expected_key_id)) {
+      stop("The staged dataset uses an incompatible pseudonymization key.",
+           call. = FALSE)
+    }
+    if (!isTRUE(pseudonymization$resource_scoped)) {
+      stop("The staged dataset uses a legacy global or unknown-scope key; ",
+           "cross-descriptor compatibility cannot be established safely.",
+           call. = FALSE)
+    }
+  }
+  if (!is.null(expected_epoch)) {
+    if (!is.numeric(expected_epoch) || length(expected_epoch) != 1L ||
+        is.na(expected_epoch) || !is.finite(expected_epoch) ||
+        expected_epoch < 1 || expected_epoch != floor(expected_epoch) ||
+        !is.list(pseudonymization) ||
+        !identical(as.integer(pseudonymization$epoch),
+                   as.integer(expected_epoch))) {
+      stop("The staged dataset uses an incompatible pseudonymization epoch.",
+           call. = FALSE)
+    }
+  }
+  list(file = file, token = token, expires = expires)
+}
+
+.omopStagedDatasetPath <- function(descriptor, expected_key_id = NULL,
+                                  expected_epoch = NULL,
+                                  expected_semantic_contract = NULL,
+                                  expected_bundle_contract = NULL,
+                                  check_manifest = TRUE) {
+  contract <- .validateStagedDescriptorContract(
+    descriptor, expected_key_id, expected_epoch,
+    expected_semantic_contract, expected_bundle_contract
+  )
+  if (contract$expires <= Sys.time()) {
+    stop("The staged dataset descriptor has expired.", call. = FALSE)
+  }
+  file <- contract$file
+  file_name <- basename(file)
+  token <- contract$token
   base <- .stagingBaseDir()
   expected_dir <- file.path(base, token)
   if (!dir.exists(expected_dir) || .isSymbolicLink(expected_dir) ||
@@ -1074,51 +1136,6 @@ omopStagedDatasetPath <- function(descriptor, expected_key_id = NULL,
     }
   }
 
-  pseudonymization <- metadata$pseudonymization
-  person_bearing <- any(tolower(columns) %in% .PERSON_KEY_COLS())
-  if (person_bearing &&
-      (version < 2L || !is.list(pseudonymization) ||
-       !identical(pseudonymization$token_protocol,
-                  "dsomop-person-token-v2"))) {
-    stop("A person-bearing staged dataset lacks its pseudonymization contract.",
-         call. = FALSE)
-  }
-  if (!is.null(pseudonymization)) {
-    pseudonymization <- .validateStagedPseudonymization(pseudonymization)
-  }
-  if (person_bearing && !isTRUE(pseudonymization$resource_scoped)) {
-    stop("A person-bearing staged dataset requires a resource-scoped ",
-         "pseudonymization provider.", call. = FALSE)
-  }
-  if (!is.null(expected_key_id)) {
-    expected_key_id <- .stagedScalarString(expected_key_id,
-                                            "expected key identifier")
-    if (!grepl("^dsomop-person-key-v1:[0-9a-f]{64}$", expected_key_id)) {
-      stop("Invalid staged descriptor expected key identifier.",
-           call. = FALSE)
-    }
-    if (!is.list(pseudonymization) ||
-        !identical(pseudonymization$key_id, expected_key_id)) {
-      stop("The staged dataset uses an incompatible pseudonymization key.",
-           call. = FALSE)
-    }
-    if (!isTRUE(pseudonymization$resource_scoped)) {
-      stop("The staged dataset uses a legacy global or unknown-scope key; ",
-           "cross-descriptor compatibility cannot be established safely.",
-           call. = FALSE)
-    }
-  }
-  if (!is.null(expected_epoch)) {
-    if (!is.numeric(expected_epoch) || length(expected_epoch) != 1L ||
-        is.na(expected_epoch) || !is.finite(expected_epoch) ||
-        expected_epoch < 1 || expected_epoch != floor(expected_epoch) ||
-        !is.list(pseudonymization) ||
-        !identical(as.integer(pseudonymization$epoch),
-                   as.integer(expected_epoch))) {
-      stop("The staged dataset uses an incompatible pseudonymization epoch.",
-           call. = FALSE)
-    }
-  }
   if (check_manifest) .validateStagedManifestMembership(descriptor, expected_dir)
   actual_file
 }

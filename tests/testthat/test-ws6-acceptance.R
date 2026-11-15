@@ -1,7 +1,7 @@
 # WS-6 acceptance at the population and roster level (design-2.10.3 sections
 # 10.7 and 12.2): the populations of the fifteen acceptance recipes compiled
 # by the real population and matching compilers reproduce the hand-computed
-# WS-0 oracle (tools/ws0/acceptance_expected.R) -- the episodes each output
+# WS-0 oracle (tests/fixtures/contracts/acceptance_expected.R) -- the episodes each output
 # reads, their index keys and arms, and for recipe 10 the complete matched
 # roster (sets, cases, controls, weights) -- on every backend available, with
 # identical rosters (cohort_row_id included) across backends.

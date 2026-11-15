@@ -1,6 +1,6 @@
 # 02 active-comparator
 
-Status: plan validated against plan-v2.json; expected.json computed by tools/ws0/acceptance_expected.R on the extended reach fixture (tests/fixtures/create_reach_db.R + extend_reach_db.R), an independent SQL/base-R computation.
+Status: plan validated against plan-v2.json; expected.json computed by tests/fixtures/contracts/acceptance_expected.R on the extended reach fixture (tests/fixtures/create_reach_db.R + extend_reach_db.R), an independent SQL/base-R computation.
 
 ## Semantics of the expected results
 Arms are eras (gap 30) over the recorded drug_era rows of ACE inhibitors (1308216) and

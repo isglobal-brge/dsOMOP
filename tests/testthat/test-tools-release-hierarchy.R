@@ -1,4 +1,4 @@
-# The public marginal hierarchy of crossed strata (dsOMOP 2.10.3, Astra
+# The public marginal hierarchy of crossed strata (dsOMOP 2.10.3, regression
 # re-review B03): every stratification of one population is post-processing
 # of one canonical set of components, so a crossed request never creates
 # another estimate of a margin that a coarser request releases, signed or
@@ -91,18 +91,18 @@ test_that("the two-way adjustment meets consistent signed margins", {
 
 # --- Incidence ---------------------------------------------------------------------
 
-test_that("Astra B03: adding a public age dimension preserves gender margins", {
-  # Port of astra-scratch/rereview-readers test-astra-rereview-readers.R.
+test_that("regression B03: adding a public age dimension preserves gender margins", {
+  # Exercise the same release with and without an extra public dimension.
   .release_state()
   h <- create_test_handle(n_persons = 2000)
   on.exit(cleanup_handle(h), add = TRUE)
-  .release_dated_cohort(h, "astra_inc", 1:1500, start = "2021-01-01",
+  .release_dated_cohort(h, "regression_inc", 1:1500, start = "2021-01-01",
                         end = "2023-12-31")
   p <- list(outcome_concept_id = "4000002", tar_end_offset = "365",
             strat_by_gender = "1")
-  g <- .release_run(h, "dsomop:incidence.rate", p, scope = "astra_inc")
+  g <- .release_run(h, "dsomop:incidence.rate", p, scope = "regression_inc")
   ga <- .release_run(h, "dsomop:incidence.rate",
-                     c(p, list(strat_by_age = "1")), scope = "astra_inc")
+                     c(p, list(strat_by_age = "1")), scope = "regression_inc")
   og <- attr(g, "dsomop_release")$owners[[1]]
   oga <- attr(ga, "dsomop_release")$owners[[1]]
   getn <- function(o) stats::setNames(

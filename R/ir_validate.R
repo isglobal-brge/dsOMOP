@@ -323,7 +323,7 @@
     out <- outs[[o]]
     if (!out[["rows"]] %in% names(pops)) add("/outputs/", o, "/rows: dangling population '", out[["rows"]], "'")
     for (v in unlist(out[["columns"]] %||% list(), use.names = FALSE)) {
-      if (!v %in% names(vars)) add("/outputs/", o, "/columns: dangling variable '", v, "'")
+      if (!length(out$number_columns) && !length(out$category_columns) && !length(.pnv2ColumnVariables(v, vars))) add("/outputs/", o, "/columns: dangling variable '", v, "'")
     }
     opts <- out[["options"]] %||% list()
     if (identical(out[["format"]], "joined")) {
@@ -660,7 +660,9 @@
 #' @keywords internal
 .irOperations <- function(ir) {
   ops <- if (.conceptNeedsPresentation(ir)) "output.concept_labels" else character(0)
-  date_vars <- ir$variables
+  if (.ohdsiHasImportedValidity(ir)) ops <- c(ops, "vocabulary.ohdsi_import_validity")
+  ops <- c(ops, .numberCapabilities(ir), .categoryCapabilities(ir), if(.categoryNative(ir))"output.codebook_metadata")
+  date_vars <- .numberVariables(ir)
   if (!is.null(ir$options$date_spec) || any(vapply(date_vars, function(v) !is.null(v$date_spec) || (v$derived$kind %||% "") %in% c("calendar_date", "date_part"), logical(1)))) ops <- c(ops, "date.presentation")
   if (any(vapply(date_vars, function(v) (v$derived$kind %||% "") %in% c("time_between", "age_at"), logical(1)))) ops <- c(ops, "date.elapsed")
   op <- function(...) ops <<- c(ops, ...)
@@ -702,7 +704,7 @@
   }
   anchors <- .irCollectAnchors(ir[c("populations", "variables", "outputs")])
   if (length(anchors)) op("window.anchor.source")
-  for (v in ir[["variables"]] %||% list()) {
+  for (v in .numberVariables(ir)) {
     if (!is.null(v[["reducer"]])) {
       op("variable.reducer")
       if (identical(v[["reducer"]][["fn"]], "supply_days")) op("reducer.supply_days")
@@ -1283,6 +1285,7 @@
                  unavailable_outputs = character(0),
                  site_findings = character(0), dialect = NULL)
   if (is.null(handle)) return(invisible(report))
+  .categoryPreflight(ir,handle)
   for (p in names(ir[["populations"]])) {
     .irCheckOwnedCohort(handle, ir[["populations"]][[p]][["legacy_cohort_table"]],
                        paste0("/populations/", p, "/legacy_cohort_table"))

@@ -66,7 +66,7 @@
 # entry, present only with validation_error: the section 11 adapter refusals
 # and (A-20 (j)) the bounded realisations of the interval helpers.
 .REJECTION_REASONS <- c("adapter_person_mismatch", "cost_currency_mixed",
-                        "stockpile_row_cap", "reducer_row_cap", "date_spec_invalid", "date_source_invalid",
+                        "stockpile_row_cap", "reducer_row_cap", "category_spec_invalid", "category_domain_incompatible", "category_rollup_ambiguous", "category_source_forbidden", "category_type_unsupported", "repeated_spec_invalid", "repeated_grain_incompatible", "codebook_metadata_missing", "number_daily_input", "number_daily_reducer", "number_daily_quantity", "number_spec_invalid", "number_unit_conflict", "number_source_invalid", "number_representation_conflict", "number_type_unsupported", "number_expression_invalid", "number_dependency_invalid", "date_spec_invalid", "date_source_invalid",
                         "date_pattern_invalid", "date_policy_conflict", "date_parts_names")
 
 # The bounded status entry for a dsomop_plan_rejection condition: {code,
@@ -359,8 +359,11 @@
     if (file.exists(path) || dir.exists(path)) unlink(path, recursive = TRUE)
     if (file.exists(path) || dir.exists(path)) failures <- c(failures, "file")
   }
-  if (!is.null(ctx$handle)) ctx$handle$staging_dirs <- setdiff(
-    ctx$handle$staging_dirs, ctx$owned$directories)
+  if (!is.null(ctx$handle)) {
+    ctx$handle$staging_dirs <- setdiff(ctx$handle$staging_dirs, ctx$owned$directories)
+    ctx$handle$staging_bases <- ctx$handle$staging_bases[
+      intersect(names(ctx$handle$staging_bases), ctx$handle$staging_dirs)]
+  }
   ctx$committed <- FALSE
   ctx$closed <- TRUE
   if (length(failures)) stop("Publication cleanup failed.", call. = FALSE)
@@ -435,7 +438,9 @@
     }
     if (is.data.frame(value)) {
       translate <- .reduceTranslate(ctx)
-      attr(value, "omop_concept_reference") <- if (translate && identical(pc$grain, "none")) TRUE else NULL
+      # Public reference provenance does not depend on concept translation.
+      # Codebook reconciliation also visits untranslated reference components.
+      attr(value, "omop_concept_reference") <- if ((translate || .categoryNative(ctx$ir)) && identical(pc$grain, "none")) TRUE else NULL
       columns <- attr(value, "omop_column_contract")
       if (is.null(columns) && !.dsomopDpIsV2(ctx$ir)) columns <- .conceptLegacyColumns(ctx, value, pc$output, pc$component)
       if (!is.null(columns)) value <- .conceptPresent(ctx, value, columns)
@@ -484,6 +489,8 @@
     unlink(ctx$staging_dir, recursive = TRUE)
     if (dir.exists(ctx$staging_dir)) stop("Staging cleanup failed.", call. = FALSE)
     ctx$handle$staging_dirs <- setdiff(ctx$handle$staging_dirs, ctx$staging_dir)
+    ctx$handle$staging_bases <- ctx$handle$staging_bases[
+      intersect(names(ctx$handle$staging_bases), ctx$handle$staging_dirs)]
   }
   status <- list(status = if (length(rejected)) {
     if (length(published)) "partial" else "refused"
@@ -623,10 +630,12 @@ omopStagedRevokeDS <- function(exec_symbol) {
 #' @keywords internal
 .publishStagingDir <- function(ctx) {
   if (!is.null(ctx$private_dir)) return(ctx$private_dir)
+  .cleanupInactiveHandleStaging(ctx$handle)
   ctx$staging_token <- ctx$id
   ctx$staging_dir <- .createStagingDir(ctx$staging_token)
   ctx$owned$directories <- union(ctx$owned$directories, ctx$staging_dir)
   ctx$handle$staging_dirs <- union(ctx$handle$staging_dirs, ctx$staging_dir)
+  ctx$handle$staging_bases[[ctx$staging_dir]] <- dirname(ctx$staging_dir)
   ctx$private_dir <- file.path(ctx$staging_dir, ".private", ctx$id)
   if (!dir.create(ctx$private_dir, recursive = TRUE, mode = "0700")) {
     stop("Could not create private staging namespace.", call. = FALSE)

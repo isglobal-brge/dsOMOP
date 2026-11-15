@@ -1,4 +1,4 @@
-# N02 (Astra re-review): every protected quantile carries the public bin
+# N02 (regression re-review): every protected quantile carries the public bin
 # interval that contains it and open/censored flags, derived from the
 # displayed histogram (no new noise), so an interpolated point never looks
 # like an exact value or extreme. Helpers in helper-tools-release.R.

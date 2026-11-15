@@ -92,7 +92,17 @@
   for (o in names(ir[["outputs"]] %||% list())) {
     for (source in .dateComponentSources(ir)) out[[length(out) + 1L]] <- .fragmentIdentity("rd", o, paste0("dc_", .dateSourceKey(source)))
     for (k in .REDUCE_OUTPUT_KINDS) out[[length(out) + 1L]] <- .fragmentIdentity("rd", o, k)
-    for (v in .irOutputVariables(ir, o)) {
+    expand <- function(v,n) {
+      out <- n
+      if(!is.null(v$derived$variable))out<-c(out,expand(v$derived$variable,.numberDependencyName(n,if(identical(v$derived$kind,"category_reduce"))"operand" else "category")))
+      for(entry in v$derived$values %||% list())out<-c(out,expand(entry$variable,.numberDependencyName(n,entry$name)))
+      if(!is.null(v$derived$visits))out<-c(out,paste0(n,"visits"))
+      if(identical(v$derived$kind,"number_daily"))out<-c(out,expand(v$derived$input,.numberDependencyName(n,"daily")))
+      for(i in v$derived$inputs %||% list()) out <- c(out,expand(i$variable,.numberDependencyName(n,i$alias)))
+      out
+    }
+    variables <- unlist(lapply(.irOutputVariables(ir,o),function(n)expand(ir$variables[[n]],n)),use.names=FALSE)
+    for (v in variables) {
       for (k in .REDUCE_VARIABLE_KINDS) {
         out[[length(out) + 1L]] <- .fragmentIdentity("rd", o, paste0(k, "_", v))
       }
@@ -481,10 +491,12 @@
 #' @param use Course or recorded/effective rows of an interval.
 #' @param coverage Coverage relation for interval rows.
 #' @param quality Apply the direct-event coverage quality policy.
+#' @param dated Require a nonmissing event start date. Set FALSE for native
+#'   numeric event operands that retain undated rows when no window excludes them.
 #' @return The stream fragment.
 #' @keywords internal
 .reduceStream <- function(ctx, cons, src, window, name, extra = list(), overlap = FALSE,
-                          use = "course", coverage = "recorded", quality = FALSE) {
+                          use = "course", coverage = "recorded", quality = FALSE, dated = TRUE) {
   existing <- .fragmentGet(ctx, name)
   if (!is.null(existing)) return(existing)
   h <- .compileDialect(ctx)
@@ -502,7 +514,7 @@
   }
   tw_pred <- c(if (!is.null(tw$lower)) paste0("e.start_date >= ", tw$lower),
                if (!is.null(tw$upper)) paste0("e.start_date <= ", tw$upper))
-  on <- c(source$predicates, "e.start_date IS NOT NULL", pred, tw_pred,
+  on <- c(source$predicates, if(dated) "e.start_date IS NOT NULL", pred, tw_pred,
           if (quality && identical(src$kind, "event")) .eventCoverageQualitySql(h, src$meta, "e"))
   f <- source$fragment
   ordered_src <- src
@@ -559,6 +571,18 @@
 }
 
 # --- reducer kernels (pure R) ---------------------------------------------------------------------
+
+# Admit decimal SQL integers to binary64 only when the round-trip is exact.
+# In particular -2^63 is representable by binary64, but is bit64's NA sentinel.
+.reduceBigintDouble <- function(x) {
+  if (!is.character(x)) return(.numberDouble(x))
+  value <- suppressWarnings(as.double(x))
+  if (any(!is.na(x) & (!is.finite(value) | sprintf("%.0f", value) != x))) {
+    .numberReject("This binary64 operation cannot retain exact integers; retain raw/count identity representation.",
+                  "number_type_unsupported")
+  }
+  value
+}
 
 # Orderable ranks for lossless BIGINT keys. Decimal strings are compared by
 # sign and digit length before byte order, never converted to a double.
@@ -668,6 +692,9 @@
   d <- x[["start_date"]]
   n <- length(d)
   v <- x[["v"]]
+  # Runtime integer64 is authoritative even if a caller supplied a narrower
+  # prototype. Selectors stay exact and arithmetic must admit the conversion.
+  if (inherits(v, "integer64")) value_type <- "bigint"
   skip <- identical(r[["missing"]] %||% "skip", "skip")
   candidates <- function() {
     rows <- seq_len(n)
@@ -675,14 +702,27 @@
     rows
   }
   numeric_v <- function() {
-    vv <- suppressWarnings(as.numeric(v))
+    vv <- if(identical(value_type,"bigint")) .reduceBigintDouble(v) else suppressWarnings(as.numeric(v))
     vv[!is.na(vv)]
   }
   distinct_count <- function(by) switch(by,
-    row = as.integer(n),
+    row = n,
     day = length(unique(d[!is.na(d)])),
     visit = { vi <- x[["visit_id"]]; length(unique(vi[!is.na(vi)])) },
     concept = { ci <- x[["concept_id"]]; length(unique(ci[!is.na(ci)])) })
+  if(identical(value_type,"bigint")&&fn %in% c("first_value","last_value","nth_value","closest_value","min","max","mode")) {
+    if(fn=="mode")return(as.character(.reduceMode(v,"bigint")))
+    indices<-x;indices$v<-seq_along(v);indices$v[is.na(v)]<-NA_integer_
+    if(fn %in% c("min","max")) {
+      # SQL BIGINT includes the signed minimum, which bit64 reserves for NA.
+      # Select directly from decimal text using exact numeric ranks.
+      exact<-as.character(v[!is.na(v)])
+      ranks<-.reduceKeyOrder(exact)
+      return(if(length(exact))exact[[if(fn=="min")which.min(ranks) else which.max(ranks)]] else NA_character_)
+    }
+    at<-.reduceOne(fn,indices,r,anchor,"numeric")
+    return(as.character(v[at]))
+  }
   switch(fn,
     binary = as.integer(n > 0L),
     count = distinct_count(r[["distinct"]] %||% "row"),
@@ -727,7 +767,7 @@
                                  names = FALSE))
     },
     mode = .reduceMode(v, value_type),
-    slope = .reduceSlope(d, v),
+    slope = .reduceSlope(d, if(identical(value_type,"bigint")) .reduceBigintDouble(v) else v),
     any = .reduceKleeneAny(as.integer(x[["pred"]])),
     all = .reduceKleeneAll(as.integer(x[["pred"]])),
     first_date = if (!n || is.na(anchor) || is.na(d[[1L]])) NA_integer_ else
@@ -794,7 +834,7 @@
 # Column type of a reducer's values.
 .reduceValueType <- function(fn, value_type = "numeric") {
   if (fn %in% .REDUCER_INTEGER_FNS) return("integer")
-  if (identical(fn, "mode") || (value_type == "date" && fn %in% c("first_value", "last_value", "nth_value", "closest_value", "min", "max"))) return(value_type)
+  if (identical(fn, "mode") || (value_type %in% c("date","bigint") && fn %in% c("first_value", "last_value", "nth_value", "closest_value", "min", "max"))) return(value_type)
   "numeric"
 }
 
@@ -866,11 +906,25 @@
   }
   record <- .compileVariableRecord(ctx, node, name, cons)
   record <- .datePresentRecord(record, node, ctx, name, cons)
-  for (col in names(record$columns)) attr(record$columns[[col]], "concept_owner") <- name
+  record <- .numberRecord(record, node, ctx, name, cons)
+  for (col in names(record$columns)) {
+    attr(record$columns[[col]], "concept_owner") <- name
+    if(.categoryFlag(node,record$columns[[col]]))attr(record$columns[[col]],"semantic_flag")<-TRUE
+    # Availability is execution state for category consumers, not part of a
+    # plain reducer's declared schema (which is stable across missing tables).
+    if (length(.categoryCapabilities(ctx$ir))) {
+      attr(record$columns[[col]], "category_available") <- record$available
+    }
+  }
   record
 }
 
 .compileVariableRecord <- function(ctx, node, name, cons) {
+  if(identical(node$derived$kind,"category_reduce"))return(.categoryReduceRecord(ctx,node,name,cons))
+  if(identical(node$derived$kind,"repeated"))return(.repeatedRecord(ctx,node,name,cons))
+  if(identical(node$derived$kind,"category_rows"))return(.categoryEventRecord(ctx,node,name,cons))
+  if(identical(node$derived$kind,"category_indicators"))return(.categoryIndicatorRecord(ctx,node,name,cons))
+  if ((node$derived$kind %||% "") %in% .NUMBER_KINDS) return(.numberDerivedRecord(ctx,node,name,cons))
   if (!is.null(node[["source"]])) return(.reduceSourceVariable(ctx, node, name, cons))
   if (!is.null(node[["derived"]])) return(.reduceDerivedVariable(ctx, node, name, cons))
   if (!is.null(node[["raw"]])) return(.reduceRawVariable(ctx, node, name, cons))
@@ -880,18 +934,10 @@
 }
 
 # Output columns of a variable (nth_value with a vector n is suffixed).
-.reduceColumnNames <- function(name, r) {
-  if (identical(r[["fn"]], "nth_value")) {
-    n <- as.integer(unlist(r[["n"]] %||% 1L))
-    if (length(n) > 1L || (is.list(r[["n"]]) && is.null(names(r[["n"]])))) {
-      return(paste0(name, "_", n))
-    }
-  }
-  name
-}
+.reduceColumnNames <- function(name, r) .pnv2VariableColumns(name, list(reducer = r))
 
 .reduceTypedNA <- function(type, n) {
-  switch(type, integer = rep(NA_integer_, n), bigint = rep(NA_real_, n),
+  switch(type, integer = rep(NA_integer_, n), bigint = rep(NA_character_, n),
          numeric = rep(NA_real_, n), text = rep(NA_character_, n),
          date = as.Date(rep(NA_character_, n)), boolean = rep(NA, n), rep(NA, n))
 }
@@ -900,10 +946,10 @@
   if (is.list(x)) x <- unlist(lapply(x, function(e) if (is.null(e) || length(e) == 0L) NA else e))
   if (is.null(x)) x <- .reduceTypedNA(type, 0L)
   switch(type,
-    integer = suppressWarnings(as.integer(x)),
+    integer = if(any(!is.na(x)&suppressWarnings(abs(as.numeric(x)))>.Machine$integer.max)) bit64::as.integer64(x) else suppressWarnings(as.integer(x)),
     numeric = { y <- suppressWarnings(as.numeric(x)); y[!is.finite(y)] <- NA_real_; y },
     text = as.character(x),
-    bigint = if (is.character(x)) x else if (inherits(x, "integer64")) as.character(x) else x,
+    bigint = as.character(x),
     date = if (is.numeric(x)) as.Date(x, origin = "1970-01-01") else as.Date(x),
     x)
 }
@@ -980,6 +1026,9 @@
       extra$concept_id <- list(expr = "e.concept_id", type = "integer")
     }
   }
+  paired <- fn %in% c("first_value","last_value","nth_value","closest_value") &&
+    requested %in% c("value","value_as_number") && .numberHas(ctx$ir) && all(c("range_low","range_high") %in% names(src$fragment$columns))
+  if (paired) for(k in c("range_low","range_high")) extra[[k]] <- list(expr=paste0("e.",k),type="numeric")
   if (fn %in% c("abnormal_high", "abnormal_low")) {
     col <- if (identical(fn, "abnormal_high")) "range_high" else "range_low"
     .predicateResolve(src$catalogue, col, field)
@@ -1008,11 +1057,15 @@
     rows <- .reduceTemporal(got$rows, cons$temporal, ordering)
     anchors <- if (anchor_needed) .reduceAnchorDates(ctx, cons, anchor, field) else NULL
     vals <- kernel(rows, keys, anchors)
+    selected <- if(paired) .numberRangeSelection(rows,keys,r,ordering,anchors) else NULL
     defined <- got$bounds$defined
+    if(anchor_needed)defined<-defined & !is.na(anchors)
     out <- data.frame(row_key = keys, stringsAsFactors = FALSE)
     for (j in seq_along(columns)) {
       x <- .reduceCoerce(vals[[j]], columns[[j]]$type)
       x[!defined %in% TRUE] <- .reduceTypedNA(columns[[j]]$type, 1L)
+      if(paired) {at<-as.integer(selected[[j]]);x<-.numberRangeValue(x,rows$range_low[at],rows$range_high[at])}
+      if(length(.categoryCapabilities(ctx$ir)))x<-.categoryValue(x,defined)
       out[[names(columns)[[j]]]] <- x
     }
     out
@@ -1337,7 +1390,7 @@
   .sqlAssertTypedSql(h, f$select_body)
   .fragmentRegister(ctx, f)
   rows <- .reduceFetch(ctx, f, order = "row_key", field = paste0("/outputs/", cons$output))
-  rows$available <- !is.null(role)
+  rows$available <- rep(!is.null(role), nrow(rows))
   assign(key, rows, envir = memo)
   rows
 }
@@ -1840,6 +1893,7 @@
   columns <- stats::setNames(list(.fragmentColumn(type, TRUE,
                                                   if (identical(col, "set_id")) "analytic_key" else "measure")),
                              name)
+  attr(columns[[name]],"number_structural") <- TRUE
   list(stream = NULL, reducer = NULL, declared_empty_value = NA, columns = columns,
        available = TRUE,
        evaluate = function() {

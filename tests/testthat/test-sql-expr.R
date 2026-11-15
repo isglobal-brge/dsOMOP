@@ -4,6 +4,11 @@
 # test-vendor-db-integration-sql-expr.R.
 
 .ws3_all_operations <- c(
+  "vocabulary.ohdsi_import_validity",
+  "category.presentation", "category.rollup", "category.indicators",
+  "category.reduce", "layout.repeated", "output.codebook_metadata",
+  "number.presentation", "number.rows", "number.count", "number.daily",
+  "number.change", "number.expression", "number.columns",
   "concept_set", "event", "event.unit", "event.on_missing_table", "interval",
   "interval.ingredient", "interval.stockpile", "population.index",
   "population.first_eligible", "population.any_of", "population.criteria",

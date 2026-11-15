@@ -1,6 +1,6 @@
 # WS-0 (amendment A-11): the normal form of a version-2 plan. R/plan_normalize_v2.R is
 # vendored byte-identically in both packages; inst/schema/normalized-vectors.json pins
-# the normal forms produced by the Python reference (tools/ws0/normalize_reference.py).
+# the normal forms produced by the Python reference (tests/fixtures/contracts/normalize_reference.py).
 
 .ws0_norm_dir <- function() {
   d <- system.file("schema", package = "dsOMOP")

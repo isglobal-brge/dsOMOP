@@ -1,6 +1,6 @@
 # 11 incidence-years
 
-Status: plan validated against plan-v2.json; expected.json computed by tools/ws0/acceptance_expected.R on the extended reach fixture (tests/fixtures/create_reach_db.R + extend_reach_db.R), an independent SQL/base-R computation.
+Status: plan validated against plan-v2.json; expected.json computed by tests/fixtures/contracts/acceptance_expected.R on the extended reach fixture (tests/fixtures/create_reach_db.R + extend_reach_db.R), an independent SQL/base-R computation.
 
 ## Semantics of the expected results
 Rows: one row per cohort-1 episode and calendar year overlapping [index, index+730]

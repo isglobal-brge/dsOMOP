@@ -1,5 +1,33 @@
 # dsOMOP
 
+## Release 2.10.5
+
+Install matching dsOMOP and dsOMOPClient 2.10.5 and republish the server's methods
+and Options in Opal after upgrading. Check installed and published versions with
+`ds.omop.server.version(conns)`. Existing private roots remain valid; this release
+requires no new privacy configuration, epoch change or database TLS setting.
+
+This release adds checked recursive numeric expressions and exact signed64
+transport, typed categorical presentation and shared prospective/executed
+codebooks, four versioned clinical formulas, and explicit recorded-day numeric
+reduction. It also repairs staging ownership/cleanup, final DP provenance seals,
+and the supported OHDSI/Circe bridge. The broader workflow/declaration-library
+redesign is deferred.
+
+Re-run affected recipes and rebuild codebooks. Keep native row keys as opaque
+character strings. Arithmetic that would lose integer precision is refused;
+retain raw/count identity representation when exact binary64 conversion is not
+possible. Re-import OHDSI definitions to obtain the executable validity policy,
+and use a server advertising the required capabilities. See NEWS for each
+corrected or newly refused case and its migration path.
+
+Release validation: [Opal contract run 43661271157](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43661271157)
+and [end-to-end run 43661274062](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43661274062).
+The release pipeline records both as successful; the end-to-end artifacts cover
+fresh installation and upgrade from 2.10.4 on Opal 6.2.1, including preservation
+of the existing DP noise root. These runs do not establish live execution on
+every SQL dialect or exercise the separate numeric scenario N.
+
 ## Introduction
 
 <img src="man/figures/dsomop_logo.png" align="left" width="110" style="margin-right: 10px;" />
@@ -149,7 +177,7 @@ reuse.
 
 Since dsOMOP 2.6.1, the noise sampler
 `dsomop-dp-exact-discrete-laplace-v1` uses the exact integer/rational algorithm
-of Canonne, Kamath and Steinke (2020), with exact arbitrary-precision integer
+of the published discrete-noise algorithm, with exact arbitrary-precision integer
 arithmetic in plain R (2.7.0 and 2.7.1 used `gmp`, which draws the same noise
 but needs the GNU MP headers to build). It replaces the 52-bit inverse transform, whose finite noise support
 invalidated the previous pure-DP claim. Epsilon and sensitivity are the exact
@@ -160,8 +188,7 @@ mechanism is pure DP, with delta 0. Its keyed HMAC deployment relies on the
 cryptographic pseudorandomness assumption for those bits; this is not a claim
 that a finite key supplies information-theoretic infinite randomness. See
 [DISCLOSURE_CONTROL.md](DISCLOSURE_CONTROL.md) for the sampler protocol and
-exactness argument, and [SAMPLER_DIAGNOSIS.md](SAMPLER_DIAGNOSIS.md) for the
-original defect.
+exactness argument and the original defect.
 
 Since 2.10.0 the only persistent DP secret is the noise root (the core also
 retains its pseudonymisation key). Protected components are determined by the
@@ -395,9 +422,9 @@ You can then install the `dsOMOP` package using the following command:
 dsadmin.install_github_package(o, 'dsOMOP', username='isglobal-brge', ref='main')
 ```
 
-#### Upgrading to 2.10.4 on Opal
+#### Upgrading to 2.10.5 on Opal
 
-The release pairs dsOMOP 2.10.4 with dsOMOPClient 2.10.4. It includes the
+The release pairs dsOMOP 2.10.5 with dsOMOPClient 2.10.5. It includes the
 OHDSI protected-release corrections and recipe language 2. Existing secrets are
 reused automatically; no state-directory setting, privacy tuning, epoch bump,
 ETL hook or TLS change is part of this upgrade.
@@ -409,7 +436,7 @@ Publish, also available as `dsadmin.publish_package(o, 'dsOMOP')`). This is the
 ordinary Opal package-publication lifecycle. `ds.omop.server.version(conns)`
 reports installed and published versions and distinguishes a stale profile from
 an old package. Language-2 execution refuses a profile missing its protocol
-before assignment; publication of an installed 2.10.4 makes that protocol
+before assignment; publication of an installed 2.10.5 makes that protocol
 available without another upgrade.
 
 Supported legacy recipes retain their v1 execution path. Language-2 plans need
@@ -436,12 +463,7 @@ aggregate controls remain. Re-run recipes after upgrading to recreate factors;
 use explicit numeric representations for date arithmetic. See
 [NEWS.md](NEWS.md) for migrations and the client extraction vignette for examples.
 
-Release verification: [recipe/publication contract run 43515122503](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43515122503)
-passed fresh and upgrade paths on Opal 5.7.6 and 6.1.3;
-[full e2e run 43515127555](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43515127555)
-passed both fresh and upgrade jobs. Both tested harness commit
-`17e5df40f4718bdece091f68d3003c764f061854`. These are evidence for that
-candidate, not a claim of live execution on every supported SQL dialect.
+The release candidate passed recipe/publication and end-to-end checks for fresh installations and upgrades on Opal 5.7.6 and 6.1.3. These checks do not establish live execution on every supported SQL dialect.
 
 ## Creating OMOP CDM resources
 
@@ -498,7 +520,7 @@ Resources created with the dsOMOP 1.x form (format `omop.cdm.db`, URL
 2.x resource, with the same checks. The form only creates 2.x resources;
 re-create old ones with it whenever convenient.
 
-### Database support contract for 2.10.4
+### Database support contract for 2.10.5
 
 The following matrix separates executable backend support from rendered SQL
 contracts. The release evidence below records the tested environments. A plan is admitted only when every typed
@@ -757,25 +779,7 @@ SQL translation, date arithmetic, temporary-object semantics, reconnect tests
 and executable integration tests. Until that full contract exists, an adapter
 should be described as experimental rather than as supported feature parity.
 
-## Acknowledgements
+## Support
 
-- The development of dsOMOP has been supported by the **[RadGen4COPD](https://github.com/isglobal-brge/RadGen4COPD)**, **[P4COPD](https://www.clinicbarcelona.org/en/projects-and-clinical-assays/detail/p4copd-prediction-prevention-personalized-and-precision-management-of-copd-in-young-adults)**, **[CADSET](https://www.ersnet.org/science-and-research/clinical-research-collaboration-application-programme/cadset-chronic-airway-diseases-early-stratification/)**, and **[DATOS-CAT](https://datos-cat.github.io/LandingPage)** projects. These collaborations have not only provided essential financial backing but have also affirmed the project's relevance and application in significant research endeavors.
-- This project has received funding from the **[Spanish Ministry of Education, Innovation and Universities](https://www.ciencia.gob.es/en/)**, the **[National Agency for Research](https://www.aei.gob.es/en)**, and the **[Fund for Regional Development](https://ec.europa.eu/regional_policy/funding/erdf_en)** **(PID2021-122855OB-I00)**. We also acknowledge support from the grant **CEX2023-0001290-S** funded by **MCIN/AEI/10.13039/501100011033**, and support from the **[Generalitat de Catalunya](https://web.gencat.cat/en/inici/index.html)** through the **[CERCA Program](https://cerca.cat/en/)** and the **Consolidated Group on HEALTH ANALYTICS (2021 SGR 01563)**.
-- Additionally, this project has received funding from the **[Instituto de Salud Carlos III (ISCIII)](https://www.isciii.es/)** through the project **"PMP21/00090,"** co-funded by the **[European Union's](https://european-union.europa.eu/index_en)** **Resilience and Recovery Facility**. It has also been partially funded by the **"Complementary Plan for Biotechnology Applied to Health,"** coordinated by the **[Institut de Bioenginyeria de Catalunya (IBEC)](https://ibecbarcelona.eu/)** within the framework of the **Recovery, Transformation, and Resilience Plan (C17.I1)** – Funded by the **[European Union](https://european-union.europa.eu/index_en)** – **[NextGenerationEU](https://next-generation-eu.europa.eu/index_en)**.
-
-- This project **(PID2021-122855OB-I00)** has received funding from **MCIN /AEI /10.13039/501100011033 / FEDER, UE**.
-
-<p align="center">
-  <img src="man/figures/ciencia.png" alt="MCIN/AEI/FEDER" height="80">
-</p>
-
-## Contact
-
-For further information or inquiries, please contact:
-
-- **Juan R González**: juanr.gonzalez@isglobal.org
-- **David Sarrat González**: david.sarrat@isglobal.org
-
-For more details about **DataSHIELD**, visit [https://www.datashield.org](https://www.datashield.org).
-
-For more information about the **Barcelona Institute for Global Health (ISGlobal)**, visit [https://www.isglobal.org](https://www.isglobal.org).
+Report issues through the package repository. For DataSHIELD information, visit
+[datashield.org](https://www.datashield.org).

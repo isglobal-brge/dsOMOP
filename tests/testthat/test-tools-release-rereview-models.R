@@ -1,12 +1,11 @@
-# Astra's second-round model probes (astra-scratch/rereview-models,
-# test-astra-rereview-models.R) against the round-3 fixes: R06 (one
+# Model regression probes: R06 (one
 # canonical exit/status/arm basis), the C8 part of B03 (exit cells under the
 # C6 status parents), interaction Cox (R07) and the SCCS q-grid claims
 # (deviation 16). Defect witnesses are inverted to assert the fixed
 # behaviour; spec assertions are unchanged. Default calibration (0.1) unless
 # a test says otherwise. Helpers in helper-tools-release.R.
 
-.astra_same_exit_fixture <- function() {
+.regression_same_exit_fixture <- function() {
   h <- create_test_handle(n_persons = 200)
   DBI::dbExecute(h$conn, "DELETE FROM observation_period")
   DBI::dbWriteTable(h$conn, "observation_period", data.frame(
@@ -15,27 +14,27 @@
     observation_period_end_date = "2020-03-01",
     period_type_concept_id = 44814724L), append = TRUE)
   DBI::dbExecute(h$conn, "DELETE FROM condition_occurrence")
-  .release_dated_cohort(h, "astra_cox_t", 1:100, "2020-01-01", "2023-12-31")
-  .release_dated_cohort(h, "astra_cox_c", 101:200, "2020-01-01", "2023-12-31")
+  .release_dated_cohort(h, "regression_cox_t", 1:100, "2020-01-01", "2023-12-31")
+  .release_dated_cohort(h, "regression_cox_c", 101:200, "2020-01-01", "2023-12-31")
   .release_add_condition(h, 1:40, 4000002L, "2020-01-10")
   .release_add_condition(h, 101:130, 4000002L, "2020-02-10")
   h
 }
 
 # Signed exported C8 cells of one arm, named by coordinate.
-.astra_c8_cells <- function(owner, arm = "arm=target") {
+.regression_c8_cells <- function(owner, arm = "arm=target") {
   comp <- Filter(function(c) identical(c$stratum, arm), owner$components)[[1L]]
   stats::setNames(comp$h, owner$cell_keys)
 }
 
 test_that("R06: the same Cox exit map reuses the same atoms whatever the requested end", {
   .release_state()
-  h <- .astra_same_exit_fixture()
+  h <- .regression_same_exit_fixture()
   on.exit(cleanup_handle(h), add = TRUE)
   pars <- list(outcome_concept_id = "4000002", model_type = "cox",
                tar_start_offset = "0", tar_end_offset = "90",
                tar_anchor_start = "start", tar_anchor_end = "start")
-  scope <- list("astra_cox_t", "astra_cox_c")
+  scope <- list("regression_cox_t", "regression_cox_c")
   a <- .release_run(h, "dsomop:cm.effect_estimate", pars, scope)
   pars$tar_end_offset <- "120"
   b <- .release_run(h, "dsomop:cm.effect_estimate", pars, scope)
@@ -63,18 +62,18 @@ test_that("R06: the same Cox exit map reuses the same atoms whatever the request
 
 test_that("B03 (C8): exit cells keep the already released C6 status parents", {
   .release_state()
-  h <- .astra_same_exit_fixture()
+  h <- .regression_same_exit_fixture()
   on.exit(cleanup_handle(h), add = TRUE)
   pars <- list(outcome_concept_id = "4000002", model_type = "cox",
                tar_start_offset = "0", tar_end_offset = "90",
                tar_anchor_start = "start", tar_anchor_end = "start")
   a <- .release_run(h, "dsomop:cm.effect_estimate", pars,
-                    list("astra_cox_t", "astra_cox_c"))
+                    list("regression_cox_t", "regression_cox_c"))
   ow <- attr(a, "dsomop_release")$owners
   c6 <- ow[[1L]]; c8 <- ow[[2L]]
   for (arm in c("arm=target", "arm=comparator")) {
     p <- Filter(function(c) identical(c$stratum, arm), c6$components)[[1L]]
-    x <- .astra_c8_cells(c8, arm)
+    x <- .regression_c8_cells(c8, arm)
     event <- grepl("status=event$", names(x))
     # The review's probe: the signed event children sum to the C6 signed event
     # parent (formerly 81.5 versus 66.33) and the censored plus administrative
@@ -87,12 +86,12 @@ test_that("B03 (C8): exit cells keep the already released C6 status parents", {
   built <- .omopReleaseGroupedCoxCore(
     list(policy = suppressMessages(.dsomopToolsDpReady(h))$policy,
          protection = "realised_sticky"),
-    rbind(.omopReleaseCoxExits(h, "astra_cox_t", "arm=target",
+    rbind(.omopReleaseCoxExits(h, "regression_cox_t", "arm=target",
                                .omopOutcomeSource(h, "4000002", "0"),
                                list(start = 0L, end = 90L,
                                     anchor_start = "start",
                                     anchor_end = "start"), 3650L),
-          .omopReleaseCoxExits(h, "astra_cox_c", "arm=comparator",
+          .omopReleaseCoxExits(h, "regression_cox_c", "arm=comparator",
                                .omopOutcomeSource(h, "4000002", "0"),
                                list(start = 0L, end = 90L,
                                     anchor_start = "start",
@@ -105,14 +104,14 @@ test_that("B03 (C8): exit cells keep the already released C6 status parents", {
         .omopReleaseC6Owners(.omopReleaseOutcomeKey("4000002", "0"),
                              "to_first")),
       rbind(
-        transform(.omopCmEffectArmData(h, "astra_cox_t", 1L,
+        transform(.omopCmEffectArmData(h, "regression_cox_t", 1L,
                                        .omopOutcomeSource(h, "4000002", "0"),
                                        list(start = 0L, end = 90L,
                                             anchor_start = "start",
                                             anchor_end = "start"),
                                        horizon = 3650L)$data,
                   stratum = "arm=target", time = tar_days),
-        transform(.omopCmEffectArmData(h, "astra_cox_c", 0L,
+        transform(.omopCmEffectArmData(h, "regression_cox_c", 0L,
                                        .omopOutcomeSource(h, "4000002", "0"),
                                        list(start = 0L, end = 90L,
                                             anchor_start = "start",
@@ -129,12 +128,12 @@ test_that("B03 (C8): exit cells keep the already released C6 status parents", {
 
 test_that("R07: the overall interaction subgroup is the ordinary protected Cox", {
   .release_state()
-  h <- .astra_same_exit_fixture()
+  h <- .regression_same_exit_fixture()
   on.exit(cleanup_handle(h), add = TRUE)
   pars <- list(outcome_concept_id = "4000002", model_type = "cox",
                tar_start_offset = "0", tar_end_offset = "90",
                tar_anchor_start = "start", tar_anchor_end = "start")
-  scope <- list("astra_cox_t", "astra_cox_c")
+  scope <- list("regression_cox_t", "regression_cox_c")
   a <- .release_run(h, "dsomop:cm.effect_estimate", pars, scope)
   b <- .release_run(h, "dsomop:cm.interaction_estimate",
                     c(pars, list(subgroup_kind = "overall")), scope)
@@ -150,7 +149,7 @@ test_that("R07: the overall interaction subgroup is the ordinary protected Cox",
   expect_identical(b$target_outcomes, a$outcomes[[1L]])
 })
 
-test_that("Astra B10 boundary probe: exact closed days share protected horizon for incidence and effects", {
+test_that("regression B10 boundary probe: exact closed days share protected horizon for incidence and effects", {
   .release_state()
   h <- create_test_handle(n_persons = 20)
   on.exit(cleanup_handle(h), add = TRUE)
@@ -161,18 +160,18 @@ test_that("Astra B10 boundary probe: exact closed days share protected horizon f
     observation_period_end_date = "2030-01-01",
     period_type_concept_id = 44814724L), append = TRUE)
   DBI::dbExecute(h$conn, "DELETE FROM condition_occurrence")
-  .release_dated_cohort(h, "astra_horizon", 1:20, "2000-01-01", "2020-01-01")
+  .release_dated_cohort(h, "regression_horizon", 1:20, "2000-01-01", "2020-01-01")
   for (p in 1:6) .release_add_condition(h, p, 4000002L,
     format(as.Date("2000-01-01") + c(0, 1, 3284, 3285, 3649, 3650)[[p]]))
   src <- .omopOutcomeSource(h, "4000002", "0")
   check <- function(start, end, anchor_end, expected, max_days) {
     tar <- list(start = start, end = end, anchor_start = "start",
                 anchor_end = anchor_end)
-    f <- .omopCmEffectArmData(h, "astra_horizon", 1L, src, tar,
+    f <- .omopCmEffectArmData(h, "regression_horizon", 1L, src, tar,
                               horizon = 3650)$data
-    g <- .omopCmSubgroupSubjectFrame(h, "astra_horizon", src, tar, NULL,
+    g <- .omopCmSubgroupSubjectFrame(h, "regression_horizon", src, tar, NULL,
                                      horizon = 3650)
-    sql <- .omopPersonOutcomeSubstrateSql(h, "astra_horizon", src, start,
+    sql <- .omopPersonOutcomeSubstrateSql(h, "regression_horizon", src, start,
                                           end, "start", anchor_end,
                                           horizon = 3650)
     inc <- .omopReleaseFetch(h, paste0("SELECT * FROM ", sql, " x"))
@@ -190,7 +189,7 @@ test_that("Astra B10 boundary probe: exact closed days share protected horizon f
 
 test_that("Deviation 16: the q-grid shift is bounded only inside the grid", {
   g <- .dsomopReleaseSccsQGrid()
-  # Astra's witness: just below an odds midpoint the exact conditional
+  # regression witness: just below an odds midpoint the exact conditional
   # expected counts (no sampling or release noise) give the shift
   # logit(q) - logit(q_grid), about +0.20.
   q <- plogis((qlogis(g[[20]]) + qlogis(g[[21]])) / 2 - 1e-7)
@@ -285,9 +284,9 @@ test_that("Deviation 16: the estimating-equation root selection is documented an
 
 test_that("R06/R07: equal maps under another window, label or alias reuse the same atoms", {
   .release_state()
-  h <- .astra_same_exit_fixture()
+  h <- .regression_same_exit_fixture()
   on.exit(cleanup_handle(h), add = TRUE)
-  scope <- list("astra_cox_t", "astra_cox_c")
+  scope <- list("regression_cox_t", "regression_cox_c")
   pars <- list(outcome_concept_id = "4000002", model_type = "cox",
                tar_start_offset = "0", tar_end_offset = "90",
                tar_anchor_start = "start", tar_anchor_end = "start")
@@ -313,8 +312,8 @@ test_that("R06/R07: equal maps under another window, label or alias reuse the sa
   for (i in seq_along(c8_90)) {
     shared <- intersect(c8_90[[i]]$cell_keys, c8_120[[i]]$cell_keys)
     for (arm in c("arm=target", "arm=comparator")) {
-      xa <- .astra_c8_cells(c8_90[[i]], arm)[shared]
-      xb <- .astra_c8_cells(c8_120[[i]], arm)[shared]
+      xa <- .regression_c8_cells(c8_90[[i]], arm)[shared]
+      xb <- .regression_c8_cells(c8_120[[i]], arm)[shared]
       for (st in c("event", "censored")) {
         j <- grep(paste0("status=", st, "$"), shared)
         expect_equal(diff(xa[j]), diff(xb[j]), tolerance = 1e-9,
@@ -343,13 +342,13 @@ test_that("signed SCCS root certification refuses unresolved and degenerate scor
 
 test_that("C8 allocation includes parent and complete subgroup vectors", {
   .release_state()
-  h <- .astra_same_exit_fixture()
+  h <- .regression_same_exit_fixture()
   on.exit(cleanup_handle(h), add = TRUE)
   x <- .release_run(h, "dsomop:cm.interaction_estimate", list(
     outcome_concept_id = "4000002", model_type = "cox", subgroup_kind = "sex",
     tar_start_offset = "0", tar_end_offset = "90",
     tar_anchor_start = "start", tar_anchor_end = "start"),
-    list("astra_cox_t", "astra_cox_c"))
+    list("regression_cox_t", "regression_cox_c"))
   components <- attr(x, "dsomop_protection")$components
   # One C6 vector and one C8 vector at each hierarchy level, not one draw
   # counted per requested displayed row and not one allocation for both.

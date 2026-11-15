@@ -1,6 +1,6 @@
 # 13 parametrised
 
-Status: plan validated against plan-v2.json; expected.json computed by tools/ws0/acceptance_expected.R on the extended reach fixture (tests/fixtures/create_reach_db.R + extend_reach_db.R), an independent SQL/base-R computation.
+Status: plan validated against plan-v2.json; expected.json computed by tests/fixtures/contracts/acceptance_expected.R on the extended reach fixture (tests/fixtures/create_reach_db.R + extend_reach_db.R), an independent SQL/base-R computation.
 
 ## Semantics of the expected results
 Recipe 03 written with three parameters (the concept set, the cohort id and the day

@@ -1,4 +1,4 @@
-# Protected char.time_to_event (Astra re-review R07, deviation 19): the
+# Protected char.time_to_event (regression re-review R07, deviation 19): the
 # capped recurrent estimand (first_occurrence_only = 0, the default) and the
 # first-event estimand are views of one common signed-day basis, so the 1-,
 # 30- and 365-day scales never redraw the same events. Helpers in

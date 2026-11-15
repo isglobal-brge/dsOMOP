@@ -502,7 +502,7 @@ test_that("interval nodes are validated and compiled once per context", {
   .ws4_expect_rejection(.intervalSpec(list(source = list(event = "drug"), extra = 1), "x"), pattern = "unknown")
 })
 
-# --- A-20 fix round (Astra's WS-5 review B1, B2, B4, B6, B7; item 6) ---------------------
+# --- A-20 fix round (regression WS-5 review B1, B2, B4, B6, B7; item 6) ---------------------
 
 .ws5_course_full <- function(ctx, name, persons, association = "person") {
   iv <- .compileIntervalByName(ctx, name, association = association)

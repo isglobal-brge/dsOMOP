@@ -2,6 +2,7 @@
  "source": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary",
  "snapshot_version": "v5.0 27-FEB-25",
  "cdm_vocabulary_version": "CDM v6.0.0",
+ "display_label_policy": "Currency display names use ISO codes; concept identifiers and codes retain their source values.",
  "concepts": {
   "1147127": {
    "url": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary/concept/1147127",
@@ -206,7 +207,7 @@
    "retrieved": "2026-11-12T00:38:02Z",
    "data": {
     "CONCEPT_ID": 44818668,
-    "CONCEPT_NAME": "United States dollar",
+    "CONCEPT_NAME": "USD",
     "STANDARD_CONCEPT": "S",
     "STANDARD_CONCEPT_CAPTION": "Standard",
     "INVALID_REASON": "V",
@@ -224,7 +225,7 @@
    "retrieved": "2026-11-12T00:38:03Z",
    "data": {
     "CONCEPT_ID": 44818568,
-    "CONCEPT_NAME": "Euro",
+    "CONCEPT_NAME": "EUR",
     "STANDARD_CONCEPT": "S",
     "STANDARD_CONCEPT_CAPTION": "Standard",
     "INVALID_REASON": "V",
@@ -242,7 +243,7 @@
    "retrieved": "2026-11-12T00:38:03Z",
    "data": {
     "CONCEPT_ID": 44818570,
-    "CONCEPT_NAME": "Falkland Islands pound",
+    "CONCEPT_NAME": "FKP",
     "STANDARD_CONCEPT": "S",
     "STANDARD_CONCEPT_CAPTION": "Standard",
     "INVALID_REASON": "V",

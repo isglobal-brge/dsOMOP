@@ -102,6 +102,8 @@
 }
 
 .conceptResolve <- function(records) {
+  if (length(records) && identical(records[[1L]]$kind,"category")) return(.categoryResolveRecords(records))
+  if(length(records) && any(vapply(records,function(r)identical(r$kind,"number"),logical(1)))) return(.numberResolveRecords(records))
   if (length(records) && any(vapply(records, function(x) identical(x$kind, "date"), logical(1)))) return(.dateResolveRecords(records))
   ids <- unique(vapply(records, function(x) x$id, ""))
   ids <- ids[.conceptIdOrder(ids)]
@@ -166,6 +168,7 @@
 }
 
 .conceptValidatePlan <- function(plan, wire = FALSE) {
+  .categoryPlanCheck(plan)
   options <- plan$options
   if (!isFALSE(options$translate_concepts) && isFALSE(options$factor_concepts)) {
     stop("factor_concepts = FALSE conflicts with concept translation; remove it or set translate_concepts = FALSE.", call. = FALSE)
@@ -235,6 +238,8 @@
 }
 
 .conceptValidateResolution <- function(shared, records) {
+  if (identical(shared$kind,"category")) return(.categoryValidateResolution(shared,records))
+  if (identical(shared$kind,"number") || length(records) && identical(records[[1L]]$kind,"number")) return(.numberValidateResolution(shared,records))
   if (identical(shared$kind, "date") || length(records) && identical(records[[1L]]$kind, "date")) return(.dateValidateResolution(shared, records))
   ids <- as.character(unlist(shared$ids, use.names = FALSE))
   labels <- as.character(unlist(shared$labels, use.names = FALSE))

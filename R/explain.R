@@ -3,6 +3,9 @@
 
 # The frozen operation and reducer vocabularies of section 4.4.
 .RECIPE_OPERATIONS <- c(
+  "vocabulary.ohdsi_import_validity",
+  "category.presentation", "category.rollup", "category.indicators", "category.reduce", "layout.repeated", "output.codebook_metadata",
+  "number.daily", "number.presentation", "number.rows", "number.count", "number.change", "number.expression", "number.columns",
   "date.presentation", "date.elapsed", "output.concept_labels", "concept_set", "event", "event.unit", "event.on_missing_table", "interval",
   "interval.ingredient", "interval.stockpile", "population.index",
   "population.first_eligible", "population.any_of", "population.criteria",
@@ -37,6 +40,19 @@
                             ".compileOutput", ".planContext",
                             ".publishPrepare", ".publishCommit")
 .RECIPE_OPERATION_FUNCTIONS <- list(
+  vocabulary.ohdsi_import_validity = c(".ohdsiPreflightValidity", ".ohdsiExpandValidConcepts"),
+  output.codebook_metadata = ".categoryReleaseSchema",
+  layout.repeated = ".repeatedRecord",
+  category.reduce = ".categoryReduceRecord",
+  category.rollup = ".categoryRollupMap",
+  category.indicators = ".categoryIndicatorRecord",
+  category.presentation = c(".categoryPresent", ".categoryResolveRecords"),
+  number.daily = c(".numberDailyRecord", ".numberReducerCheck"),
+  number.presentation = c(".numberPresent", ".numberOutputColumns"),
+  number.rows = ".numberEventRecord", number.count = ".numberEventRecord",
+  number.change = c(".numberEventRecord", ".numberChangeValues"),
+  number.expression = c(".numberExpression", ".numberDerivedRecord", ".numberAstCheck"),
+  number.columns = ".numberOutputColumns",
   interval = ".compileInterval", interval.ingredient = ".compileInterval",
   interval.stockpile = ".compileInterval",
   population.coverage.union = ".compileInterval",
@@ -395,6 +411,7 @@
     roles = roles,
     column_classes = .irOutputColumnClasses(ir, handle),
     concept_presentation = .conceptExplain(ir),
+    number_presentation = .numberExplain(ir),
     concept_classes = .conceptExplainClasses(ir, handle),
     site_findings = site_findings,
     unavailable = unavailable,

@@ -4,7 +4,8 @@
     if (is.list(v)) v <- lapply(v, objects)
     v
   }
-  json <- as.character(jsonlite::toJSON(objects(x), auto_unbox = TRUE, null = "null", digits = NA))
+  json <- if(is.list(x)&&length(x$numbers)) .numberJson(.categoryMetadataPlain(objects(x))) else
+    as.character(jsonlite::toJSON(objects(x), auto_unbox = TRUE, null = "null", digits = NA))
   paste0("B64:", sub("=+$", "", chartr("+/", "-_", gsub("[\r\n]", "", jsonlite::base64_enc(charToRaw(json))))))
 }
 
@@ -23,7 +24,9 @@
   if (length(factors)) descriptor$metadata$factor_domains <- .conceptEncode(
     lapply(factors, function(x) list(levels = levels(x), ordered = is.ordered(x))))
   generated <- attr(df, "omop_generated_columns") %||% list()
-  if (!length(contracts) && !length(generated)) return(descriptor)
+  numbers <- attr(df,"omop_numbers") %||% list()
+  schema <- attr(df,"omop_codebook_schema")
+  if (!length(contracts) && !length(generated) && !length(numbers) && is.null(schema)) return(descriptor)
   keys <- intersect(.PERSON_KEY_COLS(), names(df))
   totals <- if (length(keys)) length(unique(df[[keys[[1L]]]])) else 0L
   support <- lapply(contracts, function(c) {
@@ -39,7 +42,7 @@
   }
   contracts <- lapply(contracts, function(c) { c$ids <- NULL; c })
   descriptor$metadata$concept_presentation <- .conceptEncode(list(
-    protocol = 1L, contracts = contracts, generated = generated,
+    protocol = 1L, contracts = contracts, generated = generated, numbers = numbers, schema = schema,
     handle = attr(df, "omop_presentation_handle"),
     names = attr(df, "omop_column_names") %||% setNames(names(df), names(df)),
     reference = isTRUE(attr(df, "omop_concept_reference")) && is.null(reference_support),
@@ -63,15 +66,17 @@
   for (col in names(meta$contracts)) {
     c <- meta$contracts[[col]]
     support <- unlist(meta$support[[col]], use.names = TRUE)
-    safe <- (identical(c$kind, "date") && all(names(support) %in% unlist(c$declared))) || isTRUE(meta$reference) || (!length(support) ||
+    safe <- (((c$kind %||% "") %in% c("date","number") || identical(c$kind,"category") && c$category$producer$kind %in% c("date","number","flag")) && all(names(support) %in% unlist(c$declared))) || isTRUE(meta$reference) || (!length(support) ||
       (all(support >= settings$nfilter_tab) && tryCatch({
         .assertSafeLevels(length(support), meta$total); TRUE
       }, error = function(e) FALSE)))
+    if(!is.null(c$upstream_safe))safe<-isTRUE(c$upstream_safe)
     if (!safe) { out$unsafe <- c(out$unsafe, col); next }
-    ids <- union(names(support), as.character(unlist(c$declared, use.names = FALSE)))
+    ids <- union(union(names(support),unlist(c$upstream_admitted,use.names=FALSE)), as.character(unlist(c$declared, use.names = FALSE)))
     out$levels[[col]] <- ids
     out$concepts[[col]] <- unname(c$records[ids])
     if (identical(c$kind, "date")) out$calendars[[col]] <- c$calendar
+    if (identical(c$kind, "category")) out$categories[[col]] <- c$category
     if (length(c$reference_keys)) out$reference_names[[col]] <- unique(as.character(unlist(c$reference_keys,use.names=FALSE)))
   }
   for (key in names(meta$generated)) {
@@ -80,6 +85,8 @@
     g[c("declared", "permitted")] <- NULL
     out$generated[[key]] <- g
   }
+  out$numbers <- meta$numbers %||% list()
+  if(!is.null(meta$schema))out$schema<-meta$schema
   out$evidence <- .conceptEvidence(out)
   out
 }
@@ -91,7 +98,7 @@
   for (col in names(meta$contracts)) {
     physical <- as.character(meta$names[[col]])
     levels <- as.character(unlist(meta$contracts[[col]]$resolved$levels, use.names = FALSE))
-    if (physical %in% names(frame)) frame[[physical]] <- if (identical(meta$contracts[[col]]$kind, "date")) .dateOrdered(as.character(frame[[physical]]), levels = levels) else .conceptFactor(as.character(frame[[physical]]), levels = levels)
+    if (physical %in% names(frame)) frame[[physical]] <- if (identical(meta$contracts[[col]]$kind,"category")) .categoryFactor(as.character(frame[[physical]]),meta$contracts[[col]]$resolved) else if ((meta$contracts[[col]]$kind %||% "") %in% c("date","number")) .dateOrdered(as.character(frame[[physical]]), levels = levels) else .conceptFactor(as.character(frame[[physical]]), levels = levels)
   }
   frame
 }
@@ -103,6 +110,9 @@
   report <- .conceptStageReport(descriptor)
   meta <- .conceptStageData(descriptor)
   .conceptCheckEvidence(report, spec, !is.null(meta$handle))
+  # Protocol-1 factor-only calls preserve numeric columns and their capsule.
+  # A supplied numeric reconciliation contract must still match exactly.
+  if ("numbers" %in% names(spec)) .numberValidateShared(report$numbers, spec$numbers)
   if (length(report$unsafe) || !setequal(names(meta$contracts), names(spec$columns))) {
     stop("Incomplete disclosure-safe staged concept contract.", call. = FALSE)
   }
@@ -110,20 +120,21 @@
   for (col in names(meta$contracts)) {
     shared <- spec$columns[[col]]
     if (identical(meta$contracts[[col]]$kind, "date") && !identical(.jcsCanonical(shared$calendar), .jcsCanonical(meta$contracts[[col]]$calendar))) .dateReject("Changed staged calendar identity.")
+    if(identical(meta$contracts[[col]]$kind,"category")&&!identical(.jcsCanonical(shared$category),.jcsCanonical(meta$contracts[[col]]$category))) .categoryReject("Changed staged category contract.","category_domain_incompatible")
     .conceptValidateResolution(shared, meta$contracts[[col]]$records)
     ids <- as.character(unlist(shared$ids, use.names = FALSE))
-    labels <- as.character(unlist(shared$labels, use.names = FALSE))
+    labels <- unname(.categoryNullableStrings(shared$labels))
     levels <- as.character(unlist(shared$levels, use.names = FALSE))
-    if (length(ids) != length(labels) || anyDuplicated(ids) || anyNA(labels) ||
-        anyDuplicated(levels) || !setequal(unique(labels), levels) ||
+    if (length(ids) != length(labels) || anyDuplicated(ids) || (!identical(meta$contracts[[col]]$kind,"category") && anyNA(labels)) ||
+        anyDuplicated(levels) || !setequal(unique(labels[!is.na(labels)]), levels) ||
         !all(report$levels[[col]] %in% ids)) stop("Invalid staged concept union.", call. = FALSE)
-    density_levels <- if (identical(meta$contracts[[col]]$kind,"date")) length(setdiff(ids,unlist(meta$contracts[[col]]$declared))) else length(ids)
+    density_levels <- if ((meta$contracts[[col]]$kind %||% "") %in% c("date","number","category")) length(setdiff(ids,unlist(meta$contracts[[col]]$declared))) else length(ids)
     .assertSafeLevels(density_levels, if (isTRUE(meta$reference)) 0L else meta$total)
     old <- meta$contracts[[col]]$resolved
     old_ids <- as.character(unlist(old$ids, use.names = FALSE))
-    old_labels <- as.character(unlist(old$labels, use.names = FALSE))
+    old_labels <- unname(.categoryNullableStrings(old$labels))
     new_labels <- labels[match(old_ids, ids)]
-    if (anyNA(new_labels)) stop("Incomplete staged concept coverage.", call. = FALSE)
+    if (any(is.na(new_labels) & !is.na(old_labels))) stop("Incomplete staged concept coverage.", call. = FALSE)
     mappings[[col]] <- setNames(new_labels, old_labels)
     meta$contracts[[col]]$resolved <- shared
   }
@@ -151,7 +162,7 @@
       source <- as.character(frame[[col]])
       values <- unname(mappings[[col]][source])
       if (any(!is.na(source) & is.na(values))) stop("Staged factor coverage changed.", call. = FALSE)
-      frame[[col]] <- if (identical(meta$contracts[[col]]$kind, "date")) .dateOrdered(values, levels = as.character(unlist(spec$columns[[col]]$levels, use.names = FALSE))) else .conceptFactor(values, levels = as.character(unlist(spec$columns[[col]]$levels, use.names = FALSE)))
+      frame[[col]] <- if (identical(meta$contracts[[col]]$kind,"category")) .categoryFactor(values,spec$columns[[col]]) else if ((meta$contracts[[col]]$kind %||% "") %in% c("date","number")) .dateOrdered(values, levels = as.character(unlist(spec$columns[[col]]$levels, use.names = FALSE))) else .conceptFactor(values, levels = as.character(unlist(spec$columns[[col]]$levels, use.names = FALSE)))
     }
     frame <- .conceptReferenceNames(frame, meta$contracts)
     if ("concept_id" %in% names(mappings) && "concept_name" %in% names(frame)) frame$concept_name <- as.character(frame$concept_id)

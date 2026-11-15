@@ -127,7 +127,7 @@ test_that("physical OHDSI pooling contracts fail closed", {
   )
   expect_error(
     .ohdsiResultPoolingContract(handle, "cd_cohort_count"),
-    "complete contracted pooling schema: cohort_id"
+    "unsupported_results_schema: mandatory physical-result identity"
   )
 })
 
@@ -390,7 +390,7 @@ test_that("ohdsiGetResults selects specific columns", {
   expect_false(2L %in% result$cohort_id)
 })
 
-test_that("strict OHDSI projection ignores extras and rejects requested extras", {
+test_that("strict OHDSI projection refuses uncontracted physical layouts", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   DBI::dbExecute(handle$conn,
@@ -399,11 +399,10 @@ test_that("strict OHDSI projection ignores extras and rejects requested extras",
                  "UPDATE cohort_count SET secret_metric = 0.123456")
   handle$blueprint <- NULL
 
-  result <- .ohdsiGetResults(handle, "cohort_count")
-  expect_false("secret_metric" %in% names(result))
+  expect_error(.ohdsiGetResults(handle, "cohort_count"), "^unsupported_results_schema:")
   expect_error(
     .ohdsiGetResults(handle, "cohort_count", columns = "secret_metric"),
-    "no public disclosure contract"
+    "^unsupported_results_schema:"
   )
 })
 

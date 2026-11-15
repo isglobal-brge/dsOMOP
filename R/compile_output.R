@@ -168,6 +168,10 @@
 #' @return A validated \code{CompiledOutput}.
 #' @keywords internal
 .compileOutput <- function(ctx, node, inputs) {
+  if(identical(node$format,"person_period")) {
+    repeated<-vapply(ctx$ir$variables[.irOutputVariables(ctx$ir,.compileNodeName(node,"output"))],function(v)identical(v$derived$kind,"repeated"),logical(1))
+    if(any(repeated)) .categoryReject("Repeated scalars need explicit period alignment; use wide or an explicitly broadcast long output.","repeated_grain_incompatible")
+  }
   name <- .compileNodeName(node, "output")
   legacy <- intersect(names(node), c("legacy_split", "legacy_columns", "legacy_temporal",
                                      "legacy_automatic_features", "legacy_raw_filter"))
@@ -177,6 +181,7 @@
                      ", which runs on the v1 executors"), field = paste0("/outputs/", name))
   }
   .dateCheckOutputSlots(ctx, node)
+  .numberPreflightOutput(ctx,node,name,inputs)
   co <- switch(node[["format"]] %||% "",
     wide = .compileWideOutput(ctx, node, name, inputs),
     long = .compileLongOutput(ctx, node, name, inputs),
@@ -191,20 +196,26 @@
     .irReject(paste0("unknown output format '", node[["format"]] %||% "", "'"),
               field = paste0("/outputs/", name, "/format")))
   co <- .dateOutputCovariates(ctx, node, inputs, co)
+  co <- .numberOutputCovariates(ctx, node, inputs, co)
+  co <- .categoryOutputCovariates(ctx, node, inputs, co)
   for (component in names(co$components)) {
     part <- co$components[[component]]
     if (!is.null(part$frame)) {
+      ordered_keys <- .presentationVariableOrder(names(part$frame),ctx$ir$variables,node$columns)
+      if(!identical(ordered_keys,names(part$frame))) {
+        metadata <- attributes(part$frame)
+        part$frame <- part$frame[ordered_keys]
+        for(tag in setdiff(names(metadata),c("names","row.names","class")))attr(part$frame,tag) <- metadata[[tag]]
+        part$fragment$columns <- part$fragment$columns[ordered_keys]
+      }
       index <- NULL
       if (!is.null(inputs$population) && "cohort_row_id" %in% names(part$frame)) {
         roster <- .reduceRosterFrame(ctx, inputs$population$roster)
         if ("cohort_start_date" %in% names(roster)) index <- roster$cohort_start_date[match(as.character(part$frame$cohort_row_id), as.character(roster$cohort_row_id))]
       }
       if (node$format %in% c("intervals", "person_period", "survival") && !is.null(ctx$ir$options$date_spec) && !is.null(index)) {
-        endpoints <- c(start_days_from_index="start_date", end_days_from_index="end_date",
-          period_start_days="period_start_date", period_end_days="period_end_date",
-          entry_days_from_index="entry_date", exit_days_from_index="exit_date",
-          event_days_from_index="event_date", interval_start_days="interval_start_date", interval_end_days="interval_end_date")
-        for (old in intersect(names(endpoints), names(part$frame))) {
+        endpoints <- .dateOutputEndpoints(node$format, names(part$frame), ctx$ir$options$date_spec)
+        for (old in names(endpoints)) {
           col <- endpoints[[old]]
           if (col %in% names(part$frame)) .dateReject("Native endpoint name collides with an explicit variable.", "date_parts_names")
           part$frame[[col]] <- index + part$frame[[old]]
@@ -220,6 +231,31 @@
       }
       presented <- .dateApplyColumns(part$frame, part$fragment$columns, ctx$ir$options$date_spec, index, role_anchor)
       part$frame <- presented$frame; part$fragment$columns <- presented$columns
+      part$fragment$columns <- .numberOutputOrigins(ctx,node,part$fragment$columns)
+      numeric <- .numberOutputColumns(part$frame,part$fragment$columns,node,component,setdiff(names(co$components),co$reference_components),ctx$ir$options$number_spec,part$number_canonical,part$number_canonical_columns)
+      part$number_canonical <- numeric$canonical; part$number_canonical_columns <- numeric$canonical_columns
+      part$frame <- numeric$frame; part$fragment$columns <- numeric$columns
+      categories<-.categoryOutputColumns(ctx,part$frame,part$fragment$columns,node,component,names(co$components))
+      part$frame<-categories$frame;part$fragment$columns<-categories$columns
+      # A selected expanded reducer key projects only that key, in request order.
+      selected_keys <- unlist(node$columns, use.names=FALSE)
+      declared_columns <- unique(unlist(lapply(.irOutputVariables(ctx$ir,name),function(v)
+        .pnv2VariableColumns(v,ctx$ir$variables[[v]])),use.names=FALSE))
+      expanded_selection <- any(selected_keys %in% setdiff(declared_columns,names(ctx$ir$variables)))
+      if (expanded_selection || !component %in% co$reference_components && !is.null(node$columns) &&
+          (length(node$number_columns) || length(node$category_columns))) {
+        additions <- c(names(node$number_columns), names(node$category_columns))
+        structural <- if (expanded_selection) names(part$frame) else
+          names(part$fragment$columns)[!vapply(names(part$fragment$columns), function(k)
+            .numberEligibleColumn(part$fragment$columns[[k]], k, node) ||
+              !is.null(attr(part$fragment$columns[[k]], "number_contract")), logical(1))]
+        inherited_variables <- names(part$fragment$columns)[vapply(part$fragment$columns,
+          function(column) !is.null(attr(column, "concept_owner")), logical(1))]
+        structural <- setdiff(structural, c(declared_columns, inherited_variables, additions))
+        keep <- .categorySelectedColumns(node$columns, ctx$ir$variables, structural, names(part$frame))
+        part$frame <- part$frame[keep]
+        part$fragment$columns <- part$fragment$columns[keep]
+      }
       co$components[[component]] <- part
     }
   }
@@ -396,8 +432,13 @@
   })
   names(records) <- vars
   var_cols <- list()
-  for (rec in records) var_cols <- c(var_cols, rec$columns)
+  for (rec in records) {
+    if(isTRUE(rec$event_grain)) .numberReject("Event values require an explicit number_derive reducer for wide output; use long for event rows.","number_dependency_invalid")
+    var_cols <- c(var_cols, rec$columns)
+  }
   .outputCheckNames(names(var_cols), name, grain)
+  schema<-c(.outputIdentityColumns(cons),var_cols);attr(schema,"number_variable_names")<-vars
+  .numberPreflightColumns(node,setNames(list(schema),name))
   roster <- .reduceRosterFrame(ctx, pop$roster)
   .outputRowCap(nrow(roster), name)
   frame <- .outputIdentity(roster)
@@ -458,8 +499,9 @@
   frame <- .outputIdentity(roster)
   columns <- .outputIdentityColumns(cons)
   opts <- node[["options"]] %||% list()
-  if ("legacy_cohort_definition_id" %in% names(opts) ||
-      identical(attr(ctx[["ir"]], "source_version", exact = TRUE), 1L)) {
+  inventory <- .presentationMembershipColumns(ctx$ir$populations[[node$rows]], opts,
+    identical(attr(ctx[["ir"]], "source_version", exact=TRUE),1L))
+  if ("cohort_definition_id" %in% names(inventory)) {
     # A-26: the root label is independent of this output's roster. Presence
     # distinguishes integer NA (explicit null) from the historical missing-ID
     # failure. Raw v1 input is used only to replay coercion diagnostics.
@@ -470,11 +512,11 @@
     frame$cohort_definition_id <- as.integer(label)
     columns$cohort_definition_id <- .fragmentColumn("integer", TRUE, "measure")
   }
-  for (col in c("cohort_start_date", "cohort_end_date")) {
+  for (col in names(inventory)[inventory=="Date"]) {
     frame[[col]] <- if (col %in% names(roster)) roster[[col]] else as.Date(rep(NA_character_, nrow(roster)))
     columns[[col]] <- .fragmentColumn("date", TRUE, if (identical(col, "cohort_start_date")) "start" else "end")
   }
-  if ("index_source" %in% names(roster)) {
+  if ("index_source" %in% names(inventory)) {
     frame$index_source <- as.character(roster$index_source)
     columns$index_source <- .fragmentColumn("text", TRUE, "measure")
   }
@@ -570,6 +612,7 @@
   pop <- inputs$population
   cons <- .reduceConsumer(ctx, name, pop$roster, pop$coverage, grain)
   frames <- list()
+  canonical_frames <- list(); canonical_cols <- list()
   cols <- list()
   status <- "ok"
   for (f in from) {
@@ -593,11 +636,17 @@
                 field = paste0("/outputs/", name, "/options/from"))
     }
     if (identical(co$status, "unavailable")) status <- "unavailable"
+    canonical_frames[[length(frames) + 1L]] <- part$number_canonical %||% part$frame
+    canonical_cols[[length(frames) + 1L]] <- part$number_canonical_columns %||% part$fragment$columns
     frames[[length(frames) + 1L]] <- part$frame
     cols[[length(cols) + 1L]] <- part$fragment$columns
   }
+  schema<-list()
+  for(part_columns in canonical_cols)for(k in names(part_columns))if(is.null(schema[[k]]))schema[[k]]<-part_columns[[k]]
+  .numberPreflightColumns(node,setNames(list(schema),name))
   key_of <- function(df) do.call(paste, c(lapply(df[keys], as.character), sep = "\r"))
   left <- frames[[1L]]
+  canonical <- canonical_frames[[1L]]; canonical_columns <- canonical_cols[[1L]]
   left_cols <- cols[[1L]]
   identity <- intersect(c("row_id", "cohort_row_id", "person_id"), names(left))
   for (i in seq_along(frames)[-1L]) {
@@ -620,12 +669,15 @@
     at <- match(lk, rk)
     keep <- if (identical(how, "inner")) !is.na(at) else rep(TRUE, length(at))
     left <- left[keep, , drop = FALSE]
+    canonical <- canonical[keep, , drop = FALSE]
     at <- at[keep]
-    for (col in extra) left[[col]] <- right[[col]][at]
+    for (col in extra) {left[[col]] <- right[[col]][at]; canonical[[col]] <- canonical_frames[[i]][[col]][at]}
+    canonical_columns <- c(canonical_columns, canonical_cols[[i]][extra])
     left_cols <- c(left_cols, cols[[i]][extra])
   }
   .outputRowCap(nrow(left), name)
   part <- .outputComponent(inputs, name, name, left, left_cols, cons, grain = grain, status = status)
+  part$number_canonical <- canonical; part$number_canonical_columns <- canonical_columns
   .outputCompiled(name, list(part), status = status)
 }
 
@@ -1308,7 +1360,7 @@
     entry_d <- as.integer(entry[[i]] - index[[i]])
     exit_d <- as.integer(exit[[i]] - index[[i]])
     stream[[length(stream) + 1L]] <- data.frame(
-      cohort_row_id = keys[[i]], person_id = person[[i]], stream_kind = 0L,
+      cohort_row_id = i, person_id = person[[i]], stream_kind = 0L,
       state_id = spec$initial_state_id, state_time = entry_d - 1, state_day = entry_d - 1L,
       within_day_order = 0L, within_day_count = 0L, risk_end_days = exit_d, stringsAsFactors = FALSE)
     ev <- .survivalEpisodeEvents(retained, outcome_names, keys[[i]])
@@ -1323,13 +1375,13 @@
       wdc <- stats::ave(seq_along(day), day, FUN = length)
       time <- if (identical(tie, "sequential")) day - (wdc - wdo) * spec$state_step else as.numeric(day)
       stream[[length(stream) + 1L]] <- data.frame(
-        cohort_row_id = keys[[i]], person_id = person[[i]], stream_kind = 1L,
+        cohort_row_id = i, person_id = person[[i]], stream_kind = 1L,
         state_id = as.integer(state_of[ev$outcome]), state_time = time, state_day = day,
         within_day_order = as.integer(wdo), within_day_count = as.integer(wdc),
         risk_end_days = exit_d, stringsAsFactors = FALSE)
     }
     stream[[length(stream) + 1L]] <- data.frame(
-      cohort_row_id = keys[[i]], person_id = person[[i]], stream_kind = 2L, state_id = NA_integer_,
+      cohort_row_id = i, person_id = person[[i]], stream_kind = 2L, state_id = NA_integer_,
       state_time = exit_d, state_day = exit_d, within_day_order = 0L, within_day_count = 0L,
       risk_end_days = exit_d, stringsAsFactors = FALSE)
   }
@@ -1337,7 +1389,12 @@
                                              max_rows = .reduceRowCap())
   ms <- if (length(stream)) machine$transform(do.call(rbind, stream)) else .emptyMultistateData()
   machine$assert_complete()
-  ms$person_id <- person[match(as.character(ms$cohort_row_id), as.character(keys))]
+  # The compatibility state machine uses numeric episode IDs. Feed it private
+  # row positions, then restore native lossless keys instead of coercing BIGINT
+  # identities through binary64 (including the empty result's type).
+  positions <- as.integer(ms$cohort_row_id)
+  ms$cohort_row_id <- keys[positions]
+  ms$person_id <- person[positions]
   ms$row_id <- ms$cohort_row_id
   ref <- .multistateTransitionReference(spec, tie)
   list(msdata = ms, transition_ref = ref)
@@ -1385,7 +1442,7 @@
   }
   declared <- suppressWarnings(as.integer(unlist(cs[["concepts"]] %||% list(), use.names = FALSE)))
   ordered <- c(declared[declared %in% ids], sort(setdiff(ids, declared), method = "radix"))
-  list(name = s$name, kind = "event", ids = unique(ordered), source = s)
+  list(name = .numberLogicalSource(ctx,s$name), kind = "event", ids = unique(ordered), source = s)
 }
 
 # Analysis order of the released columns: the closed enumeration
@@ -1655,6 +1712,13 @@
     if (length(out_names)) paste0("n_", out_names),
     unlist(lapply(source_specs, function(s) s$columns), use.names = FALSE))
   .outputCheckNames(inventory[-seq_along(identities)], name, "episode")
+  if(length(node$number_columns)) {
+    schema<-setNames(lapply(inventory,function(k).fragmentColumn(if(k=="age_band")"text" else "numeric",TRUE,"measure")),inventory)
+    schema[identities]<-.outputIdentityColumns(cons)
+    schema<-c(schema,.numberVariableSchema(ctx,node,name,inputs,cons))
+    attr(schema,"number_variable_names")<-.irOutputVariables(ctx$ir,name)
+    .numberPreflightColumns(node,setNames(list(schema),name))
+  }
   dense <- identical(opts[["representation"]] %||% "dense", "dense")
   roster <- .reduceRosterFrame(ctx, pop$roster)
   keys <- roster$cohort_row_id
@@ -1740,7 +1804,7 @@
                       days = as.integer(pe - ps + 1L), stringsAsFactors = FALSE)
   int <- function() .fragmentColumn("integer", TRUE, "measure")
   columns <- c(.outputIdentityColumns(cons),
-               list(period_start_days = int(), period_end_days = int(), days = int()))
+               list(period_start_days = .numberGenerated(int(),"days",2L), period_end_days = .numberGenerated(int(),"days",2L), days = .numberGenerated(int(),"days",2L)))
   if (!is.null(person_yob)) {
     width <- as.integer(unlist(opts[["partition"]][["age_bands"]]))
     age <- as.integer(format(ps, "%Y")) - person_yob[ep]
@@ -1802,8 +1866,9 @@
       frame[[paste0("active_", x)]] <- act
       event_any <- event_any | exp_days > 0L
     }
-    columns[[paste0("exposed_", x)]] <- int()
-    columns[[paste0("active_", x)]] <- int()
+    columns[[paste0("exposed_", x)]] <- .numberGenerated(int(),"days",2L,available=!is.null(rows))
+    columns[[paste0("active_", x)]] <- .numberGenerated(int(),"1",available=!is.null(rows))
+    attr(columns[[paste0("active_", x)]],"semantic_flag")<-TRUE
   }
   for (k in out_names) {
     rows <- outcomes[[k]]
@@ -1816,7 +1881,7 @@
       frame[[col]] <- tabulate(p[!is.na(p)], nbins = total)
       event_any <- event_any | frame[[col]] > 0L
     }
-    columns[[col]] <- int()
+    columns[[col]] <- .numberGenerated(int(),"count",available=!is.null(rows))
   }
   for (sp in source_specs) {
     idn <- sp$idn
@@ -1860,6 +1925,8 @@
         if (!is.null(sel) && identical(a, "exposed_days")) event_any <- event_any | values > 0L
         frame[[col]] <- if (a %in% c("mean", "last")) as.numeric(values) else as.integer(values)
         columns[[col]] <- if (a %in% c("mean", "last")) .fragmentColumn("numeric", TRUE, "measure") else int()
+        columns[[col]] <- .numberGenerated(columns[[col]],if(a=="count")"count" else if(a=="binary")"1" else if(a=="exposed_days")"days" else .numberSourceUnit(ctx,list(source=list(event=idn$source$name))),if(a=="exposed_days")2L else 3L,available=!is.null(sel))
+        if(a=="binary")attr(columns[[col]],"semantic_flag")<-TRUE
         if (!single && !is.na(cid)) attr(columns[[col]], "concept_name") <- list(
           id = as.character(cid), prefix = paste0(idn$name, "_"), suffix = paste0("_", a), owner = idn$name, declared = TRUE)
       }
@@ -1886,7 +1953,7 @@
           }
         } else unavailable <- TRUE
         frame[[col]] <- values
-        columns[[col]] <- .fragmentColumn("numeric", TRUE, "measure")
+        columns[[col]] <- .numberGenerated(.fragmentColumn("numeric", TRUE, "measure"),.numberSourceUnit(ctx,list(source=list(event=idn$source$name))),available=!is.null(sel))
         if (!single && !is.na(cid)) attr(columns[[col]], "concept_name") <- list(
           id = as.character(cid), prefix = paste0(idn$name, "_"), suffix = "_carry", owner = idn$name, declared = TRUE)
       }
@@ -2015,6 +2082,7 @@
                     covariate_id = .fragmentColumn("integer", FALSE, "measure"),
                     covariate_value = .fragmentColumn("numeric", TRUE, "measure")))
   status <- if (unavailable) "unavailable" else "ok"
+  columns$covariate_value <- .numberMatrixOrigin(ctx,node,columns$covariate_value,reg)
   refs <- .outputReferenceNames(name, c("covariateRef", "timeRef"))
   parts <- list(
     .outputComponent(inputs, name, name, frame, columns, cons, grain = "episode", status = status),
@@ -2109,6 +2177,7 @@
                       covariate_value = .fragmentColumn("numeric", TRUE, "measure")))
   }
   status <- if (unavailable) "unavailable" else "ok"
+  columns$covariate_value <- .numberMatrixOrigin(ctx,node,columns$covariate_value,reg)
   refs <- .outputReferenceNames(name, "covariateRef")
   parts <- list(
     .outputComponent(inputs, name, name, frame, columns, cons, grain = grain, status = status),
@@ -2205,7 +2274,7 @@
     # The physical ordering remains valid when unit = event unions rows
     # owned by different episodes; the roster key is ordered separately.
     rows$.source_order <- order(.outputOrderRows(rows, setdiff(st$ordering, "row_key")))
-    rows$source <- rep(src$name, nrow(rows))
+    rows$source <- rep(.numberLogicalSource(ctx,src$name), nrow(rows))
     if (!"v" %in% names(rows)) rows$v <- rep(NA_real_, nrow(rows))
     if (!"unit_concept_id" %in% names(rows)) rows$unit_concept_id <- rep(NA_integer_, nrow(rows))
     if (!"concept_id" %in% names(rows)) rows$concept_id <- rep(NA_integer_, nrow(rows))
@@ -2347,13 +2416,14 @@
     bcons <- .reduceConsumer(ctx, name, pop$roster, pop$coverage, "episode")
     for (v in vars) {
       vnode <- ir[["variables"]][[v]]
-      if ((!is.null(vnode[["reducer"]]) || (vnode$derived$kind %||% "") %in% .DATE_KINDS) && !isTRUE(unlist(vnode[["broadcast"]]))) {
-        .irReject(paste0("variable '", v, "' is a reducer; a long output takes it only with broadcast = TRUE"),
+      rec <- .compileVariable(ctx, .irNamedNode(ir, "variable", v), pop$roster, bcons)
+      if ((!is.null(vnode[["reducer"]]) || (vnode$derived$kind %||% "") %in% c(.DATE_KINDS,.NUMBER_KINDS,"category_rows","category_indicators","category_reduce","repeated")) &&
+          !isTRUE(rec$event_grain) && !isTRUE(unlist(vnode[["broadcast"]]))) {
+        .irReject(paste0("variable '", v, "' is scalar; a long output takes it only with broadcast = TRUE"),
                   field = paste0("/variables/", v, "/broadcast"))
       }
-      rec <- .compileVariable(ctx, .irNamedNode(ir, "variable", v), pop$roster, bcons)
       vals <- rec$evaluate()
-      vat <- match(as.character(rows$row_key), as.character(vals$row_key))
+      vat <- if(isTRUE(rec$event_grain)) .numberMatchEventRows(ctx,rows,vals) else match(as.character(rows$row_key), as.character(vals$row_key))
       for (cn in names(rec$columns)) {
         if (cn %in% names(columns)) {
           .irReject(paste0("broadcast variable column '", cn, "' duplicates an output column"),
@@ -2484,12 +2554,12 @@
       rows <- rows[rank <= n_sel, , drop = FALSE]
     }
     parts[[length(parts) + 1L]] <- rows[c("row_key", "person_id", "source", "concept_id", "start_date",
-                                          "end_date", "event_id", ".source_order")]
+                                          "end_date", "event_id", "source_ns", ".source_order")]
   }
   rows <- if (length(parts)) do.call(rbind, parts) else
     data.frame(row_key = keys[0], person_id = roster$person_id[0], source = character(0),
                concept_id = integer(0), start_date = as.Date(character(0)), end_date = as.Date(character(0)),
-               event_id = numeric(0), .source_order = integer(0), stringsAsFactors = FALSE)
+               event_id = numeric(0), source_ns = character(0), .source_order = integer(0), stringsAsFactors = FALSE)
   at <- match(as.character(rows$row_key), as.character(keys))
   rows$start_days <- as.integer(rows$start_date - index[at])
   rows$end_days <- as.integer(rows$end_date - index[at])
@@ -2505,6 +2575,18 @@
                     concept_id = .fragmentColumn("integer", TRUE, "concept"),
                     start_days_from_index = .fragmentColumn("integer", TRUE, "measure"),
                     end_days_from_index = .fragmentColumn("integer", TRUE, "measure")))
+  for(v in .irOutputVariables(ctx$ir,name)) {
+    vnode <- .irNamedNode(ctx$ir,"variable",v)
+    if(!(vnode$derived$kind %||% "") %in% c(.NUMBER_KINDS,"category_rows","category_indicators","category_reduce","repeated")) next
+    rec <- .compileVariable(ctx,vnode,pop$roster,cons)
+    if(!isTRUE(rec$event_grain)) .numberReject("Intervals require an event numeric projection; use reduced wide for scalar values.","number_dependency_invalid")
+    if(any(vapply(srcs,function(s)!is.null(s$interval),logical(1)))) .numberReject("Numeric event columns cannot join back after interval collapse; use long event rows.","number_dependency_invalid")
+    vals <- rec$evaluate();at <- .numberMatchEventRows(ctx,rows,vals)
+    for(cn in names(rec$columns)) {
+      if(cn %in% names(columns)) .numberReject("Numeric event column name collides with output schema.","number_dependency_invalid")
+      frame[[cn]] <- vals[[cn]][at];columns[[cn]] <- rec$columns[[cn]]
+    }
+  }
   status <- if (unavailable) "unavailable" else "ok"
   part <- .outputComponent(inputs, name, name, frame, columns, cons, grain = "episode", status = status)
   .outputCompiled(name, list(part), status = status)

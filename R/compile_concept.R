@@ -13,7 +13,7 @@
 # is memoised per plan on the canonical JSON of the node.
 
 .CONCEPT_SET_FIELDS <- c("concepts", "include_descendants", "include_mapped",
-                         "exclude")
+                         "exclude", "validity_policy")
 .CONCEPT_STATES <- c("all", "set", "none")
 
 # Maximum nesting of object-valued exclusions (inline objects only; a deeper
@@ -50,7 +50,10 @@
                                                  field = paste0(path, "/concepts")))
   descendants <- .conceptFlag(node[["include_descendants"]], "include_descendants", path)
   mapped <- .conceptFlag(node[["include_mapped"]], "include_mapped", path)
-  included <- if (length(base) == 0L) {
+  policy <- .ohdsiValidityPolicy(node[["validity_policy"]])
+  included <- if (!is.null(policy)) {
+    .ohdsiExpandValidConcepts(handle, base, descendants, mapped, path)
+  } else if (length(base) == 0L) {
     integer(0)
   } else if (!descendants && !mapped) {
     base
@@ -75,12 +78,70 @@
   } else if (is.list(excl) && !is.null(names(excl))) {
     .conceptExpandNode(handle, excl, paste0(path, "/exclude"), depth + 1L)
   } else {
-    tryCatch(.conceptIdList(excl),
+    ids <- tryCatch(.conceptIdList(excl),
              error = function(e) .irReject(conditionMessage(e),
                                            field = paste0(path, "/exclude")))
+    if (!is.null(policy)) .ohdsiExpandValidConcepts(handle, ids, FALSE, FALSE,
+      paste0(path, "/exclude")) else ids
   }
   ids <- setdiff(unique(as.integer(included)), as.integer(excluded))
   sort(as.integer(ids), method = "radix")
+}
+
+# Only public vocabulary tables are queried under this policy. Invalid or absent
+# explicit IDs refuse as a definition, regardless of their patient use.
+.ohdsiExpandValidConcepts <- function(handle, base, descendants, mapped, path) {
+  q <- function(table) .qualifyTable(handle, table,
+    .resolveTableSchema(handle, table, "Vocabulary"))
+  read <- function(sql) tryCatch(.executeQuery(handle, sql), error = function(e) {
+    .irReject("imported concept definitions require the declared public vocabulary tables; use a compatible vocabulary",
+      code = "unavailable_vocabulary", field = path)
+  })
+  valid <- function(ids) {
+    if (!length(ids)) return(integer(0))
+    rows <- read(paste0("SELECT concept_id FROM ", q("concept"), " WHERE ",
+      .sqlIdInPredicate("concept_id", ids), " AND invalid_reason IS NULL"))
+    unique(as.integer(rows$concept_id))
+  }
+  if (length(setdiff(base, valid(base)))) {
+    .irReject("imported definition contains absent or invalid vocabulary references; use a compatible vocabulary or revise the public definition",
+      code = "unsupported_vocabulary_reference", field = path)
+  }
+  ids <- base
+  if (descendants && length(base)) {
+    rows <- read(paste0("SELECT DISTINCT ca.descendant_concept_id AS concept_id FROM ",
+      q("concept_ancestor"), " ca INNER JOIN ", q("concept"),
+      " c ON c.concept_id = ca.descendant_concept_id WHERE ",
+      .sqlIdInPredicate("ca.ancestor_concept_id", base), " AND c.invalid_reason IS NULL"))
+    ids <- union(ids, as.integer(rows$concept_id))
+  }
+  if (mapped && length(ids)) {
+    rows <- read(paste0("SELECT DISTINCT cr.concept_id_1 AS concept_id FROM ",
+      q("concept_relationship"), " cr INNER JOIN ", q("concept"),
+      " c ON c.concept_id = cr.concept_id_1 WHERE ",
+      .sqlIdInPredicate("cr.concept_id_2", ids),
+      " AND cr.relationship_id = 'Maps to' AND cr.invalid_reason IS NULL AND c.invalid_reason IS NULL"))
+    ids <- union(ids, as.integer(rows$concept_id))
+  }
+  if (length(ids) > .extractionCap("dsomop.max_filter_values", 10000L)) {
+    .irReject("expanded definition exceeds the existing structural concept-set size limit",
+      field = path)
+  }
+  as.integer(ids)
+}
+
+.ohdsiPreflightValidity <- function(handle, plan) {
+  if (!.ohdsiHasImportedValidity(plan)) return(invisible(NULL))
+  if (!"vocabulary.ohdsi_import_validity" %in% .recipeAvailableOperations()) {
+    .irReject("imported vocabulary policy requires vocabulary.ohdsi_import_validity; use a capable paired server",
+      code = "unavailable_capability", field = "/concept_sets")
+  }
+  if (is.null(handle)) return(invisible(NULL))
+  .ohdsiWalkValidity(plan, function(node, path) {
+    .ohdsiValidityPolicy(node[["validity_policy"]])
+    .resolveConceptSetNode(handle, node, path)
+  })
+  invisible(NULL)
 }
 
 #' Resolve one concept-set node (design section 6.5)

@@ -434,7 +434,10 @@
 # In particular, an ordinary integer destination must never receive the raw
 # double storage of integer64, and an untyped missing destination must retain
 # the selected datetime class and timezone.
-.mutateCommon <- function(values, type) {
+.mutateCommon <- function(values, type, numeric_coerce = .mutateDouble) {
+  if (identical(type, "numeric")) {
+    return(list(values = lapply(values, numeric_coerce), prototype = numeric(0)))
+  }
   prototype <- switch(type,
     integer = if (any(vapply(values, inherits, logical(1), "integer64")))
       bit64::as.integer64(integer(0)) else integer(0),
@@ -447,9 +450,11 @@
        prototype = prototype)
 }
 
+.mutateDouble <- function(x) suppressWarnings(as.numeric(x))
+
 .mutateCoerce <- function(x, type, prototype = NULL) {
   switch(type,
-    numeric = suppressWarnings(as.numeric(x)),
+    numeric = .mutateDouble(x),
     integer = if (inherits(prototype, "integer64") || inherits(x, "integer64"))
       bit64::as.integer64(x) else suppressWarnings(as.integer(x)),
     text = as.character(x),
@@ -520,18 +525,24 @@
 #' Evaluate a type-checked mutation expression over a frame
 #' @keywords internal
 .mutateEval <- function(expr, df, types) {
-  value <- .mutateEvalNode(expr, df, types)
+  .mutateEvalChecked(expr, df, types)
+}
+
+# Native number expressions supply exact conversion at every recursive numeric
+# boundary. The default retains the closed v1 mutation evaluator semantics.
+.mutateEvalChecked <- function(expr, df, types, numeric_coerce = .mutateDouble) {
+  value <- .mutateEvalNode(expr, df, types, numeric_coerce)
   type <- .mutateType(expr, types, character(0), "omopMutateDS", "")
   .mutateCheckResult(value, type, nrow(df), "<expression>")
   value
 }
 
-# Interpret one closed node; recursive operands go through .mutateEval so
+# Interpret one closed node; recursive operands go through .mutateEvalChecked so
 # every intermediate value is checked against its static type as well.
-.mutateEvalNode <- function(expr, df, types) {
+.mutateEvalNode <- function(expr, df, types, numeric_coerce = .mutateDouble) {
   n <- nrow(df)
   key <- .mutateVariant(expr)
-  sub <- function(e) .mutateEval(e, df, types)
+  sub <- function(e) .mutateEvalChecked(e, df, types, numeric_coerce)
   type_of <- function(e) .mutateType(e, types, character(0), "omopMutateDS", "")
   switch(key,
     col = df[[expr[["col"]]]],
@@ -561,8 +572,8 @@
         return(as.Date(value, origin = "1970-01-01"))
       }
       if (identical(typed$result, "integer")) return(.mutateIntegerOp(op, a, b))
-      a <- suppressWarnings(as.numeric(a))
-      b <- suppressWarnings(as.numeric(b))
+      a <- numeric_coerce(a)
+      b <- numeric_coerce(b)
       out <- switch(op, "+" = a + b, "-" = a - b, "*" = a * b, "/" = a / b)
       # Division by zero or any non-finite result is NA (design 4.6).
       out[!is.finite(out)] <- NA
@@ -573,7 +584,7 @@
       ie <- expr[["ifelse"]]
       type <- type_of(expr)
       test <- .verbPredicateMask(ie[["test"]], df)
-      common <- .mutateCommon(list(sub(ie[["yes"]]), sub(ie[["no"]])), type)
+      common <- .mutateCommon(list(sub(ie[["yes"]]), sub(ie[["no"]])), type, numeric_coerce)
       yes <- common$values[[1L]]
       no <- common$values[[2L]]
       out <- yes
@@ -590,7 +601,7 @@
       values <- c(lapply(cases, function(cs) sub(cs[["then"]])),
                   list(if (!is.null(cw[["else"]])) sub(cw[["else"]]) else
                     .mutateLiteral(NULL, NULL, n)))
-      common <- .mutateCommon(values, type)
+      common <- .mutateCommon(values, type, numeric_coerce)
       out <- common$values[[length(values)]]
       decided <- rep(FALSE, n)
       for (i in seq_along(cases)) {
@@ -608,7 +619,7 @@
     coalesce = {
       type <- type_of(expr)
       items <- .jsonArrayItems(expr[["coalesce"]])
-      common <- .mutateCommon(lapply(items, sub), type)
+      common <- .mutateCommon(lapply(items, sub), type, numeric_coerce)
       out <- common$values[[1L]]
       for (value in common$values[-1L]) {
         fill <- is.na(out)
