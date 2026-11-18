@@ -84,19 +84,18 @@
       producer<-producer[!vapply(producer,is.null,logical(1))]
       producer_order<-if(identical(c$kind,"category"))unlist(c$category$producer_order,use.names=FALSE) else if(is.null(c$kind) || identical(c$kind,"date"))character() else lev;producer_ordered<-is.ordered(frame[[n]])
       if(is.null(c$kind)) {
-        if(isFALSE(ctx$ir$options$translate_concepts)) .categoryReject("Enable translate_concepts for concept presentation.")
-        public_inputs<-c(if(!length(s$recode$map))unlist(s$levels,use.names=FALSE),names(s$recode$map))
+        public_inputs<-union(unlist(s$levels,use.names=FALSE),names(s$recode$map))
         extra<-setdiff(public_inputs,lev)
         if(length(extra)) {
           .categoryKeys(extra,concept=TRUE)
-          rr<-get(".conceptVocabulary",mode="function")(ctx$handle,sub("^concept:","",extra))
+          rr<-if(isFALSE(ctx$ir$options$translate_concepts)) .conceptIdRecords(sub("^concept:","",extra)) else get(".conceptVocabulary",mode="function")(ctx$handle,sub("^concept:","",extra))
           for(k in seq_along(extra)) {r<-rr[[k]];r$id<-extra[k];records[[extra[k]]]<-r}
-          declared<-union(declared,extra)
         }
-        records<-get(".categoryVocabularyLabels",mode="function")(ctx$handle,records,s)
+        declared<-union(declared,public_inputs)
+        if(!isFALSE(ctx$ir$options$translate_concepts))records<-get(".categoryVocabularyLabels",mode="function")(ctx$handle,records,s)
       }
     }
-    if(!flag && identical(c$kind,"category") && (!is.null(s$label_style)||!is.null(s$language))) {
+    if(!isFALSE(ctx$ir$options$translate_concepts) && !flag && identical(c$kind,"category") && (!is.null(s$label_style)||!is.null(s$language))) {
       # A consumed display is not a fresh vocabulary name. Rebind automatic
       # names to the effective concept before applying an explicit outer style.
       for(key in names(records)) {
@@ -108,21 +107,25 @@
       records<-get(".categoryVocabularyLabels",mode="function")(ctx$handle,records,s)
     }
     rollup <- NULL
+    discovered <- character()
     if(!is.null(s$rollup) && s$rollup$kind!="none") {
       if(!.categoryConceptProducer(list(producer=producer))) .categoryReject("Hierarchy rollup requires concept identities.")
       rollup <- get(".categoryRollupMap",mode="function")(ctx$handle,s$rollup)
-      targets <- unique(unlist(rollup$mapping,use.names=FALSE))
-      target_records <- if(length(targets))get(".conceptVocabulary",mode="function")(ctx$handle,sub("^concept:","",targets)) else list()
+      # A public target domain includes unused hierarchy categories as well.
+      public_targets <- unique(c(unlist(s$levels,use.names=FALSE),
+        unlist(s$rollup$ancestors,use.names=FALSE),unlist(s$rollup$priority,use.names=FALSE)))
+      targets <- union(unique(unlist(rollup$mapping,use.names=FALSE)),public_targets)
+      target_records <- if(!length(targets))list() else if(isFALSE(ctx$ir$options$translate_concepts)) .conceptIdRecords(sub("^concept:","",targets)) else get(".conceptVocabulary",mode="function")(ctx$handle,sub("^concept:","",targets))
       names(target_records) <- targets
       map <- .conceptMapOverlay(.conceptMap(ctx$ir$options$labels,"recipe",wire=TRUE),.conceptMap(node$labels,"variable",wire=TRUE))
       for(key in targets) {
         target_records[[key]]$id <- key
         id <- sub("^concept:","",key)
-        if(id %in% names(map)) {target_records[[key]]$origin<-"variable";target_records[[key]]$label<-map[[id]]}
+        if(!isFALSE(ctx$ir$options$translate_concepts) && id %in% names(map)) {target_records[[key]]$origin<-"variable";target_records[[key]]$label<-map[[id]]}
       }
-      target_records <- get(".categoryVocabularyLabels",mode="function")(ctx$handle,target_records,s)
-      # The declared hierarchy domain is public. Carry all its mapped source
-      # identities, so consumed alias contracts cannot depend on local rows.
+      if(!isFALSE(ctx$ir$options$translate_concepts))target_records <- get(".categoryVocabularyLabels",mode="function")(ctx$handle,target_records,s)
+      # The full map must agree across sites. Expansion from the local vocabulary
+      # is observed metadata; only identities written by the analyst are public.
       for(key in setdiff(names(rollup$mapping),names(records)))if(length(rollup$mapping[[key]])) {
         r<-target_records[[rollup$mapping[[key]][1L]]]
         r$id<-key;r$effective_id<-key;records[[key]]<-r
@@ -139,7 +142,11 @@
         r$id<-key;r$effective_id<-target;records[[key]]<-r
       }
       for(key in setdiff(targets,names(records)))records[[key]]<-target_records[[key]]
-      declared <- union(intersect(declared,names(records)),union(targets,intersect(names(rollup$mapping),names(records))))
+      domain <- s$rollup$domain
+      public_domain <- if(is.list(domain) && !is.null(names(domain)))character() else unlist(domain,use.names=FALSE)
+      public <- unique(c(public_domain,unlist(s$rollup$ancestors,use.names=FALSE),unlist(s$rollup$priority,use.names=FALSE)))
+      declared <- union(intersect(declared,names(records)),intersect(public,names(records)))
+      discovered <- setdiff(union(targets,names(rollup$mapping)),declared)
     }
     effective_spec<-s
     if(is.list(s[["order"]]$metadata))effective_spec[["order"]]<-list(kind="category_order",keys=as.list(.categoryOrderCheck(s[["order"]])))
@@ -161,6 +168,7 @@
     if(identical(s$missing$na,"level")) sentinel<-c(sentinel,"special:missing")
     if(identical(s$missing$unknown,"level")) sentinel<-c(sentinel,"special:unknown")
     for(key in sentinel)records[[key]]<-list(id=key,label=as.character(s$missing$labels[[sub("^special:","",key)]]),origin="sentinel")
+    declared<-union(declared,intersect(c(unlist(s$levels,use.names=FALSE),names(s$recode$map)),names(records)))
     declared<-union(declared,sentinel)
     if(identical(s$missing$na,"level"))ids[is.na(ids)&available]<-"special:missing"
     if(length(s$recode$map)) {
@@ -172,15 +180,18 @@
     records<-lapply(records,function(r){r$kind<-"category";r$category<-contract;r})
     resolved<-.categoryResolveRecords(unname(records),complete=FALSE,identity=contract)
     if(!is.null(explicit$levels) && (producer$kind!="concept" || length(s$recode$map)) && !setequal(unlist(explicit$levels,use.names=FALSE),resolved$keys)) .categoryReject("Declare the complete existing output domain; new literal levels require an explicit producer or recode label.","category_domain_incompatible")
+    # A complete recode makes every unlisted source value missing. Keeping its
+    # private source key in the metadata would needlessly disclose occurrence.
+    absent <- names(resolved$aliases)[is.na(resolved$aliases)]
+    ids[ids %in% absent] <- NA_character_
+    records <- records[setdiff(names(records),setdiff(absent,declared))]
+    resolved <- .categoryResolveRecords(unname(records),complete=FALSE,identity=contract)
     values<-resolved$labels[match(ids,resolved$ids)]
     values[!available]<-NA_character_
     frame[[n]]<-.categoryFactor(values,resolved)
     contracts[[n]]<-list(kind="category",category=contract,ids=ids,records=records,
-      declared=declared,resolved=resolved,owner=owner)
-    if(!is.null(c$upstream_safe)) {
-      contracts[[n]]$upstream_safe<-c$upstream_safe
-      contracts[[n]]$upstream_admitted<-intersect(c$upstream_admitted,names(records))
-    }
+      declared=declared,discovered=discovered,resolved=resolved,owner=owner)
+
   }
   if(length(contracts))attr(frame,"omop_concepts")<-contracts
   for(n in names(frame)) {

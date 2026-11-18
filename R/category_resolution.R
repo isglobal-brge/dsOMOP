@@ -42,8 +42,6 @@
     if (recode$unmatched=="missing") keys[!hit & !grepl("^special:",ids) & !vapply(by_id,function(rr)isTRUE(rr[[1L]]$domain_only),logical(1))] <- NA_character_
     lev <- unlist(recode$levels,use.names=FALSE)
     lab <- unlist(recode$labels %||% sub("^[^:]+:","",lev),use.names=FALSE)
-    if (recode$unmatched=="keep" && !all(keys[!is.na(keys)] %in% c(lev,grep("^special:",ids,value=TRUE))))
-      .categoryReject("Recode levels must cover all retained identities.","category_domain_incompatible")
     labels[hit] <- lab[match(keys[hit],lev)]
   }
   # Equal explicit A-27 concept labels merge only after the current recode.
