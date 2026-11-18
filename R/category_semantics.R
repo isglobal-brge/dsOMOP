@@ -231,6 +231,7 @@
 
 # Release metadata has nullable fields and arrays; plans still reject R NA.
 .categoryMetadataPlain <- function(x) {
+  if(is.null(x))return(NULL)
   if(is.list(x))return(lapply(x,.categoryMetadataPlain))
   if(is.atomic(x)&&!is.null(names(x)))return(lapply(as.list(x),.categoryMetadataPlain))
   if(is.atomic(x)&&length(x)!=1L)return(lapply(seq_along(x),function(i).categoryMetadataPlain(x[[i]])))

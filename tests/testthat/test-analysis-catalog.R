@@ -1121,8 +1121,6 @@ test_that("valid external aggregate is gated and contracted ratios are rebuilt",
   withr::with_options(list(nfilter.tab = 3, dsomop.nfilter.band = 5), {
     out <- .omopAnalysisRun(h, entry$name)
     expect_identical(names(out), names(entry$meta$output_contract$columns))
-    expect_true(is.factor(out$condition_concept_id))
-    expect_true("condition_concept_id" %in% names(attr(out, "omop_concepts")))
     expect_equal(out$events, 45)
     expect_equal(out$n_persons, 95)
     expect_equal(out$rate, 45 / 95 * 100)
@@ -1171,6 +1169,8 @@ test_that("valid external R assign is firewalled and pseudonymized", {
     expect_false(any(out$person_id %in% as.character(1:5)))
     expect_identical(attr(out, "dsomop_protected"), "person_id")
     expect_identical(names(out), names(entry$meta$output_contract$columns))
+    expect_true(is.factor(out$condition_concept_id))
+    expect_true("condition_concept_id" %in% names(attr(out, "omop_concepts")))
   })
 })
 
