@@ -40,7 +40,8 @@
   values <- lapply(status$published, function(root) lapply(root, function(c) {
     v <- get(c$symbol, run$ctx$target_env)
     if (inherits(v, "FlowerDatasetDescriptor")) {
-      testthat::expect_identical(v$metadata$format, "parquet")
+      testthat::expect_identical(v$metadata$format,
+        if (requireNamespace("arrow", quietly = TRUE)) "parquet" else "csv")
       chunks <- list(); .publishReadChunks(v, function(x) {if(!is.null(chunk_check))chunk_check(x);chunks[[length(chunks) + 1L]] <<- x})
       v <- do.call(rbind, chunks)
     }

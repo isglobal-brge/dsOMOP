@@ -260,7 +260,8 @@
     shared <- spec$columns[[col]]
     if (identical(c$kind, "date") && !identical(.jcsCanonical(shared$calendar), .jcsCanonical(c$calendar))) .dateReject("Changed shared calendar identity.")
     if(identical(c$kind,"category")&&!identical(.jcsCanonical(shared$category),.jcsCanonical(c$category))) .categoryReject("Changed category contract.","category_domain_incompatible")
-    .conceptValidateResolution(shared, c$records)
+    a <- .conceptAssess(df, col, c, discover = FALSE)
+    .conceptValidateResolution(shared, c$records[union(a$levels,c$declared)])
     ids <- as.character(unlist(shared$ids, use.names = FALSE))
     labels <- unname(.categoryNullableStrings(shared$labels))
     levels <- as.character(unlist(shared$levels, use.names = FALSE))
@@ -268,7 +269,6 @@
         anyDuplicated(ids) || anyDuplicated(levels) || !setequal(unique(labels[!is.na(labels)]), levels)) {
       stop("Invalid shared concept levels.", call. = FALSE)
     }
-    a <- .conceptAssess(df, col, c, discover = FALSE)
     if (!a$safe || !all(c(a$levels, c$declared) %in% ids)) {
       stop("Concept reconciliation cannot certify complete disclosure-safe coverage.", call. = FALSE)
     }

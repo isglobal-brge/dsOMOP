@@ -223,7 +223,7 @@
           }
           r
         }),record_keys)
-        c<-list(kind="category",category=metadata,ids=value,records=records,declared=public,resolved=.categoryResolveRecords(unname(records),identity=metadata))
+        c<-list(kind="category",category=metadata,ids=value,records=records,declared=public,discovered=contract$discovered,resolved=.categoryResolveRecords(unname(records),identity=metadata))
         value<-.categoryFactor(c$resolved$labels[match(value,c$resolved$ids)],c$resolved)
         attr(value,"category_consumed")<-c
       }

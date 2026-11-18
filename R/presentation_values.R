@@ -107,7 +107,7 @@
       records<-get(".categoryVocabularyLabels",mode="function")(ctx$handle,records,s)
     }
     rollup <- NULL
-    discovered <- character()
+    discovered <- as.character(unlist(c$discovered,use.names=FALSE))
     if(!is.null(s$rollup) && s$rollup$kind!="none") {
       if(!.categoryConceptProducer(list(producer=producer))) .categoryReject("Hierarchy rollup requires concept identities.")
       rollup <- get(".categoryRollupMap",mode="function")(ctx$handle,s$rollup)
@@ -146,7 +146,7 @@
       public_domain <- if(is.list(domain) && !is.null(names(domain)))character() else unlist(domain,use.names=FALSE)
       public <- unique(c(public_domain,unlist(s$rollup$ancestors,use.names=FALSE),unlist(s$rollup$priority,use.names=FALSE)))
       declared <- union(intersect(declared,names(records)),intersect(public,names(records)))
-      discovered <- setdiff(union(targets,names(rollup$mapping)),declared)
+      discovered <- union(discovered,setdiff(union(targets,names(rollup$mapping)),declared))
     }
     effective_spec<-s
     if(is.list(s[["order"]]$metadata))effective_spec[["order"]]<-list(kind="category_order",keys=as.list(.categoryOrderCheck(s[["order"]])))

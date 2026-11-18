@@ -113,7 +113,7 @@
     shared <- spec$columns[[col]]
     if (identical(meta$contracts[[col]]$kind, "date") && !identical(.jcsCanonical(shared$calendar), .jcsCanonical(meta$contracts[[col]]$calendar))) .dateReject("Changed staged calendar identity.")
     if(identical(meta$contracts[[col]]$kind,"category")&&!identical(.jcsCanonical(shared$category),.jcsCanonical(meta$contracts[[col]]$category))) .categoryReject("Changed staged category contract.","category_domain_incompatible")
-    .conceptValidateResolution(shared, meta$contracts[[col]]$records)
+    .conceptValidateResolution(shared, meta$contracts[[col]]$records[report$levels[[col]]])
     ids <- as.character(unlist(shared$ids, use.names = FALSE))
     labels <- unname(.categoryNullableStrings(shared$labels))
     levels <- as.character(unlist(shared$levels, use.names = FALSE))
@@ -124,7 +124,6 @@
     old_ids <- as.character(unlist(old$ids, use.names = FALSE))
     old_labels <- unname(.categoryNullableStrings(old$labels))
     new_labels <- labels[match(old_ids, ids)]
-    if (any(is.na(new_labels) & !is.na(old_labels))) stop("Incomplete staged concept coverage.", call. = FALSE)
     mappings[[col]] <- setNames(new_labels, old_labels)
     meta$contracts[[col]]$resolved <- shared
   }

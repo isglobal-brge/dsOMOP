@@ -323,3 +323,11 @@ test_that("legacy reports identify rules without counts and include empty domain
     expect_true(is.factor(omopAsFactorColumnsDS(factor_test_frame(cause_concept_id=NA_integer_), list(cause_concept_id=character()))$cause_concept_id))
   })
 })
+
+test_that('untagged dictionaries retain the exact concept_id semantic column', {
+  withr::with_options(factor_safe_options, {
+    frame <- factor_test_frame(concept_id=c(10L,2L))
+    expect_setequal(omopFactorLevelsDS(frame)$levels$concept_id,c('2','10'))
+    expect_true(is.factor(omopAsFactorColumnsDS(frame,list(concept_id=c('2','10')))$concept_id))
+  })
+})
