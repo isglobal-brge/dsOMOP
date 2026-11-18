@@ -15,13 +15,27 @@
   Stricter discovery protects nothing: `ds.asFactor` on the same column already
   releases these levels, and declared per-concept 0/1 columns give exact counts
   through their means. Looser discovery would create a disclosure gap.
-- Analyst-declared levels, label maps, complete recodes and binary domains need
-  no discovery. Locally discovered vocabulary expansions remain observed.
+- Declared levels need no discovery and have no level limit: analyst-declared
+  levels, label maps, complete recodes, binary domains, and concept sets
+  resolved on the public vocabulary tables. A table event restricted by a
+  concept set declares that resolved set for its concept column, in long
+  outputs, value reducers and dictionaries. Values outside a declaration, kept
+  unmapped values and hierarchy targets reached only through observed values
+  are discovered.
   Refusals identify the column, site and rule without counts and revoke outputs;
   declare levels, group them with `omop_category_recode()` or
-  `omop_category_rollup()`, or narrow events with `concepts =`.
-  Counts/tables, subset, DP, person-key and sensitive-column protections, and
-  admission of generated per-concept column names, are unchanged.
+  `omop_category_rollup()`, or narrow events with `concepts =`. Each server's
+  administrator may also raise `nfilter.levels.max` / `nfilter.levels.density`.
+- Counted releases follow the DataSHIELD table rule only. `ds.omop.value.counts`,
+  `ds.omop.crosstab` and concept drilldowns no longer refuse, or drop the
+  categorical breakdown, because a column has more than `nfilter.levels.max`
+  distinct values: values below `nfilter.tab` persons are still dropped or
+  suppressed and released counts banded, so unreleased rare values no longer
+  block the frequent ones. Generated concept column names (legacy wide pivots
+  and features) and covariate references follow the level rule without a
+  per-concept person minimum.
+- Counts/tables, subset, DP, person-key and sensitive-column protections are
+  unchanged.
 
 # dsOMOP 2.10.5 (2026-11-15)
 
