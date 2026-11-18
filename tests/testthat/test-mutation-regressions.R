@@ -56,6 +56,19 @@ test_that("concept selectors retain shared unused levels through assignment", {
   }
 })
 
+test_that("row verbs refuse retained raw concept columns until the source is republished", {
+  withr::local_options(.mfix_options)
+  raw <- .mfix_frame(cause_concept_id = c(2L, 10L, 2L, 10L, 2L))
+  expect_error(omopSelectDS(raw, "cause_concept_id"), "always categories since 2.10.6.*republish")
+  expect_error(.mfix_mut(raw, .mfix_col("cause_concept_id")), "always categories since 2.10.6.*republish")
+  tagged <- raw
+  names(tagged)[names(tagged) == "cause_concept_id"] <- "cause"
+  attr(tagged, "omop_concept_cols") <- "cause"
+  expect_error(omopFilterDS(tagged, "cause", "==", 2L), "always categories since 2.10.6.*republish")
+  expect_error(omopMergeDS(raw, raw), "always categories since 2.10.6.*republish")
+  expect_error(omopBindRowsDS(tagged, tagged), "always categories since 2.10.6.*republish")
+})
+
 test_that("integer branches and coalesce use one lossless prototype in every order", {
   withr::local_options(.mfix_options)
   big <- bit64::as.integer64(c("9007199254740993", "200", NA, "9223372036854775807", "-9007199254740993"))

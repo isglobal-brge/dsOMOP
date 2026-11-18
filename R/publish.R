@@ -622,6 +622,20 @@ omopStagedRevokeDS <- function(exec_symbol) {
   .publishCommit(ctx)
   result <- get("result", ctx$target_env, inherits = FALSE)
   rm(list = ctx$id, envir = .publicationRegistry)
+  # Row verbs can receive tables retained from an older server session. A
+  # suffix/tagged concept column without a shared factor contract cannot be
+  # repaired from this site's values alone: that would give different model
+  # matrix codings across sites. Typed catalog loaders were presented above.
+  concept_columns <- unique(c(
+    grep("(^|_)concept_id($|[.][xy]$)|^conceptId$", names(result), value = TRUE),
+    attr(result, "omop_concept_cols"), names(attr(result, "omop_concepts"))))
+  concept_columns <- intersect(concept_columns, names(result))
+  unsafe <- concept_columns[!vapply(result[concept_columns], inherits, logical(1),
+                                    "dsomop_concept_factor")]
+  if (length(unsafe)) stop("Concept IDs are always categories since 2.10.6. Columns ",
+    paste(sQuote(unsafe), collapse = ", "),
+    " require shared concept factors; republish the source with ds.omop.plan.execute() before applying row verbs.",
+    call. = FALSE)
   result
 }
 
