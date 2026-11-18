@@ -8,6 +8,19 @@
   out
 }
 
+# OMOP IDs use decimal identity text even when a database returns doubles and
+# R would otherwise choose scientific notation. Character/factor labels and
+# integer64 values keep their exact text without a lossy numeric conversion.
+.conceptIdText <- function(x) {
+  if (inherits(x, "integer64") || is.factor(x) || is.character(x)) return(as.character(x))
+  out <- as.character(x)
+  if (is.numeric(x)) {
+    whole <- !is.na(x) & is.finite(x) & x == trunc(x)
+    out[whole] <- sprintf("%.0f", x[whole])
+  }
+  out
+}
+
 #' @export
 `[.dsomop_concept_factor` <- function(x, ..., drop = FALSE) {
   NextMethod("[", drop = FALSE)
@@ -50,7 +63,7 @@
     versions <- setNames(as.character(v$vocabulary_version), as.character(v$vocabulary_id))
   }
   for (i in seq_len(nrow(info))) {
-    id <- as.character(info$concept_id[[i]])
+    id <- .conceptIdText(info$concept_id[[i]])
     name <- as.character(info$concept_name[[i]])
     if (is.na(name) || !nzchar(trimws(name))) next
     vocab <- if ("vocabulary_id" %in% names(info)) as.character(info$vocabulary_id[[i]]) else ""
@@ -104,7 +117,7 @@
     recipe_map <- .conceptMap(ctx$ir$options$labels, "options.labels", wire = TRUE)
     variable_map <- .conceptMap(variable$labels, paste0("variables.", owner, ".labels"), wire = TRUE)
     map <- .conceptMapOverlay(recipe_map, variable_map)
-    ids <- as.character(frame[[col]])
+    ids <- .conceptIdText(frame[[col]])
     declared <- union(names(map), attr(columns[[col]], "concept_declared"))
     all_ids <- unique(c(ids[!is.na(ids)], declared))
     records <- if (translate) .conceptVocabulary(ctx$handle, all_ids) else .conceptIdRecords(all_ids)

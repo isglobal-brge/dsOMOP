@@ -2900,7 +2900,7 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
 }
 
 .omopConceptLevelAssessment <- function(df, col, person_col = NULL) {
-  .omopConceptDiscovery(df[[col]], nrow(df))
+  .omopConceptDiscovery(.conceptIdText(df[[col]]), nrow(df))
 }
 
 #' Report disclosure-safe concept identities for federation reconciliation
@@ -3051,7 +3051,7 @@ omopAsFactorColumnsDS <- function(df, spec, table_column = NULL) {
   }
   if (!setequal(names(contracts), allowed_cols) ||
       !all(vapply(allowed_cols, function(col) {
-        all(as.character(source[[col]][!is.na(source[[col]])]) %in% contracts[[col]])
+        all(.conceptIdText(source[[col]][!is.na(source[[col]])]) %in% contracts[[col]])
       }, logical(1L)))) {
     stop("Incomplete shared concept coverage; concept IDs are always categories since 2.10.6.", call. = FALSE)
   }
@@ -3059,7 +3059,7 @@ omopAsFactorColumnsDS <- function(df, spec, table_column = NULL) {
   applied_levels <- list()
   for (col in names(contracts)) {
     levels_col <- contracts[[col]]
-    recoded <- .conceptFactor(as.character(source[[col]]), levels = levels_col)
+    recoded <- .conceptFactor(.conceptIdText(source[[col]]), levels = levels_col)
     if (!identical(recoded, df[[col]])) {
       df[[col]] <- recoded
       applied_levels[[col]] <- levels_col

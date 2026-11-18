@@ -205,6 +205,7 @@ test_that("baseline coverage: unique values exact, uncovered NA, ambiguous dropp
     published <- .planExecute(handle, plan, list(demo = "demo_df"))$demo
     published <- .expect_legacy_age_text(published, NULL,
       "A-E6 coverage preserves exact values under A-27/A-28 age presentation")
+    published <- .expect_legacy_concept_ids(published, out)
     expect_equal(published[, names(out)], out)
   })
 })
@@ -345,9 +346,10 @@ test_that("sparse format returns covariates, references, and person map", {
                       names(sparse$covariateRef)))
     expect_true(all(c("rowId", "person_id") %in% names(sparse$personRef)))
 
-    # CovariateId = conceptId * 1000 + analysisId
+    expect_true(is.factor(sparse$covariateRef$conceptId))
+    # The feature key uses the numeric value of the ID label, never factor codes.
     for (i in seq_len(nrow(sparse$covariateRef))) {
-      expected <- sparse$covariateRef$conceptId[i] * 1000 +
+      expected <- as.numeric(as.character(sparse$covariateRef$conceptId[i])) * 1000 +
         sparse$covariateRef$analysisId[i]
       expect_equal(sparse$covariateRef$covariateId[i], expected)
     }
@@ -601,11 +603,12 @@ test_that("concept dictionary collects concepts from other outputs", {
     expect_true(all(c("concept_id", "concept_name", "domain_id",
                        "used_in_outputs") %in% names(dict)))
 
-    # Should include the diabetes concept (201820) and type concept (44818518)
-    expect_true(201820 %in% dict$concept_id)
+    # Declared domain plus observed concept-valued columns use ID labels.
+    expect_true(all(c("201820","44818518") %in% as.character(dict$concept_id)))
+    expect_identical(attr(dict,"omop_dictionary_declared"),"201820")
 
     # used_in_outputs should reference "conditions"
-    row_201820 <- dict[dict$concept_id == 201820, ]
+    row_201820 <- dict[dict$concept_id == "201820", ]
     expect_true(grepl("conditions", row_201820$used_in_outputs))
   })
 })
@@ -1247,7 +1250,7 @@ test_that("temporal_covariates returns covariates and episode references", {
 
     # CovariateId = conceptId * 1000 + analysisId
     for (i in seq_len(nrow(tc$covariateRef))) {
-      expected <- tc$covariateRef$conceptId[i] * 1000 +
+      expected <- as.numeric(as.character(tc$covariateRef$conceptId[i])) * 1000 +
         tc$covariateRef$analysisId[i]
       expect_equal(tc$covariateRef$covariateId[i], expected)
     }

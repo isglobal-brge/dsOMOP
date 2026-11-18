@@ -210,7 +210,7 @@
     concept_cols <- names(columns)[vapply(columns, .conceptColumn, logical(1))]
     total_rows <<- total_rows + nrow(frame)
     for (col in intersect(concept_cols, names(frame))) {
-      ids <- as.character(frame[[col]])
+      ids <- .conceptIdText(frame[[col]])
       observed <- unique(ids[!is.na(ids)])
       identities[[col]] <<- union(identities[[col]], observed)
 
@@ -231,7 +231,7 @@
   meta <- .ds_arg(updated$metadata$concept_presentation)
   mappings <- lapply(names(meta$contracts), function(col) {
     physical <- as.character(meta$names[[col]])
-    setNames(as.character(sample[[physical]]), as.character(raw_sample[[col]]))
+    setNames(as.character(sample[[physical]]), .conceptIdText(raw_sample[[col]]))
   })
   names(mappings) <- names(meta$contracts)
   meta$total <- total_rows
@@ -245,7 +245,7 @@
       ids <- as.character(unlist(resolved$ids, use.names = FALSE))
       labels <- as.character(unlist(resolved$labels, use.names = FALSE))
       levels <- as.character(unlist(resolved$levels, use.names = FALSE))
-      values <- unname(mappings[[col]][as.character(frame[[col]])])
+      values <- unname(mappings[[col]][.conceptIdText(frame[[col]])])
       frame[[col]] <- if(identical(meta$contracts[[col]]$kind,"category")) .categoryFactor(values,resolved) else
         if((meta$contracts[[col]]$kind %||% "") %in% c("date","number")) .dateOrdered(values,levels) else .conceptFactor(values, levels = levels)
     }

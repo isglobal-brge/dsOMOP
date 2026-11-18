@@ -190,7 +190,9 @@
       expect_identical(descriptor$metadata$csv_encoding, "backslash-v1")
       descriptor$metadata$csv_encoding <- NULL
     }
-    return(structure(list(descriptor = descriptor, staged_file = .b10_read_staged(x)),
+    staged <- .b10_read_staged(x)
+    staged$legacy_concept_bytes_sha256 <- .legacy_concept_csv_bytes(x)
+    return(structure(list(descriptor = descriptor, staged_file = staged),
                      class = c("b10_staged", class(x))))
   }
   if (is.list(x) && !is.data.frame(x)) {
@@ -357,6 +359,7 @@
 }
 # Replay tests: output by output, then the complete canonical forms (testthat).
 .b10_expect_result <- function(got, want, info) {
+  got <- .b10_roundtrip(.b10_canon(.expect_legacy_concept_ids(.b10_decode(got), .b10_decode(want), info)))
   expect_identical(got$names, want$names, info = paste(info, "output names and order"))
   got_items <- stats::setNames(got$items, vapply(.b10_or(got$names, list()), as.character, ""))
   for (i in seq_along(want$items)) {
@@ -584,7 +587,7 @@ test_that("safe-class v1 plans reproduce their 2.10.2 results on the default fix
       expect_identical(contract$resolved$levels, "MALE")
       expect_identical(contract$records[["8507"]]$origin, "vocabulary")
       expect_identical(contract$records[["8507"]]$label, "MALE")
-      expect_null(contract$declared)
+      expect_length(contract$declared, 0L)
       expect_null(contract$owner)
       frame$gender_concept_id <- as.character(column)
       attr(frame, "omop_concept_cols") <- NULL
