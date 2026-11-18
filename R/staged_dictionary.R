@@ -1,4 +1,4 @@
-# Concept-reference support for SQL-streamed staged outputs.
+# Concept dictionary identities from declared and observed source outputs.
 
 .declaredOutputConceptIds <- function(handle, output, expand = TRUE) {
   if (!is.list(output)) return(integer(0))
@@ -38,6 +38,11 @@
 .dictionaryObservedIds <- function(handle, value, output, root, component=root) {
   ids <- character()
   append_ids <- function(x) {
+    if(is.numeric(x) && !inherits(x,"integer64")) {
+      if(any(!is.na(x) & (!is.finite(x) | x<0 | x>2147483647 | x!=trunc(x))))
+        stop("Concept dictionary requires valid OMOP concept identities.",call.=FALSE)
+      x <- as.integer(x)
+    }
     x <- as.character(x[!is.na(x)])
     if(length(x) && any(!grepl("^[0-9]+$",x)))stop("Concept dictionary requires original concept identities.",call.=FALSE)
     ids <<- union(ids,x)
