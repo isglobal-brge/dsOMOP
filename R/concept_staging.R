@@ -132,7 +132,13 @@
     old <- meta$contracts[[col]]$resolved
     old_ids <- as.character(unlist(old$ids, use.names = FALSE))
     old_labels <- unname(.categoryNullableStrings(old$labels))
-    new_labels <- labels[match(old_ids, ids)]
+    # A merged alias member stored under its group's label follows its
+    # effective identity when the shared union lists only that identity.
+    effective <- old_ids
+    old_aliases <- .categoryNullableStrings(old$aliases)
+    member <- !(old_ids %in% ids) & old_ids %in% names(old_aliases)
+    effective[member] <- unname(old_aliases[old_ids[member]])
+    new_labels <- labels[match(effective, ids)]
     mappings[[col]] <- setNames(new_labels, old_labels)
     meta$contracts[[col]]$resolved <- shared
   }

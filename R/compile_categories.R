@@ -2,7 +2,23 @@
   # This declaration is released in codebook/report schemas, including for
   # public binary indicators and counts. Local vocabulary expansion belongs to
   # private execution and must never be attached to these public declarations.
-  list(variable=input)
+  # A rollup whose targets are not all declared carries only the digest of its
+  # map of the declared domain (vocabulary metadata, which the category column
+  # itself already reports): sites whose vocabularies map it differently then
+  # refuse, as they do for that column, instead of meaning different things.
+  maps<-list()
+  walk<-function(x,path="input") {
+    if(!is.list(x))return(NULL)
+    r<-x$category_spec$rollup
+    if(!is.null(r)&&r$kind!="none") {
+      map<-.categoryRollupMap(ctx$handle,r)
+      public<-unique(c(unlist(x$category_spec$levels,use.names=FALSE),unlist(r$ancestors,use.names=FALSE),unlist(r$priority,use.names=FALSE)))
+      if(!(length(public)&&all(unlist(map$mapping,use.names=FALSE) %in% public)))maps[[path]]<<-map$digest
+    }
+    for(i in seq_along(x))if(is.list(x[[i]]))walk(x[[i]],paste0(path,"/",names(x)[i] %||% i))
+  }
+  walk(input)
+  if(length(maps))list(variable=input,maps=maps) else list(variable=input)
 }
 
 .categorySetIndicator <- function(ctx,raw,spec,key,missing="propagate",labels=NULL) {
@@ -207,7 +223,13 @@
         public <- if(identical(contract$kind,"category"))unname(aliases[contract$declared]) else
           effective[match(contract$declared,names(contract$records))]
         public <- unique(public[!is.na(public)])
-        record_keys<-union(unique(value[!is.na(value)]),public)
+        # Alias members of a released identity travel with it when the recipe
+        # declares them (its labels map is public): an outer recode of any member
+        # then applies to the whole merged group. Undeclared inputs stay private.
+        declared_keys <- as.character(unlist(contract$declared, use.names = FALSE))
+        released <- union(unique(value[!is.na(value)]), public)
+        members <- names(aliases)[!is.na(aliases) & aliases %in% released & names(aliases) %in% declared_keys]
+        record_keys<-union(released,members)
         records<-setNames(lapply(record_keys,function(key) {
           identity<-if(key %in% names(aliases))aliases[[key]] else key
           r<-contract$records[[key]] %||% list(origin="producer")
