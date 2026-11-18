@@ -168,9 +168,9 @@ test_that("asFactorColumns errors on a non-omop.table target", {
   expect_error(omopAsFactorColumnsDS(1:3, list()), "omop.table")
 })
 
-test_that("asFactorColumns is a no-op for an empty spec", {
+test_that("asFactorColumns rejects an empty concept spec", {
   df <- factor_test_frame(gender_concept_id = c(8532L, 8507L))
-  expect_identical(omopAsFactorColumnsDS(df, list()), df)
+  expect_error(omopAsFactorColumnsDS(df, list()), "Incomplete shared concept coverage")
 })
 
 test_that("asFactorColumns rejects ambiguous duplicate column contracts", {
@@ -217,13 +217,12 @@ test_that("asFactorColumns harmonization is lossless when levels cover data", {
   })
 })
 
-test_that("asFactorColumns makes a safe but partial contract an exact no-op", {
+test_that("asFactorColumns refuses a partial contract", {
   withr::with_options(factor_safe_options, {
     df <- factor_test_frame(gender_concept_id = c(8532L, 8507L, 8532L))
-    expect_silent(out <- omopAsFactorColumnsDS(
+    expect_error(omopAsFactorColumnsDS(
       df, list(gender_concept_id = "8507")
-    ))
-    expect_identical(out, df)
+    ), "Incomplete shared concept coverage")
   })
 })
 
@@ -261,14 +260,12 @@ test_that("asFactorColumns drops empty and whitespace levels from the spec", {
   })
 })
 
-test_that("asFactorColumns re-enforces the level cap independently of client", {
-  withr::with_options(list(nfilter.levels.max = 3), {
+test_that("asFactorColumns applies public levels without a count or density rule", {
+  withr::with_options(list(nfilter.levels.max = 3, nfilter.levels.density = 0.1), {
     df <- factor_test_frame(condition_concept_id = 1:5)
-    expect_error(
-      omopAsFactorColumnsDS(df,
-        list(condition_concept_id = as.character(1:5))),
-      "nfilter.levels.max"
-    )
+    out <- omopAsFactorColumnsDS(df, list(condition_concept_id = as.character(1:20)))
+    expect_true(is.factor(out$condition_concept_id))
+    expect_identical(levels(out$condition_concept_id), as.character(1:20))
   })
 })
 
@@ -302,36 +299,27 @@ test_that("asFactorColumns does not treat values with missing persons as empty",
     person_id = c(NA_character_, "p2"),
     gender_concept_id = c("B", NA_character_)
   )
-  out <- omopAsFactorColumnsDS(df, list(gender_concept_id = "A"))
-  expect_identical(out, df)
+  expect_error(omopAsFactorColumnsDS(df, list(gender_concept_id = "A")), "Incomplete shared concept coverage")
 })
 
-test_that("asFactorColumns cannot be composed as a rare-level oracle", {
-  withr::with_options(list(
-    nfilter.levels.max = 40,
-    nfilter.levels.density = 1,
-    nfilter.tab = 2
-  ), {
-    without_b <- factor_test_frame(
-      gender_concept_id = c(rep("A", 5), "C")
-    )
-    with_b <- factor_test_frame(
-      gender_concept_id = c(rep("A", 4), "B", "C")
-    )
-    contract <- list(gender_concept_id = c("A", "B"))
+test_that("legacy discovery permits rare levels under DataSHIELD's rule", {
+  withr::with_options(list(nfilter.levels.max = 40, nfilter.levels.density = 0.5, nfilter.tab = 5), {
+    df <- factor_test_frame(person_id = rep("same", 6), gender_concept_id = c("A", "A", "B", NA, NA, NA))
+    report <- omopFactorLevelsDS(df)
+    expect_setequal(report$levels$gender_concept_id, c("A", "B"))
+    expect_length(report$unsafe, 0)
+    expect_error(omopAsFactorColumnsDS(df, list(gender_concept_id = "A")), "Incomplete shared concept coverage")
+  })
+})
 
-    out_without_b <- omopAsFactorColumnsDS(without_b, contract)
-    out_with_b <- omopAsFactorColumnsDS(with_b, contract)
-
-    expect_identical(out_without_b, without_b)
-    expect_identical(out_with_b, with_b)
-    expect_identical(
-      omopFactorLevelsDS(out_without_b),
-      omopFactorLevelsDS(out_with_b)
-    )
-    expect_identical(
-      omopFactorLevelsDS(out_with_b)$unsafe,
-      "gender_concept_id"
-    )
+test_that("legacy reports identify rules without counts and include empty domains", {
+  withr::with_options(list(nfilter.levels.max = 1, nfilter.levels.density = 0.1), {
+    report <- omopFactorLevelsDS(factor_test_frame(cause_concept_id = c(1L, 2L, NA)))
+    expect_identical(report$unsafe_rules$cause_concept_id, c("nfilter.levels.max", "nfilter.levels.density"))
+    expect_length(report$levels, 0)
+    empty <- omopFactorLevelsDS(factor_test_frame(cause_concept_id = c(NA_integer_, NA_integer_)))
+    expect_identical(empty$levels$cause_concept_id, character())
+    expect_length(empty$unsafe, 0)
+    expect_true(is.factor(omopAsFactorColumnsDS(factor_test_frame(cause_concept_id=NA_integer_), list(cause_concept_id=character()))$cause_concept_id))
   })
 })

@@ -27,25 +27,18 @@
   numbers <- attr(df,"omop_numbers") %||% list()
   schema <- attr(df,"omop_codebook_schema")
   if (!length(contracts) && !length(generated) && !length(numbers) && is.null(schema)) return(descriptor)
-  keys <- intersect(.PERSON_KEY_COLS(), names(df))
-  totals <- if (length(keys)) length(unique(df[[keys[[1L]]]])) else 0L
+  totals <- nrow(df)
   support <- lapply(contracts, function(c) {
     ids <- unique(c$ids[!is.na(c$ids)])
-    setNames(vapply(ids, function(id) {
-      if (length(keys)) length(unique(df[[keys[[1L]]]][which(c$ids == id)])) else 0L
-    }, 0L), ids)
+    setNames(rep(1L, length(ids)), ids)
   })
-  reference_support <- attr(df, "omop_reference_support")
-  if (!is.null(reference_support)) {
-    totals <- reference_support$total
-    support <- lapply(contracts, function(c) reference_support$counts)
-  }
+  reference_support <- if(isTRUE(attr(df,"omop_concept_reference")))attr(df,"omop_reference_support")
   contracts <- lapply(contracts, function(c) { c$ids <- NULL; c })
   descriptor$metadata$concept_presentation <- .conceptEncode(list(
     protocol = 1L, contracts = contracts, generated = generated, numbers = numbers, schema = schema,
     handle = attr(df, "omop_presentation_handle"),
     names = attr(df, "omop_column_names") %||% setNames(names(df), names(df)),
-    reference = isTRUE(attr(df, "omop_concept_reference")) && is.null(reference_support),
+    reference_support = reference_support,
     support = support, total = totals))
   descriptor
 }
@@ -55,24 +48,23 @@
   .ds_arg(descriptor$metadata$concept_presentation)
 }
 
-.conceptStageReport <- function(descriptor) {
+.conceptStageReport <- function(descriptor, discover = TRUE) {
   meta <- .conceptStageData(descriptor)
   refreshed <- .conceptRefresh(meta$contracts, meta$generated, meta$handle)
   meta$contracts <- refreshed$contracts; meta$generated <- refreshed$generated
   settings <- .omopDisclosureSettings()
   out <- list(concept_protocol = 1L, levels = list(), concepts = list(),
-              unsafe = character(), nfilter_levels_max = settings$nfilter_levels_max,
+              unsafe = character(), unsafe_rules = list(), nfilter_levels_max = settings$nfilter_levels_max,
               keys = names(meta$names), generated = list())
   for (col in names(meta$contracts)) {
     c <- meta$contracts[[col]]
     support <- unlist(meta$support[[col]], use.names = TRUE)
-    safe <- (((c$kind %||% "") %in% c("date","number") || identical(c$kind,"category") && c$category$producer$kind %in% c("date","number","flag")) && all(names(support) %in% unlist(c$declared))) || isTRUE(meta$reference) || (!length(support) ||
-      (all(support >= settings$nfilter_tab) && tryCatch({
-        .assertSafeLevels(length(support), meta$total); TRUE
-      }, error = function(e) FALSE)))
-    if(!is.null(c$upstream_safe))safe<-isTRUE(c$upstream_safe)
-    if (!safe) { out$unsafe <- c(out$unsafe, col); next }
-    ids <- union(union(names(support),unlist(c$upstream_admitted,use.names=FALSE)), as.character(unlist(c$declared, use.names = FALSE)))
+    a <- .conceptAssessIds(c, names(support), meta$total, meta$reference_support, discover)
+    if (!a$safe) {
+      out$unsafe <- c(out$unsafe, col); out$unsafe_rules[[col]] <- a$rules
+      next
+    }
+    ids <- union(a$levels, as.character(unlist(c$declared, use.names = FALSE)))
     out$levels[[col]] <- ids
     out$concepts[[col]] <- unname(c$records[ids])
     if (identical(c$kind, "date")) out$calendars[[col]] <- c$calendar
@@ -107,7 +99,7 @@
   if (!identical(as.integer(spec$concept_protocol), 1L)) {
     stop("A complete concept presentation protocol is required for this staged output.", call. = FALSE)
   }
-  report <- .conceptStageReport(descriptor)
+  report <- .conceptStageReport(descriptor, discover = FALSE)
   meta <- .conceptStageData(descriptor)
   .conceptCheckEvidence(report, spec, !is.null(meta$handle))
   # Protocol-1 factor-only calls preserve numeric columns and their capsule.
@@ -128,8 +120,6 @@
     if (length(ids) != length(labels) || anyDuplicated(ids) || (!identical(meta$contracts[[col]]$kind,"category") && anyNA(labels)) ||
         anyDuplicated(levels) || !setequal(unique(labels[!is.na(labels)]), levels) ||
         !all(report$levels[[col]] %in% ids)) stop("Invalid staged concept union.", call. = FALSE)
-    density_levels <- if ((meta$contracts[[col]]$kind %||% "") %in% c("date","number","category")) length(setdiff(ids,unlist(meta$contracts[[col]]$declared))) else length(ids)
-    .assertSafeLevels(density_levels, if (isTRUE(meta$reference)) 0L else meta$total)
     old <- meta$contracts[[col]]$resolved
     old_ids <- as.character(unlist(old$ids, use.names = FALSE))
     old_labels <- unname(.categoryNullableStrings(old$labels))
@@ -198,14 +188,14 @@
 }
 
 # Legacy SQL streams and typed SQL components are presented in two bounded
-# passes. Keep distinct person/ID support privately, never full clinical rows.
+# passes. Keep distinct identities and the output row count privately.
 .conceptStagePresent <- function(ctx, descriptor, columns = NULL, root, component,
                                  reference = FALSE) {
-  if (!.reduceTranslate(ctx) || !is.null(descriptor$metadata$concept_presentation)) return(descriptor)
+  if (!is.null(descriptor$metadata$concept_presentation)) return(descriptor)
   prototype <- NULL
   reference_rows <- list()
-  identities <- persons <- list()
-  all_persons <- character()
+  identities <- list()
+  total_rows <- 0L
   .publishReadChunks(descriptor, function(frame) {
     if (is.null(prototype)) {
       prototype <<- frame[FALSE, , drop = FALSE]
@@ -215,16 +205,12 @@
       reference_rows[[length(reference_rows) + 1L]] <<- frame
     }
     concept_cols <- names(columns)[vapply(columns, .conceptColumn, logical(1))]
-    person_col <- intersect(.PERSON_KEY_COLS(), names(frame))
-    if (length(person_col)) all_persons <<- union(all_persons, as.character(frame[[person_col[[1L]]]]))
+    total_rows <<- total_rows + nrow(frame)
     for (col in intersect(concept_cols, names(frame))) {
       ids <- as.character(frame[[col]])
       observed <- unique(ids[!is.na(ids)])
       identities[[col]] <<- union(identities[[col]], observed)
-      for (id in observed) {
-        keys <- if (length(person_col)) as.character(frame[[person_col[[1L]]]][which(ids == id)]) else character()
-        persons[[col]][[id]] <<- union(persons[[col]][[id]], keys)
-      }
+
     }
   })
   if (is.null(prototype)) return(descriptor)
@@ -235,15 +221,19 @@
   reference_support <- attr(descriptor, "omop_reference_support")
   attr(sample, "omop_reference_support") <- reference_support
   attr(sample, "omop_concept_reference") <- reference
+  raw_sample <- sample
   sample <- .conceptPresent(ctx, sample, columns)
   updated <- .conceptStageCapture(sample, descriptor)
   if (is.null(updated$metadata$concept_presentation)) return(descriptor)
   meta <- .ds_arg(updated$metadata$concept_presentation)
-  meta$total <- length(all_persons)
-  meta$support <- lapply(persons, function(x) as.list(lengths(x)))
+  mappings <- lapply(names(meta$contracts), function(col) {
+    physical <- as.character(meta$names[[col]])
+    setNames(as.character(sample[[physical]]), as.character(raw_sample[[col]]))
+  })
+  names(mappings) <- names(meta$contracts)
+  meta$total <- total_rows
   if (!is.null(reference_support)) {
-    meta$total <- reference_support$total
-    meta$support <- lapply(meta$contracts, function(c) as.list(reference_support$counts))
+    meta$reference_support <- reference_support
   }
   updated$metadata$concept_presentation <- .conceptEncode(meta)
   updated <- .conceptRewritePrivate(descriptor, updated, function(frame) {
@@ -252,7 +242,9 @@
       ids <- as.character(unlist(resolved$ids, use.names = FALSE))
       labels <- as.character(unlist(resolved$labels, use.names = FALSE))
       levels <- as.character(unlist(resolved$levels, use.names = FALSE))
-      frame[[col]] <- .conceptFactor(labels[match(as.character(frame[[col]]), ids)], levels = levels)
+      values <- unname(mappings[[col]][as.character(frame[[col]])])
+      frame[[col]] <- if(identical(meta$contracts[[col]]$kind,"category")) .categoryFactor(values,resolved) else
+        if((meta$contracts[[col]]$kind %||% "") %in% c("date","number")) .dateOrdered(values,levels) else .conceptFactor(values, levels = levels)
     }
     frame <- .conceptReferenceNames(frame, meta$contracts)
     if ("concept_id" %in% names(meta$contracts) && "concept_name" %in% names(frame)) frame$concept_name <- as.character(frame$concept_id)
