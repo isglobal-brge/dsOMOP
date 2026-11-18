@@ -169,8 +169,10 @@ test_that("asFactorColumns errors on a non-omop.table target", {
 })
 
 test_that("asFactorColumns rejects an empty concept spec", {
-  df <- factor_test_frame(gender_concept_id = c(8532L, 8507L))
-  expect_error(omopAsFactorColumnsDS(df, list()), "Incomplete shared concept coverage")
+  withr::with_options(factor_safe_options, {
+    df <- factor_test_frame(gender_concept_id = c(8532L, 8507L))
+    expect_error(omopAsFactorColumnsDS(df, list()), "Incomplete shared concept coverage")
+  })
 })
 
 test_that("asFactorColumns rejects ambiguous duplicate column contracts", {
@@ -261,8 +263,10 @@ test_that("asFactorColumns drops empty and whitespace levels from the spec", {
 })
 
 test_that("asFactorColumns applies public levels without a count or density rule", {
+  # The site's own observed levels pass (one level over ten rows); the shared
+  # public union of 20 levels exceeds both limits and is still applied.
   withr::with_options(list(nfilter.levels.max = 3, nfilter.levels.density = 0.1), {
-    df <- factor_test_frame(condition_concept_id = 1:5)
+    df <- factor_test_frame(condition_concept_id = rep(5L, 10))
     out <- omopAsFactorColumnsDS(df, list(condition_concept_id = as.character(1:20)))
     expect_true(is.factor(out$condition_concept_id))
     expect_identical(levels(out$condition_concept_id), as.character(1:20))
@@ -299,7 +303,8 @@ test_that("asFactorColumns does not treat values with missing persons as empty",
     person_id = c(NA_character_, "p2"),
     gender_concept_id = c("B", NA_character_)
   )
-  expect_error(omopAsFactorColumnsDS(df, list(gender_concept_id = "A")), "Incomplete shared concept coverage")
+  withr::with_options(factor_safe_options,
+    expect_error(omopAsFactorColumnsDS(df, list(gender_concept_id = "A")), "Incomplete shared concept coverage"))
 })
 
 test_that("legacy discovery permits rare levels under DataSHIELD's rule", {

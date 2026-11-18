@@ -235,7 +235,9 @@ test_that('concept discovery uses output rows including NA and ignores per-level
   expect_identical(.conceptLevelReport(frame)$unsafe_rules$cause,'nfilter.levels.max')
   withr::local_options(list(nfilter.levels.max=2,nfilter.levels.density=0.1))
   expect_identical(.conceptLevelReport(frame)$unsafe_rules$cause,'nfilter.levels.density')
-  # Assignment accepts a public complete union independently of discovery.
+  # Once this site's own observed levels pass, assignment accepts a public
+  # complete union larger than its cap (no level-count rule on the union).
+  withr::local_options(list(nfilter.levels.max=2,nfilter.levels.density=0.2))
   shared <- .conceptResolve(unname(attr(frame,'omop_concepts')$cause$records))
   shared$ids <- c(shared$ids,'45000125')
   shared$labels <- c(shared$labels,'45000125'); shared$levels <- unique(shared$labels)
@@ -298,8 +300,10 @@ test_that('unmapped kept categories and local hierarchy expansion require discov
   attr(column,'category_spec') <- unclass(dsOMOPClient::omop_category_spec(rollup=rollup))
   frame <- .conceptPresent(ctx,data.frame(person_id=1:2,cause=c(1L,2L)),list(cause=column))
   report <- .conceptLevelReport(frame)
-  expect_setequal(report$unsafe_rules$cause,c('nfilter.levels.max','nfilter.levels.density'))
-  expect_length(report$categories,0)
+  # A declared rollup domain and the targets its public hierarchy maps it to
+  # are declared levels (2.10.6): nothing here is discovered from the rows.
+  expect_length(report$unsafe,0)
+  expect_true(length(report$categories) > 0)
   # A complete explicitly public hierarchy level requires no discovery.
   attr(column,'category_spec') <- unclass(dsOMOPClient::omop_category_spec(rollup=rollup,levels=c('concept:90','concept:91')))
   public <- .conceptPresent(ctx,data.frame(person_id=1:2,cause=c(1L,2L)),list(cause=column))
@@ -327,7 +331,8 @@ test_that('unmapped kept categories and local hierarchy expansion require discov
   wrapper <- .fragmentColumn('text',TRUE,'measure')
   attr(wrapper,'category_spec') <- unclass(dsOMOPClient::omop_category_spec(ordered=FALSE))
   wrapped <- .categoryPresent(ctx,frame,list(cause=wrapper))
-  expect_setequal(.conceptLevelReport(wrapped)$unsafe_rules$cause,c('nfilter.levels.max','nfilter.levels.density'))
+  # A nested presentation inherits the declared rollup domain: still nothing discovered.
+  expect_length(.conceptLevelReport(wrapped)$unsafe,0)
 })
 
 test_that('category reassignment covers actual rows without disclosing unused private records', {
@@ -354,6 +359,7 @@ test_that('untranslated dictionary factors preserve the separate vocabulary name
   expect_identical(as.character(frame$concept_id),as.character(raw$concept_id))
   expect_identical(frame$concept_name,raw$concept_name)
   shared <- .conceptResolve(unname(attr(frame,'omop_concepts')$concept_id$records))
+  withr::local_options(list(nfilter.levels.density=1))
   expect_identical(.conceptRelevel(frame,list(concept_protocol=1L,columns=list(concept_id=shared)))$concept_name,raw$concept_name)
   ctx$ir$options$translate_concepts <- TRUE
   translated <- .conceptPresent(ctx,raw,list(concept_id=.fragmentColumn('integer',TRUE,'concept')))
@@ -384,8 +390,10 @@ test_that('generated-column refusals identify their unchanged admission policy',
   frame <- data.frame(feature=1L)
   attr(frame,'omop_generated_columns') <- list(feature=list(declared=FALSE,permitted=FALSE))
   report <- .conceptLevelReport(frame)
-  expect_identical(report$unsafe,'feature')
-  expect_identical(report$unsafe_rules$feature,'generated-column admission')
+  # Generated keys embed concept IDs: refusals name the class, never the key.
+  expect_identical(report$unsafe,'generated concept columns')
+  expect_identical(report$unsafe_rules[['generated concept columns']],'generated-column admission')
+  expect_false('feature' %in% report$keys)
   staged <- .conceptStageReport(.conceptStageCapture(frame,list(metadata=list())))
   expect_identical(staged$unsafe_rules,report$unsafe_rules)
 })
