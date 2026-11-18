@@ -538,11 +538,43 @@
   .mutateEvalChecked(expr, df, types)
 }
 
+# Resolve selector domains from shared factor levels and written literals only.
+# Reading ordinary text values here would rediscover a site-specific domain.
+.mutateConceptDomain <- function(expr, df) {
+  variant <- .mutateVariant(expr)
+  if (identical(variant, "col")) {
+    value <- df[[expr$col]]
+    if (!inherits(value, "dsomop_concept_factor")) return(NULL)
+    return(list(levels = levels(value), concept = TRUE))
+  }
+  if (identical(variant, "lit")) {
+    value <- .verbScalar(expr$lit)
+    if (!is.null(value) && !is.character(value)) return(NULL)
+    return(list(levels = as.character(value), concept = FALSE))
+  }
+  branches <- switch(variant,
+    ifelse = list(expr$ifelse$yes, expr$ifelse$no),
+    coalesce = .jsonArrayItems(expr$coalesce),
+    case_when = c(lapply(.jsonArrayItems(expr$case_when$cases), `[[`, "then"),
+                  list(expr$case_when[["else"]] %||% list(lit = NULL))),
+    NULL)
+  if (is.null(branches)) return(NULL)
+  domains <- lapply(branches, .mutateConceptDomain, df = df)
+  if (any(vapply(domains, is.null, logical(1)))) return(NULL)
+  domain <- unique(unlist(lapply(domains, `[[`, "levels"), use.names = FALSE))
+  if (all(grepl("^(0|[1-9][0-9]*)$", domain))) domain <- domain[.conceptIdOrder(domain)]
+  list(levels = domain, concept = any(vapply(domains, `[[`, logical(1), "concept")))
+}
+
 # Native number expressions supply exact conversion at every recursive numeric
 # boundary. The default retains the closed v1 mutation evaluator semantics.
 .mutateEvalChecked <- function(expr, df, types, numeric_coerce = .mutateDouble) {
   value <- .mutateEvalNode(expr, df, types, numeric_coerce)
   type <- .mutateType(expr, types, character(0), "omopMutateDS", "")
+  if (identical(type, "text") && !is.factor(value)) {
+    domain <- .mutateConceptDomain(expr, df)
+    if (isTRUE(domain$concept)) value <- .conceptFactor(value, domain$levels)
+  }
   .mutateCheckResult(value, type, nrow(df), "<expression>")
   value
 }

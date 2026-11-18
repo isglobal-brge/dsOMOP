@@ -29,6 +29,23 @@ test_that("concept selectors retain shared unused levels through assignment", {
     expect_true(is.factor(out$answer))
     expect_identical(levels(out$answer), c("2", "10", "20"))
   }
+  # Written fallbacks are public even at sites where the branch is never used.
+  literal_selectors <- list(
+    list(coalesce = list(.mfix_col("first"), .mfix_lit("3"))),
+    list(ifelse = list(test = .mfix_flag, yes = .mfix_col("first"), no = .mfix_lit("3"))),
+    list(case_when = list(cases = list(list(when = .mfix_flag, then = .mfix_col("first"))),
+                          `else` = .mfix_lit("3"))))
+  for (expr in literal_selectors) {
+    for (flag in list(x$flag, rep(1L, 5))) {
+      local <- x
+      local$flag <- flag
+      out <- .mfix_mut(local, expr)
+      expect_true(is.factor(out$answer))
+      expect_identical(levels(out$answer), c("2", "3", "10", "20"))
+    }
+  }
+  expect_identical(as.character(.mfix_mut(x, literal_selectors[[1L]])$answer),
+                   c("2", "3", "2", "2", "3"))
   selected <- omopSelectDS(x, "first")
   filtered <- omopFilterDS(x, "first", "==", "2")
   merged <- omopMergeDS(x, x)
