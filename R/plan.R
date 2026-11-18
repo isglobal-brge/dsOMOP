@@ -3549,8 +3549,8 @@
         add_cohort_date <- !is.null(cohort_table) &&
           !is.null(out$temporal$index_window)
 
-        # Every staged long event stream preserves numeric OMOP concept IDs and
-        # therefore writes directly to Parquet without materializing in R.
+        # Long event streams first write private raw IDs without materializing
+        # all rows in R; publication then applies the shared factor contract.
         # Features/wide/sparse need in-memory reshaping, so they fall through.
         can_stream <- staged && repr == "long"
 
