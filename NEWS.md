@@ -31,17 +31,22 @@
   codes held by at least `nfilter.tab` persons, with banded counts, and no longer
   refuse because rarer, unreleased codes push a column past
   `nfilter.levels.max`. Date, time and other non-concept columns keep that level
-  gate, so exact dates are never listed. Cross-tabs are bounded by
+  gate, as before. Cross-tabs are bounded by
   `dsomop.max_pivot_concepts` supported levels per axis. Generated concept
   column names (legacy wide pivots and features) and covariate references follow
   the level rule without a per-concept person minimum, translated or not.
 - Assigning shared levels re-applies the site's own factor-level verdict before
   anything else (A-27 and legacy contracts), so an assignment cannot be used to
-  test which values occur. Refused generated concept columns are reported by
-  class, never by keys that embed concept IDs. Legacy concept dictionaries
-  reference the identities their same-plan sources admit. Hierarchy rollups over
-  a declared domain (keys or a vocabulary concept set) treat the domain and its
-  targets as declared. Legacy interval outputs present concept IDs as factors.
+  test which values occur. Generated concept columns a site does not admit are
+  refused at publication, translated or not (status reason
+  `concept_level_rule`), and reports never name their concept-bearing keys.
+  Legacy concept dictionaries name the declared sets and concept columns of
+  their sources (not reducer aliases such as `n_concept_id`), and only declared
+  concepts when the server publishes partially (`dsomop.query_strict = FALSE`).
+  Hierarchy rollups over a declared domain (keys or a vocabulary concept set)
+  treat the domain and its targets as declared. Legacy interval outputs present
+  concept IDs as factors. `omopBindRowsDS` keeps shared concept factors and
+  refuses inputs whose level sets differ.
 - Untranslated legacy plans and catalog assignments that publish concept
   factors require dsOMOPClient 2.10.6 or later (`concept_protocol`), because
   older clients do not reconcile those factors across servers; they are refused
