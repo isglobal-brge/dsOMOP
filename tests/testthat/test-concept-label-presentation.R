@@ -372,17 +372,27 @@ test_that('hierarchy-derived binary schemas release declarations without local m
   rollup <- dsOMOPClient::omop_category_rollup('snomed',separation=1L,
     domain=list(concepts=1L,include_descendants=TRUE))
   input <- list(category_spec=unclass(dsOMOPClient::omop_category_spec(rollup=rollup)))
-  testthat::local_mocked_bindings(.categoryRollupMap=function(...)stop('Local vocabulary must remain private'))
-  column <- .fragmentColumn('integer',TRUE,'measure')
-  attr(column,'semantic_flag') <- TRUE
-  attr(column,'category_input_contract') <- .categoryInputContract(ctx,input)
-  frame <- data.frame(person_id=1:2,flag=c(0L,1L))
-  attr(frame,'omop_codebook_schema') <- .categoryReleaseSchema(ctx,frame,list(flag=column))
-  report <- .conceptLevelReport(frame)
+  # The vocabulary map of the declared domain is identified by its digest only,
+  # so sites mapping it differently refuse; its expansion is never listed.
+  testthat::local_mocked_bindings(.categoryRollupMap=function(...)
+    list(adapter='A',mapping=list(`concept:2`='concept:90'),digest='map-digest'))
+  binary_report <- function(input) {
+    column <- .fragmentColumn('integer',TRUE,'measure')
+    attr(column,'semantic_flag') <- TRUE
+    attr(column,'category_input_contract') <- .categoryInputContract(ctx,input)
+    frame <- data.frame(person_id=1:2,flag=c(0L,1L))
+    attr(frame,'omop_codebook_schema') <- .categoryReleaseSchema(ctx,frame,list(flag=column))
+    .conceptLevelReport(frame)
+  }
+  report <- binary_report(input)
   declaration <- report$schema$columns[[2]]$derivation$category_input
-  expect_identical(declaration,list(variable=input))
-  expect_null(declaration$maps)
+  expect_identical(declaration,list(variable=input,maps=list(input='map-digest')))
+  expect_false(grepl('concept:2"',.jcsCanonical(report),fixed=TRUE))
   expect_length(report$unsafe,0)
+  # With every target declared, not even the digest is released.
+  input$category_spec$levels <- list('concept:90')
+  declaration <- binary_report(input)$schema$columns[[2]]$derivation$category_input
+  expect_identical(declaration,list(variable=input))
 })
 
 test_that('generated-column refusals identify their unchanged admission policy', {
