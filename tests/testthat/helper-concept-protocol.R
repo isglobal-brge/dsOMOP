@@ -3,11 +3,14 @@
 # direct server calls in these tests stand in for that client, so these
 # wrappers add the declaration and keep each method's formals. The refusal of
 # older clients is tested through the namespaced methods (dsOMOP::...).
-.with_concept_protocol <- function(name) {
-  real <- getExportedValue("dsOMOP", name)
+.with_concept_protocol <- function(method) {
+  real <- getExportedValue("dsOMOP", method)
+  # The wrapper takes the method's formals (one is `name`), so the target call
+  # is kept under a name no method uses.
+  .protocol_target <- call("::", as.name("dsOMOP"), as.name(method))
   wrapper <- function() {
     call <- sys.call()
-    call[[1L]] <- call("::", as.name("dsOMOP"), as.name(name))
+    call[[1L]] <- .protocol_target
     if (is.null(call$concept_protocol)) call$concept_protocol <- 1
     eval(call, parent.frame())
   }
