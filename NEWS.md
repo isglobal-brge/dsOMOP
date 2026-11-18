@@ -6,6 +6,7 @@
   `translate_concepts = FALSE`, labels are decimal IDs in numeric ID order:
   compare labels such as `"4306655"`, not numbers. `factor_concepts = TRUE`
   remains accepted; `factor_concepts = FALSE` is no longer supported.
+  Republish tables retained with raw concept columns before applying row verbs.
 - Observed level discovery follows dsBase 6.3.5 `asFactorDS1`: refuse when the
   number of distinct nondeclared levels exceeds `nfilter.levels.max` or
   `nfilter.levels.density` times the output column length, including missing
