@@ -149,9 +149,14 @@
   if (translate) frame <- .conceptReferenceNames(frame, contracts)
   generated <- list()
   for (key in intersect(names(columns), names(frame))) {
-    if (!translate) next
     g <- attr(columns[[key]], "concept_name")
     if (is.null(g)) next
+    if (!translate) {
+      # Untranslated generated names stay ID-based, but their admission is the
+      # same as for translated names: a refused concept column is not released.
+      if (!isTRUE(g$declared) && !isTRUE(g$permitted)) .publishReject("insufficient_support")
+      next
+    }
     owner <- g$owner
     variable <- if (length(owner)) ctx$ir$variables[[owner]] else NULL
     maps <- .conceptMapOverlay(
@@ -198,6 +203,13 @@
   assessment
 }
 
+.conceptSiteVerdict <- function(report) {
+  if (length(report$unsafe)) {
+    stop("Concept factor assignment refused by this site's factor-level rule.", call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
 .conceptAssess <- function(df, col, contract, discover = TRUE) {
   if (length(contract$ids) != nrow(df)) stop("Incomplete concept identity metadata.", call. = FALSE)
   .conceptAssessIds(contract, contract$ids, nrow(df),
@@ -229,18 +241,21 @@
   }
   generated <- refreshed$generated
   out$generated <- list()
+  refused_keys <- character()
   for (key in names(generated)) {
     g <- generated[[key]]
     if (!isTRUE(g$declared) && !isTRUE(g$permitted)) {
-      out$unsafe <- union(out$unsafe, key)
-      out$unsafe_rules[[key]] <- "generated-column admission"
+      # Generated keys embed concept IDs: report the class, never the key.
+      refused_keys <- c(refused_keys, key)
+      out$unsafe <- union(out$unsafe, "generated concept columns")
+      out$unsafe_rules[["generated concept columns"]] <- "generated-column admission"
       next
     }
     g[c("declared", "permitted")] <- NULL
     out$generated[[key]] <- g
   }
   out$numbers <- attr(df,"omop_numbers") %||% list()
-  out$keys <- names(attr(df, "omop_column_names")) %||% names(df)
+  out$keys <- setdiff(names(attr(df, "omop_column_names")) %||% names(df), refused_keys)
   if(!is.null(attr(df,"omop_codebook_schema")))out$schema<-attr(df,"omop_codebook_schema")
   out$evidence <- .conceptEvidence(out)
   out
@@ -259,7 +274,11 @@
     provenance <- .dsomopDpVerifyPersonLocal(df, policy = policy)
   }
   original <- df
-  .conceptCheckEvidence(.conceptLevelReport(df, discover = FALSE), spec, !is.null(attr(df, "omop_presentation_handle")))
+  # The site's own verdict on its observed levels applies at assignment too:
+  # a column this site refuses is never relevelled, whatever evidence is sent.
+  report <- .conceptLevelReport(df)
+  .conceptSiteVerdict(report)
+  .conceptCheckEvidence(report, spec, !is.null(attr(df, "omop_presentation_handle")))
   # Legacy factor-only calls leave numeric values and semantics untouched.
   if ("numbers" %in% names(spec)) .numberValidateShared(attr(df,"omop_numbers"), spec$numbers)
   refreshed <- .conceptRefresh(attr(df, "omop_concepts") %||% list(), attr(df, "omop_generated_columns") %||% list(), attr(df, "omop_presentation_handle"))
@@ -380,8 +399,21 @@
   if (identical(type, "concept_dictionary") && "concept_id" %in% names(columns)) {
     columns$concept_id$role <- "concept"
     attr(columns$concept_id, "concept_declared") <- attr(frame, "omop_dictionary_declared")
+    # The dictionary lists the complete declared sets of its source outputs
+    # plus the values those outputs release in the same plan, whose concept
+    # columns pass this site's discovery or are refused with the whole plan.
+    # Its rows are references, not a new domain: counting them against the
+    # dictionary's own length would refuse every dictionary.
+    attr(columns$concept_id, "concept_reference_admitted") <- TRUE
   }
   if (identical(component, "covariateRef") && "conceptId" %in% names(columns)) columns$conceptId$role <- "concept"
+  if (identical(type, "intervals_long") && "concept_id" %in% names(columns)) {
+    # Interval rows carry their source concept; its concept filters resolve on
+    # the vocabulary tables only, so their IDs are declared levels.
+    attr(columns$concept_id, "concept") <- TRUE
+    declared <- .declaredOutputConceptIds(ctx$handle, out)
+    if (length(declared)) attr(columns$concept_id, "concept_declared") <- .conceptIdText(declared)
+  }
   columns
 }
 

@@ -12,7 +12,8 @@ omopDpPlanExecuteDS(
   scope = NULL,
   combine = "union",
   ...,
-  commit_policy = "server"
+  commit_policy = "server",
+  concept_protocol = NULL
 )
 }
 \arguments{
@@ -45,6 +46,10 @@ method is required.}
 \item{commit_policy}{Character; \code{"server"} follows the server's
 strictness setting. \code{"all_or_none"} refuses the entire execution if
 any output is refused, as requested by a client skipping a small site.}
+
+\item{concept_protocol}{\code{1} when the client reconciles every published
+concept factor across servers (dsOMOPClient 2.10.6 or later). Untranslated
+legacy plans and concept-bearing catalog assignments require it.}
 }
 \value{
 A bounded publication status; sealed outputs are assigned into the

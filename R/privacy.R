@@ -679,13 +679,16 @@ omopDpStatusDS <- function(client_contract = NULL) {
 #' @param commit_policy Character; \code{"server"} follows the server's
 #'   strictness setting. \code{"all_or_none"} refuses the entire execution if
 #'   any output is refused, as requested by a client skipping a small site.
+#' @param concept_protocol \code{1} when the client reconciles every published
+#'   concept factor across servers (dsOMOPClient 2.10.6 or later). Untranslated
+#'   legacy plans and concept-bearing catalog assignments require it.
 #' @return A bounded publication status; sealed outputs are assigned into the
 #'   caller's environment under the symbols reported in its inventory.
 #' @export
 omopDpPlanExecuteDS <- function(omop_symbol, plan, out,
                                 output_mode = "memory",
                                 scope = NULL, combine = "union", ...,
-                                commit_policy = "server") {
+                                commit_policy = "server", concept_protocol = NULL) {
   .dsomopRequireCommunityTool(dp_routes = TRUE)
   if (!identical(.ds_arg(output_mode), "memory")) {
     stop("DP preparation creates in-memory tables only ",
@@ -697,18 +700,21 @@ omopDpPlanExecuteDS <- function(omop_symbol, plan, out,
   extra <- list(...)
   # The plan's reads and the sealing share one request snapshot.
   .dsomopWithReadSnapshot(handle, .dsomopDpPlanExecuteSealed(
-    handle, omop_symbol, plan, out, scope, combine, extra, env, commit_policy))
+    handle, omop_symbol, plan, out, scope, combine, extra, env, commit_policy,
+    concept_protocol))
 }
 
 # The body of omopDpPlanExecuteDS, inside its request snapshot.
 .dsomopDpPlanExecuteSealed <- function(handle, omop_symbol, plan, out, scope,
-                                       combine, extra, env, commit_policy) {
+                                       combine, extra, env, commit_policy,
+                                       concept_protocol = NULL) {
   ready <- .dsomopToolsDpReady(handle)
   if (!isTRUE(ready$ready)) {
     stop("Preparing a table for DP releases needs the differential-privacy ",
          "service, which is not available on this server.", call. = FALSE)
   }
   decoded_plan <- .ds_arg(plan)
+  .conceptPlanProtocol(decoded_plan, concept_protocol)
   decoded_out <- .ds_arg(out)
   scope_value <- .omopAnalysisScopeFromDots(.ds_arg(scope), extra)
   if (!is.null(scope_value)) {
@@ -726,7 +732,8 @@ omopDpPlanExecuteDS <- function(omop_symbol, plan, out,
           c(list(omop_symbol, plan, out, output_mode = "memory", scope = scope,
                  combine = combine, target_env = env,
                  commit_policy = commit_policy,
-                 seal_factory = .dsomopDpPublicationSeal), extra))
+                 seal_factory = .dsomopDpPublicationSeal,
+                 concept_protocol = list(concept_protocol)), extra))
 }
 
 #' Release one protected, person-bounded statistic (Aggregate)

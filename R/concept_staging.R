@@ -55,7 +55,7 @@
   settings <- .omopDisclosureSettings()
   out <- list(concept_protocol = 1L, levels = list(), concepts = list(),
               unsafe = character(), unsafe_rules = list(), nfilter_levels_max = settings$nfilter_levels_max,
-              keys = names(meta$names), generated = list())
+              keys = character(), generated = list())
   for (col in names(meta$contracts)) {
     c <- meta$contracts[[col]]
     support <- unlist(meta$support[[col]], use.names = TRUE)
@@ -71,16 +71,20 @@
     if (identical(c$kind, "category")) out$categories[[col]] <- c$category
     if (length(c$reference_keys)) out$reference_names[[col]] <- unique(as.character(unlist(c$reference_keys,use.names=FALSE)))
   }
+  refused_keys <- character()
   for (key in names(meta$generated)) {
     g <- meta$generated[[key]]
     if (!isTRUE(g$declared) && !isTRUE(g$permitted)) {
-      out$unsafe <- c(out$unsafe, key)
-      out$unsafe_rules[[key]] <- "generated-column admission"
+      # Generated keys embed concept IDs: report the class, never the key.
+      refused_keys <- c(refused_keys, key)
+      out$unsafe <- union(out$unsafe, "generated concept columns")
+      out$unsafe_rules[["generated concept columns"]] <- "generated-column admission"
       next
     }
     g[c("declared", "permitted")] <- NULL
     out$generated[[key]] <- g
   }
+  out$keys <- setdiff(names(meta$names), refused_keys)
   out$numbers <- meta$numbers %||% list()
   if(!is.null(meta$schema))out$schema<-meta$schema
   out$evidence <- .conceptEvidence(out)
@@ -103,7 +107,8 @@
   if (!identical(as.integer(spec$concept_protocol), 1L)) {
     stop("A complete concept presentation protocol is required for this staged output.", call. = FALSE)
   }
-  report <- .conceptStageReport(descriptor, discover = FALSE)
+  report <- .conceptStageReport(descriptor)
+  .conceptSiteVerdict(report)
   meta <- .conceptStageData(descriptor)
   .conceptCheckEvidence(report, spec, !is.null(meta$handle))
   # Protocol-1 factor-only calls preserve numeric columns and their capsule.

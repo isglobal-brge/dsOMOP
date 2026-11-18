@@ -11,7 +11,8 @@ omopAnalysisRunAssignDS(
   scope = NULL,
   combine = "union",
   date_handling = NULL,
-  ...
+  ...,
+  concept_protocol = NULL
 )
 }
 \arguments{
@@ -32,6 +33,10 @@ multiple sources}
 \item{...}{Additional scalar cohort references and resolved workspace tables,
 independently and contiguously named \code{scope_cohort_1}, ... and
 \code{scope_table_1}, ... without gaps.}
+
+\item{concept_protocol}{\code{1} when the client reconciles every published
+concept factor across servers (dsOMOPClient 2.10.6 or later). Untranslated
+legacy plans and concept-bearing catalog assignments require it.}
 }
 \value{
 The server-side assignment result (data stays on the server)

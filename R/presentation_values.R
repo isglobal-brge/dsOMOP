@@ -142,9 +142,10 @@
         r$id<-key;r$effective_id<-target;records[[key]]<-r
       }
       for(key in setdiff(targets,names(records)))records[[key]]<-target_records[[key]]
-      domain <- s$rollup$domain
-      public_domain <- if(is.list(domain) && !is.null(names(domain)))character() else unlist(domain,use.names=FALSE)
-      public <- unique(c(public_domain,unlist(s$rollup$ancestors,use.names=FALSE),unlist(s$rollup$priority,use.names=FALSE)))
+      # The declared domain (keys, or a concept set resolved on the vocabulary
+      # tables) and the targets its public hierarchy maps it to come from no
+      # patient row, so they are public declared levels.
+      public <- unique(c(names(rollup$mapping),targets,unlist(s$rollup$ancestors,use.names=FALSE),unlist(s$rollup$priority,use.names=FALSE)))
       declared <- union(intersect(declared,names(records)),intersect(public,names(records)))
       discovered <- union(discovered,setdiff(union(targets,names(rollup$mapping)),declared))
       if(length(public_targets) && all(targets %in% public_targets)) {

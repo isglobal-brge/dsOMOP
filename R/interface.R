@@ -709,6 +709,9 @@ omopInitDS <- function(resource_symbol,
 #' @param commit_policy Character; \code{"server"} applies the server's strict
 #'   mode, while \code{"all_or_none"} refuses the whole execution if any
 #'   final component fails support. This policy cannot relax disclosure gates.
+#' @param concept_protocol \code{1} when the client reconciles every published
+#'   concept factor across servers (dsOMOPClient 2.10.6 or later). Untranslated
+#'   legacy plans and concept-bearing catalog assignments require it.
 #' @return A server-authenticated publication status. Outputs are assigned into
 #'   the caller's environment; the client reads the bounded inventory with
 #'   \code{\link{omopPlanStatusDS}} before deleting its execution-status symbol.
@@ -722,19 +725,42 @@ omopInitDS <- function(resource_symbol,
 omopPlanExecuteDS <- function(omop_symbol, plan, out,
                                output_mode = "memory",
                                scope = NULL, combine = "union", ...,
-                               commit_policy = "server") {
+                               commit_policy = "server", concept_protocol = NULL) {
   target_env <- parent.frame()
   handle <- .getHandle(omop_symbol)
+  .conceptPlanProtocol(.ds_arg(plan), concept_protocol)
   .dsomopWithReadSnapshot(handle,
     .omopPlanExecuteDS(omop_symbol, plan, out, output_mode, scope, combine, ...,
-                       target_env = target_env, commit_policy = commit_policy))
+                       target_env = target_env, commit_policy = commit_policy,
+                       concept_protocol = concept_protocol))
+}
+
+# dsOMOPClient 2.10.6 and later send concept_protocol = 1: they reconcile every
+# published concept factor across servers. Older clients do not reconcile
+# untranslated legacy plans or catalog assignments, which would leave local
+# level sets that differ between sites (ds.glm sums site matrices by position).
+.conceptPlanProtocol <- function(plan, concept_protocol) {
+  v2_plan <- is.list(plan) && (identical(plan[["version"]], 2L) || identical(plan[["version"]], 2))
+  if (!v2_plan && is.list(plan) && isFALSE(unlist(plan[["options"]][["translate_concepts"]]))) {
+    .conceptRequireProtocol(concept_protocol)
+  }
+  invisible(TRUE)
+}
+
+.conceptRequireProtocol <- function(concept_protocol) {
+  if (!identical(as.character(unlist(.ds_arg(concept_protocol))), "1")) {
+    stop("Concept factors from this request need dsOMOPClient 2.10.6 or later, which reconciles ",
+         "their levels across servers; update the client.", call. = FALSE)
+  }
+  invisible(TRUE)
 }
 
 #' Execute a plan with a server-only publication/sealing context
 #' @keywords internal
 .omopPlanExecuteDS <- function(omop_symbol, plan, out, output_mode = "memory",
                                scope = NULL, combine = "union", ...,
-                               target_env, commit_policy = "server", seal_factory = NULL) {
+                               target_env, commit_policy = "server", seal_factory = NULL,
+                               concept_protocol = NULL) {
   handle <- .getHandle(omop_symbol)
   plan <- .ds_arg(plan)
   out <- .ds_arg(out)
@@ -2852,6 +2878,9 @@ omopAnalysisRunDS <- function(omop_symbol, name, params = list(),
 #' @param ... Additional scalar cohort references and resolved workspace tables,
 #'   independently and contiguously named \code{scope_cohort_1}, ... and
 #'   \code{scope_table_1}, ... without gaps.
+#' @param concept_protocol \code{1} when the client reconciles every published
+#'   concept factor across servers (dsOMOPClient 2.10.6 or later). Untranslated
+#'   legacy plans and concept-bearing catalog assignments require it.
 #' @return The server-side assignment result (data stays on the server)
 #' @examples
 #' \dontrun{
@@ -2860,7 +2889,7 @@ omopAnalysisRunDS <- function(omop_symbol, name, params = list(),
 #' @export
 omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
                                     scope = NULL, combine = "union",
-                                    date_handling = NULL, ...) {
+                                    date_handling = NULL, ..., concept_protocol = NULL) {
   # Assignment prepares private server-side inputs; only final statistics
   # select a standard or protected release route. Keep the tools-off gate.
   .dsomopRequireCommunityTool(dp_routes = TRUE)
@@ -2878,8 +2907,10 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
                      scope_present = !is.null(scope),
                      scope_table_count = .omopAnalysisScopeTableCount(scope),
                      combine = combine))
-  .omopAnalysisRun(handle, name, params, scope = scope, combine = combine,
-                   assign = TRUE, assign_date_handling = date_handling)
+  result <- .omopAnalysisRun(handle, name, params, scope = scope, combine = combine,
+                             assign = TRUE, assign_date_handling = date_handling)
+  if (length(attr(result, "omop_concepts"))) .conceptRequireProtocol(concept_protocol)
+  result
 }
 
 # --- Concept-factor harmonization (cross-server coordination) ---
@@ -3048,6 +3079,16 @@ omopAsFactorColumnsDS <- function(df, spec, table_column = NULL) {
       stop("omopAsFactorColumnsDS: levels must be unique.", call. = FALSE)
     }
     contracts[[col]] <- levels_col
+  }
+  # The site's own verdict on its observed values comes first. A coverage
+  # answer is given only for columns whose observed levels this site could
+  # release anyway, so success or failure cannot probe which values occur.
+  for (col in allowed_cols) {
+    verdict <- .omopConceptDiscovery(.conceptIdText(source[[col]]), nrow(source))
+    if (!isTRUE(verdict$safe)) {
+      stop("Concept factor assignment refused by this site's factor-level rule (",
+           paste(verdict$rules, collapse = " / "), ").", call. = FALSE)
+    }
   }
   if (!setequal(names(contracts), allowed_cols) ||
       !all(vapply(allowed_cols, function(col) {

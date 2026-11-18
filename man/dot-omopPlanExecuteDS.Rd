@@ -14,7 +14,8 @@
   ...,
   target_env,
   commit_policy = "server",
-  seal_factory = NULL
+  seal_factory = NULL,
+  concept_protocol = NULL
 )
 }
 \description{

@@ -212,7 +212,7 @@
          call. = FALSE)
   }
 
-  list(row = crow, is_numeric_measure = is_numeric_measure)
+  list(row = crow, is_numeric_measure = is_numeric_measure, is_concept = is_concept)
 }
 
 #' Require a reviewed population unit before profiling a table
@@ -843,10 +843,20 @@
                         " WHERE t.", column, " IS NOT NULL", concept_clause)
   n_total <- .executeQuery(handle, .renderSql(handle, n_total_sql))$n[1]
 
-  # No level-count gate: every released value passes the distinct-person cell
-  # rule below and its counts are banded, as in a DataSHIELD table; values below
-  # nfilter.tab are dropped, not reported. A cap on all distinct values would
-  # refuse frequent categories because of unreleased rare ones.
+  # Concept columns are categorical codes: every released value passes the
+  # distinct-person cell rule below and its counts are banded; values below
+  # nfilter.tab are dropped, not reported, so unreleased rare codes do not
+  # refuse the frequent ones. Other columns (dates, times, free codes) keep the
+  # level gate on all their distinct values: an exact date shared by a few
+  # persons is a quasi-identifier the cell rule alone does not protect.
+  if (!isTRUE(column_info$is_concept)) {
+    n_levels_sql <- paste0(
+      "SELECT COUNT(DISTINCT t.", column, ") AS n FROM ", from_clause,
+      " WHERE t.", column, " IS NOT NULL", concept_clause
+    )
+    n_levels <- .executeQuery(handle, .renderSql(handle, n_levels_sql))$n[1]
+    .assertSafeLevels(n_levels, n_total)
+  }
 
   # For person-bearing tables, compute the number of DISTINCT persons behind
   # each value and suppress on THAT, not on the record count: a value backed by
@@ -3013,9 +3023,13 @@
   n_rows_lv <- .executeQuery(handle, .renderSql(handle, rl_sql))$n[1]
   n_cols_lv <- .executeQuery(handle, .renderSql(handle, cl_sql))$n[1]
   n_total   <- .executeQuery(handle, .renderSql(handle, nt_sql))$n[1]
-  # No level-count gate: only levels whose marginal support clears nfilter_tab
-  # are released (below) and small cells are suppressed, as in a DataSHIELD
-  # table. Counting unreleased rare levels would refuse the supported ones.
+  # Concept axes are categorical codes: only levels whose marginal support
+  # clears nfilter_tab are released (below) and small cells are suppressed, so
+  # unreleased rare codes do not refuse the supported ones. Other axes (dates,
+  # times, free codes) keep the level gate on all their distinct values.
+  concept_axis <- function(col) isTRUE(.profilerColumnInfo(bp, table, col)$is_concept)
+  if (!concept_axis(row_col)) .assertSafeLevels(n_rows_lv, n_total)
+  if (!concept_axis(col_col)) .assertSafeLevels(n_cols_lv, n_total)
 
   # Gate F: reject degenerate (1xN / Nx1) axes - that is a 1-way distribution.
   if (is.na(n_rows_lv) || is.na(n_cols_lv) || n_rows_lv < 2 || n_cols_lv < 2) {
@@ -3041,6 +3055,12 @@
     " >= ", as.integer(t))
   safe_rows <- .executeQuery(handle, .renderSql(handle, safe_row_sql))$level_v
   safe_cols <- .executeQuery(handle, .renderSql(handle, safe_col_sql))$level_v
+  # A size bound for the dense table, not a disclosure rule.
+  cap <- settings$max_pivot_concepts
+  if (length(safe_rows) > cap || length(safe_cols) > cap) {
+    stop("Cross-tab has more than ", cap, " supported levels on an axis; ",
+         "restrict the rows or group the codes first.", call. = FALSE)
+  }
   if (length(safe_rows) < 2L || length(safe_cols) < 2L) {
     stop("Disclosive: cross-tab requires at least 2 supported levels on each ",
          "axis.", call. = FALSE)
