@@ -5293,8 +5293,14 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
         .conceptDeclaredColumn(name, table)
       }, logical(1)))))
     if (concept) assigned[[name]] <<- .conceptIdText(assigned[[name]])
-    .fragmentColumn(if (concept || is.character(assigned[[name]]) || is.factor(assigned[[name]])) "text" else "numeric")
+    column <- .fragmentColumn(if (concept || is.character(assigned[[name]]) || is.factor(assigned[[name]])) "text" else "numeric")
+    attr(column, "concept_code") <- concept
+    column
   }), names(assigned))
+  # Marked so that no later factor reconciliation rediscovers them by name.
+  codes <- names(columns)[vapply(columns, function(c) isTRUE(attr(c, "concept_code")), logical(1))]
+  for (name in codes) attr(columns[[name]], "concept_code") <- NULL
+  attr(assigned, "omop_concept_codes") <- if (length(codes)) codes else NULL
   attr(assigned, "omop_column_contract") <- columns
   bare_schemas <- identical(handle$target_dialect, "sqlite")
   effective_schema <- function(value) {

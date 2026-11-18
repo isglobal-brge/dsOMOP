@@ -130,9 +130,11 @@
   )
   protected <- character(0)
   concept_cols <- character(0)
+  concept_codes <- character(0)
   for (s in sources) {
     protected <- union(protected, attr(s, "dsomop_protected"))
     concept_cols <- union(concept_cols, attr(s, "omop_concept_cols"))
+    concept_codes <- union(concept_codes, attr(s, "omop_concept_codes"))
   }
   protected <- intersect(protected, names(result))
   # The person key is always protected, even if a source lost the attribute.
@@ -145,6 +147,9 @@
   if (length(concept_cols) > 0L) {
     attr(result, "omop_concept_cols") <- concept_cols
   }
+  # Catalog loader text codes stay codes through row verbs (merge suffixes too).
+  concept_codes <- names(result)[sub("[.][xy]$", "", names(result)) %in% concept_codes]
+  attr(result, "omop_concept_codes") <- if (length(concept_codes)) concept_codes else NULL
   attr(result, "dsomop_pseudonymization") <- pseudonymization
   class(result) <- union("omop.table", class(result))
   result

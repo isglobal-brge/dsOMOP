@@ -2977,6 +2977,8 @@ omopFactorLevelsDS <- function(df) {
   # (defense in depth; a pseudonymous key has one level per person and would
   # also exceed nfilter.levels.max).
   cols <- setdiff(cols, .PERSON_KEY_COLS())
+  # Catalog loader text codes are categories that are never shared as levels.
+  cols <- setdiff(cols, attr(df, "omop_concept_codes"))
   if (length(cols) == 0L) {
     return(empty)
   }
@@ -3058,8 +3060,9 @@ omopAsFactorColumnsDS <- function(df, spec, table_column = NULL) {
               names(df))
   )
   allowed_cols <- setdiff(allowed_cols,
-                          union(.PERSON_KEY_COLS(),
-                                attr(df, "dsomop_protected") %||% character(0)))
+                          union(union(.PERSON_KEY_COLS(),
+                                      attr(df, "dsomop_protected") %||% character(0)),
+                                attr(df, "omop_concept_codes")))
   contracts <- list()
   for (col in names(spec)) {
     # A hostile client cannot coerce a protected key into a factor.
