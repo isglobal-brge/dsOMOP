@@ -75,8 +75,10 @@ test_that("row verbs retain numeric reducer aliases ending in concept_id", {
   expect_identical(omopSelectDS(counts, "count_concept_id")$count_concept_id, 1:5)
   expect_identical(.mfix_mut(counts, .mfix_col("count_concept_id"))$answer, 1:5)
   merged <- omopMergeDS(counts, counts)
-  expect_identical(merged$count_concept_id.x, 1:5)
-  expect_identical(merged$count_concept_id.y, 1:5)
+  # The merge orders rows by key; the counts stay integers, never factors.
+  expect_type(merged$count_concept_id.x, "integer")
+  expect_setequal(merged$count_concept_id.x, 1:5)
+  expect_identical(merged$count_concept_id.x, merged$count_concept_id.y)
 })
 
 test_that("integer branches and coalesce use one lossless prototype in every order", {

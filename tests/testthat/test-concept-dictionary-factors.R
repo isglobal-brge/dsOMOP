@@ -6,7 +6,7 @@ test_that("legacy dictionaries retain declared and observed IDs in every label a
   for(translate in c(FALSE,TRUE))for(mode in c("memory","staged")) {
     plan <- list(cohort=list(type="cohort_table",cohort_definition_id=1),outputs=list(
       events=list(type="event_level",table="condition_occurrence",
-        columns=c(alias="condition_concept_id","condition_type_concept_id"),
+        columns=c("condition_concept_id","condition_type_concept_id"),
         concept_set=201820L,representation=list(format="long"),filters=list(concept_set=list(ids=201820L))),
       dictionary=list(type="concept_dictionary",source_outputs="events")),
       options=list(translate_concepts=translate,block_sensitive=TRUE))
