@@ -133,6 +133,9 @@ test_that("F-26: an assigned object that qualifies keeps a one-person age band",
                             translate_concepts = FALSE)
     band <- paste0(a, "-", a)
     expect_identical(sum(out$age_group == band, na.rm = TRUE), 1L)
+    # A published table carries concept IDs as shared factors (2.10.6).
+    ids <- as.character(out$gender_concept_id)
+    out$gender_concept_id <- .conceptFactor(ids, sort(unique(ids[!is.na(ids)])))
     published <- .publishStandalone(.testPseudonymize(out), already_tokenized = TRUE)
     expect_identical(sum(published$age_group == band, na.rm = TRUE), 1L)
   })

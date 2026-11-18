@@ -137,6 +137,7 @@
     stop("Compatibility result contains Date/POSIX objects; exact numeric-payload baseline recapture required.",
          call. = FALSE)
   }
+  x <- .project_legacy_concepts(x)
   unclass(as.character(openssl::sha256(charToRaw(enc2utf8(.compat_json(.b10_canon(x, 17L)))))))
 }
 

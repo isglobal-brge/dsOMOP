@@ -35,7 +35,8 @@ test_that("a rejection entry carries the reason only for a vocabulary validation
                                          "number_expression_invalid", "number_dependency_invalid",
                                          "date_spec_invalid", "date_source_invalid",
                                          "date_pattern_invalid", "date_policy_conflict",
-                                         "date_parts_names"))
+                                         "date_parts_names",
+                                         "concept_level_rule"))
   # the raw message and the field path never travel
   expect_false(any(grepl("member|events/", unlist(entry))))
   # an unknown construct, another code or a malformed reason: the field is omitted

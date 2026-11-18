@@ -95,3 +95,34 @@
   }
   actual
 }
+
+# The same 2.10.6 migration for oracles that pin only a hash of the result:
+# assert each untranslated concept factor (ID labels, shared levels in numeric
+# ID order), then restore the integer storage historical results used and drop
+# only the presentation metadata added since, so the immutable hash compares.
+.project_legacy_concepts <- function(x) {
+  if (is.data.frame(x)) {
+    contracts <- attr(x, "omop_concepts") %||% list()
+    migrated <- names(contracts)[vapply(contracts, function(c) is.null(c$kind) && isFALSE(c$translate), logical(1))]
+    for (col in intersect(migrated, names(x))) {
+      column <- x[[col]]; contract <- contracts[[col]]
+      testthat::expect_true(inherits(column, "dsomop_concept_factor"))
+      testthat::expect_identical(as.character(column), as.character(contract$ids))
+      ids <- as.character(contract$ids)
+      x[[col]] <- if (all(is.na(ids) | nchar(ids) < 10L | ids <= "2147483647")) as.integer(ids) else as.numeric(ids)
+      contracts[[col]] <- NULL
+    }
+    if (length(migrated)) {
+      attr(x, "omop_concepts") <- if (length(contracts)) contracts else NULL
+      kept <- setdiff(attr(x, "omop_concept_cols"), migrated)
+      attr(x, "omop_concept_cols") <- if (length(kept)) kept else NULL
+      if (!length(contracts) && is.null(attr(x, "omop_generated_columns"))) attr(x, "omop_presentation_handle") <- NULL
+      attr(x, "omop_concept_reference") <- NULL
+    }
+    return(x)
+  }
+  if (is.list(x) && !inherits(x, "FlowerDatasetDescriptor")) {
+    for (i in seq_along(x)) x[i] <- list(.project_legacy_concepts(x[[i]]))
+  }
+  x
+}
