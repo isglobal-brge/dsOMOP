@@ -181,8 +181,10 @@
   if (isTRUE(contract$reference_admitted)) return(list(levels = observed, safe = TRUE, rules = character()))
   if (!is.null(reference_support)) {
     safe <- all(observed %in% names(reference_support$counts))
-    if (discover) safe <- safe && all(reference_support$counts[observed] >= .omopDisclosureSettings()$nfilter_tab) &&
-      tryCatch({ .assertSafeLevels(length(observed), reference_support$total); TRUE }, error = function(e) FALSE)
+    # Naming the concepts behind generated covariates is a level release: the
+    # DataSHIELD level rule applies, without a per-concept person minimum.
+    if (discover) safe <- safe && tryCatch({ .assertSafeLevels(length(observed), reference_support$total); TRUE },
+      error = function(e) FALSE)
     return(list(levels = observed, safe = safe,
                 rules = if(safe)character() else "generated-column admission"))
   }

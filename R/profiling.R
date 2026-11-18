@@ -843,13 +843,10 @@
                         " WHERE t.", column, " IS NOT NULL", concept_clause)
   n_total <- .executeQuery(handle, .renderSql(handle, n_total_sql))$n[1]
 
-  n_levels_sql <- paste0(
-    "SELECT COUNT(DISTINCT t.", column, ") AS n FROM ", from_clause,
-    " WHERE t.", column, " IS NOT NULL", concept_clause
-  )
-  n_levels <- .executeQuery(handle, .renderSql(handle, n_levels_sql))$n[1]
-
-  .assertSafeLevels(n_levels, n_total)
+  # No level-count gate: every released value passes the distinct-person cell
+  # rule below and its counts are banded, as in a DataSHIELD table; values below
+  # nfilter.tab are dropped, not reported. A cap on all distinct values would
+  # refuse frequent categories because of unreleased rare ones.
 
   # For person-bearing tables, compute the number of DISTINCT persons behind
   # each value and suppress on THAT, not on the record count: a value backed by
@@ -865,7 +862,7 @@
     "GROUP BY t.", column
   )
 
-  # The level gate above bounds this aggregate, so fetch all admissible groups.
+  # Fetch every group; only those passing suppression are ranked and released.
   # Selecting TOP/LIMIT on the exact COUNT(*) would expose within-band rank when
   # callers vary top_n. Suppress first, then rank only on the released count band
   # with the public categorical value as deterministic tie-breaker.
@@ -2455,18 +2452,9 @@
                            error = function(e) NULL)
 
     if (!is.null(cat_result) && nrow(cat_result) > 0) {
-      # Check safe levels
-      safe <- tryCatch({
-        n_cat_total_sql <- paste0(
-          "SELECT COUNT(*) AS n FROM ", qualified,
-          " WHERE ", where_concept,
-          " AND value_as_concept_id IS NOT NULL")
-        n_cat_total <- .executeQuery(handle, n_cat_total_sql)$n[1]
-        .assertSafeLevels(nrow(cat_result), n_cat_total)
-        TRUE
-      }, error = function(e) FALSE)
-
-      if (safe) {
+      # No level-count gate: only categories passing the distinct-person cell
+      # rule are released, with banded counts.
+      {
         # Suppress on distinct PERSONS for this person-bearing table (a value
         # backed by many records but few people is disclosive), then band the
         # surviving counts so exact category sizes aren't released. No secondary
@@ -3025,8 +3013,9 @@
   n_rows_lv <- .executeQuery(handle, .renderSql(handle, rl_sql))$n[1]
   n_cols_lv <- .executeQuery(handle, .renderSql(handle, cl_sql))$n[1]
   n_total   <- .executeQuery(handle, .renderSql(handle, nt_sql))$n[1]
-  .assertSafeLevels(n_rows_lv, n_total)
-  .assertSafeLevels(n_cols_lv, n_total)
+  # No level-count gate: only levels whose marginal support clears nfilter_tab
+  # are released (below) and small cells are suppressed, as in a DataSHIELD
+  # table. Counting unreleased rare levels would refuse the supported ones.
 
   # Gate F: reject degenerate (1xN / Nx1) axes - that is a 1-way distribution.
   if (is.na(n_rows_lv) || is.na(n_cols_lv) || n_rows_lv < 2 || n_cols_lv < 2) {

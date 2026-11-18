@@ -205,6 +205,10 @@ test_that('A27 sparse reference names use vocabulary independently of recodes an
   withr::local_options(list(nfilter.tab=3,nfilter.levels.max=40,nfilter.levels.density=1))
   expect_length(.conceptLevelReport(value)$unsafe,0)
   attr(value,'omop_reference_support')$counts[] <- 1L
+  # Naming a generated covariate's concept is a level release: no per-concept
+  # person minimum since 2.10.6, the DataSHIELD level rule still gates it.
+  expect_length(.conceptLevelReport(value)$unsafe,0)
+  withr::local_options(list(nfilter.levels.density=0.1))
   report <- .conceptLevelReport(value)
   expect_identical(report$unsafe,'conceptId')
   expect_length(report$concepts,0)

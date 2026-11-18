@@ -3196,7 +3196,10 @@
       attr(desc, "concept_name") <- list(id = as.character(concept), prefix = "", suffix = paste0(".", vcol), legacy = TRUE,
                                          owner = NULL, declared = !is.null(expected_concepts))
       observed_support <- if ("person_id" %in% names(concept_data)) length(unique(concept_data$person_id)) else 0L
-      permitted <- observed_support >= .omopDisclosureSettings()$nfilter_tab && tryCatch({
+      # A generated concept column name releases that the concept occurs: the
+      # DataSHIELD level rule applies, without a per-concept person minimum
+      # (values are protected by the aggregate that later reads them).
+      permitted <- observed_support > 0L && tryCatch({
         .assertSafeLevels(length(concepts), length(unique(df$person_id))); TRUE
       }, error = function(e) FALSE)
       attr(desc, "concept_name")$permitted <- permitted
@@ -3912,7 +3915,7 @@
         support <- length(unique(concept_data$person_id))
         attr(desc, "concept_name") <- list(id = concept_str, prefix = "", suffix = substring(col, nchar(label) + 1L),
           legacy = TRUE, owner = NULL, declared = FALSE,
-          permitted = support >= .omopDisclosureSettings()$nfilter_tab && tryCatch({
+          permitted = support > 0L && tryCatch({
             .assertSafeLevels(length(unique(df[[concept_col]])), length(persons)); TRUE
           }, error = function(e) FALSE))
       }
