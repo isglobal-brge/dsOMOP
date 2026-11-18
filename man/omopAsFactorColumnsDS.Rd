@@ -29,7 +29,8 @@ Rebuilds A-27 factors from their retained internal IDs, using one ordered
 union at every retained site. Absent local categories are unused levels;
 only explicit user recodes may merge identities. Generated names are
 validated against the complete component schema. Incomplete coverage,
-unsafe levels and invalid names fail and trigger federation rollback.
+invalid names and integrity failures trigger federation rollback. Level-count
+rules apply only during discovery, never to assignment of the shared domain.
 Vocabulary evidence is rechecked before assignment. Verified protected
 lineage is preserved only through this checked identity-preserving route.
 Staged files are rewritten privately and their existing manifest updated.

@@ -22,7 +22,8 @@
 
 \item{derived}{Character vector; derived fields to compute}
 
-\item{translate_concepts}{Logical; translate concept IDs to names}
+\item{translate_concepts}{Logical; select vocabulary labels for concept
+factors. FALSE selects decimal ID labels; assigned concepts remain factors.}
 
 \item{age_breaks}{Optional increasing integer age-band lower bounds.}
 }

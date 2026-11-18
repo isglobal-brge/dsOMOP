@@ -14,8 +14,8 @@ by \code{\link{omopPlanExecuteDS}}.}
 A named list with \code{levels} (named list mapping
   each safe concept-id column to its character levels), \code{unsafe}
   (character vector of concept-id columns that failed the disclosure gate),
-  and \code{nfilter_levels_max} (the server's level cap, so the client can
-  reconcile heterogeneous caps). A-27 reports also carry the concept
+  \code{unsafe_rules} (rule names by refused column, without counts), and
+  \code{nfilter_levels_max} (server policy metadata). A-27 reports also carry the concept
   protocol, permitted ID/name/version candidates, generated/reference naming
   identities, stable keys and evidence binding.
 }
@@ -24,7 +24,7 @@ A-27 outputs carry declared semantic classes and private ID mappings.
 This existing aggregate transport reports only policy-permitted ID/name/
 vocabulary-version candidates and public declared levels, including
 generated-column identities on numeric-only outputs. Observed IDs pass
-per-person support, cardinality and density checks before any metadata is
+the DataSHIELD factor-level cardinality and row-density checks before metadata is
 returned. No rows, counts or person keys are disclosed. Staged descriptors
 use their manifest-bound presentation contract. The client resolves labels
 by ID and broadcasts a complete contract through omopAsFactorColumnsDS.

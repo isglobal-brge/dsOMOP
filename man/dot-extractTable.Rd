@@ -40,7 +40,8 @@
 
 \item{cohort_table}{Character; cohort temp table name}
 
-\item{translate_concepts}{Logical; replace concept IDs with names}
+\item{translate_concepts}{Logical; select vocabulary labels for concept
+factors. FALSE selects decimal ID labels; assigned concepts remain factors.}
 
 \item{representation}{Character; "long", "wide", "features", or "sparse".}
 
