@@ -14,6 +14,31 @@
 .mfix_flag <- list(var = "flag", op = "==", value = 1)
 .mfix_options <- list(nfilter.subset = 3, default.dsomop.dp.enabled = FALSE)
 
+test_that("concept selectors retain shared unused levels through assignment", {
+  withr::local_options(.mfix_options)
+  first <- .conceptFactor(c("2", NA, "2", "2", NA), c("2", "10", "20"))
+  second <- .conceptFactor(rep("10", 5), c("2", "10", "20"))
+  x <- .mfix_frame(first = first, second = second, flag = c(1L, 0L, 1L, 0L, NA))
+  expressions <- list(
+    .mfix_col("first"),
+    list(coalesce = list(.mfix_col("first"), .mfix_col("second"))),
+    list(ifelse = list(test = .mfix_flag, yes = .mfix_col("first"), no = .mfix_col("second"))),
+    list(ifelse = list(test = .mfix_flag, yes = .mfix_col("first"), no = .mfix_lit(NULL, "text"))))
+  for (expr in expressions) {
+    out <- .mfix_mut(x, expr)
+    expect_true(is.factor(out$answer))
+    expect_identical(levels(out$answer), c("2", "10", "20"))
+  }
+  selected <- omopSelectDS(x, "first")
+  filtered <- omopFilterDS(x, "first", "==", "2")
+  merged <- omopMergeDS(x, x)
+  bound <- omopBindRowsDS(x, x)
+  for (value in list(selected$first, filtered$first, merged$first.x, merged$first.y, bound$first)) {
+    expect_true(is.factor(value))
+    expect_identical(levels(value), c("2", "10", "20"))
+  }
+})
+
 test_that("integer branches and coalesce use one lossless prototype in every order", {
   withr::local_options(.mfix_options)
   big <- bit64::as.integer64(c("9007199254740993", "200", NA, "9223372036854775807", "-9007199254740993"))

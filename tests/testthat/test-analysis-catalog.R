@@ -650,6 +650,8 @@ test_that("assign loaders gate and sanitize person rows before workspace use", {
   })
   expect_s3_class(out, "omop.table")
   expect_true(all(grepl("^p2[0-9a-f]+\\.[0-9a-f]{64}$", out$person_id)))
+  expect_true(is.factor(out$condition_concept_id))
+  expect_true("condition_concept_id" %in% names(attr(out, "omop_concepts")))
   expect_false(any(grepl("_date$|_datetime$", names(out))))
   expect_false(any(c("condition_occurrence_id", "visit_occurrence_id",
                      "visit_detail_id", "provider_id") %in% names(out)))
@@ -1119,6 +1121,8 @@ test_that("valid external aggregate is gated and contracted ratios are rebuilt",
   withr::with_options(list(nfilter.tab = 3, dsomop.nfilter.band = 5), {
     out <- .omopAnalysisRun(h, entry$name)
     expect_identical(names(out), names(entry$meta$output_contract$columns))
+    expect_true(is.factor(out$condition_concept_id))
+    expect_true("condition_concept_id" %in% names(attr(out, "omop_concepts")))
     expect_equal(out$events, 45)
     expect_equal(out$n_persons, 95)
     expect_equal(out$rate, 45 / 95 * 100)
