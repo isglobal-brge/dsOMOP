@@ -27,8 +27,57 @@
   }), use.names = FALSE)
   sort(unique(as.integer(ids[!is.na(ids)])))
 }
+.dictionaryContractIds <- function(contract, ids) {
+  if(is.null(contract$kind))return(as.character(ids))
+  if(!identical(contract$kind,"category") || !.categoryConceptProducer(contract$category))return(character())
+  aliases <- .categoryNullableStrings(contract$resolved$aliases)
+  effective <- unname(aliases[as.character(ids)])
+  sub("^concept:","",effective[!is.na(effective) & grepl("^concept:",effective)])
+}
+
+.dictionaryObservedIds <- function(handle, value, output, root, component=root) {
+  ids <- character()
+  append_ids <- function(x) {
+    x <- as.character(x[!is.na(x)])
+    if(length(x) && any(!grepl("^[0-9]+$",x)))stop("Concept dictionary requires original concept identities.",call.=FALSE)
+    ids <<- union(ids,x)
+  }
+  read_frame <- function(frame,skip=character()) {
+    columns <- .conceptLegacyColumns(list(handle=handle,ir=list(outputs=setNames(list(output),root))),frame,root,component)
+    known <- union(grep("(^|_)concept_id$",names(frame),value=TRUE),
+      union(attr(frame,"omop_concept_cols"),names(columns)[vapply(columns,.conceptColumn,logical(1))]))
+    if("conceptId" %in% names(frame))known <- union(known,"conceptId")
+    contracts <- attr(frame,"omop_concepts") %||% list()
+    for(col in setdiff(union(known,names(contracts)),skip)) {
+      contract <- contracts[[col]]
+      append_ids(if(is.null(contract))frame[[col]] else .dictionaryContractIds(contract,contract$ids))
+    }
+  }
+  if(inherits(value,"FlowerDatasetDescriptor")) {
+    capsule <- if(!is.null(value$metadata$concept_presentation)) .ds_arg(value$metadata$concept_presentation)
+    contracts <- capsule$contracts %||% list()
+    for(col in names(contracts))append_ids(.dictionaryContractIds(contracts[[col]],names(capsule$support[[col]])))
+    physical <- as.character(unlist(capsule$names[names(contracts)],use.names=FALSE))
+    .publishReadChunks(value,function(frame)read_frame(frame,skip=physical))
+  } else if(is.data.frame(value))read_frame(value)
+  else if(inherits(value,"omop_temporal_sql_components")) {
+    for(name in names(value$components)) {
+      item <- value$components[[name]]
+      if(identical(item$kind,"data"))append_ids(.dictionaryObservedIds(handle,item$data,output,root,name))
+      else {
+        fields <- intersect(item$columns,c("conceptId",grep("(^|_)concept_id$",item$columns,value=TRUE)))
+        if(length(fields)) {
+          frame <- .executeQuery(handle,paste0("SELECT DISTINCT ",paste(fields,collapse=", ")," FROM (",item$sql,") dsomop_dictionary_concepts"))
+          append_ids(.dictionaryObservedIds(handle,frame,output,root,name))
+        }
+      }
+    }
+  } else if(is.list(value))for(name in names(value))append_ids(.dictionaryObservedIds(handle,value[[name]],output,root,name))
+  ids
+}
+
 .buildDeclaredConceptDictionary <- function(handle, outputs,
-                                             source_outputs = NULL) {
+                                             source_outputs = NULL, results = list()) {
   if (is.null(source_outputs)) {
     source_outputs <- names(outputs)[vapply(outputs, function(output) {
       !identical(tolower(output$type %||% "event_level"), "concept_dictionary")
@@ -46,7 +95,8 @@
   }
   synthetic <- stats::setNames(lapply(source_outputs, function(name) {
     data.frame(
-      concept_id = .declaredOutputConceptIds(handle, outputs[[name]])
+      concept_id = as.integer(union(.declaredOutputConceptIds(handle, outputs[[name]]),
+        .dictionaryObservedIds(handle,results[[name]],outputs[[name]],name)))
     )
   }), source_outputs)
   result <- .buildConceptDictionary(

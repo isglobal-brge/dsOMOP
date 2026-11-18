@@ -3995,7 +3995,8 @@
       results[[out_name]] <- .buildDeclaredConceptDictionary(
         handle,
         outputs = outputs,
-        source_outputs = out$source_outputs
+        source_outputs = out$source_outputs,
+        results = results
       )
     }, error = function(e) {
       if (!inherits(e, "dsomop_plan_rejection") ||

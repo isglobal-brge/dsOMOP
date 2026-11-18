@@ -151,7 +151,7 @@
         # A complete analyst-declared hierarchy level needs no local discovery.
         # Consume the private source map here: publishing it (or its digest)
         # would reveal locally expanded vocabulary identities unnecessarily.
-        ids <- vapply(ids,function(key)if(is.na(key))NA_character_ else records[[key]]$effective_id %||% key,"")
+        ids <- unname(vapply(ids,function(key)if(is.na(key))NA_character_ else records[[key]]$effective_id %||% key,""))
         sentinels <- records[grepl("^special:",names(records))]
         records <- c(target_records,sentinels)
         declared <- union(public_targets,names(sentinels))
