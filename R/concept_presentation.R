@@ -218,6 +218,7 @@
     g <- generated[[key]]
     if (!isTRUE(g$declared) && !isTRUE(g$permitted)) {
       out$unsafe <- union(out$unsafe, key)
+      out$unsafe_rules[[key]] <- "generated-column admission"
       next
     }
     g[c("declared", "permitted")] <- NULL

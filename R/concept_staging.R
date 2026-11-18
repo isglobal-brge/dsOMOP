@@ -73,7 +73,11 @@
   }
   for (key in names(meta$generated)) {
     g <- meta$generated[[key]]
-    if (!isTRUE(g$declared) && !isTRUE(g$permitted)) { out$unsafe <- c(out$unsafe, key); next }
+    if (!isTRUE(g$declared) && !isTRUE(g$permitted)) {
+      out$unsafe <- c(out$unsafe, key)
+      out$unsafe_rules[[key]] <- "generated-column admission"
+      next
+    }
     g[c("declared", "permitted")] <- NULL
     out$generated[[key]] <- g
   }
