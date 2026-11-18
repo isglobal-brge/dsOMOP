@@ -5283,9 +5283,9 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   registry <- .buildBlueprint(handle)$columns
   columns <- setNames(lapply(names(assigned), function(name) {
     concept <- identical(specifications[[name]]$semantic, "concept_id") ||
-      (is.null(specifications[[name]]) && any(vapply(registry, function(table) {
+      (is.null(specifications[[name]]) && (grepl("(^|_)concept_id$", name) || any(vapply(registry, function(table) {
         .conceptDeclaredColumn(name, table)
-      }, logical(1))))
+      }, logical(1)))))
     column <- .fragmentColumn(if (concept) "integer" else
       if (is.character(assigned[[name]]) || is.factor(assigned[[name]])) "text" else "numeric")
     if (concept) attr(column, "concept") <- TRUE
