@@ -650,8 +650,10 @@ test_that("assign loaders gate and sanitize person rows before workspace use", {
   })
   expect_s3_class(out, "omop.table")
   expect_true(all(grepl("^p2[0-9a-f]+\\.[0-9a-f]{64}$", out$person_id)))
-  expect_true(is.factor(out$condition_concept_id))
-  expect_true("condition_concept_id" %in% names(attr(out, "omop_concepts")))
+  # Loaders keep concept IDs as text codes (2.10.6): categories, never numbers.
+  expect_type(out$condition_concept_id, "character")
+  expect_true(all(is.na(out$condition_concept_id) | grepl("^[0-9]+$", out$condition_concept_id)))
+  expect_false("condition_concept_id" %in% names(attr(out, "omop_concepts")))
   expect_false(any(grepl("_date$|_datetime$", names(out))))
   expect_false(any(c("condition_occurrence_id", "visit_occurrence_id",
                      "visit_detail_id", "provider_id") %in% names(out)))
@@ -1169,8 +1171,8 @@ test_that("valid external R assign is firewalled and pseudonymized", {
     expect_false(any(out$person_id %in% as.character(1:5)))
     expect_identical(attr(out, "dsomop_protected"), "person_id")
     expect_identical(names(out), names(entry$meta$output_contract$columns))
-    expect_true(is.factor(out$condition_concept_id))
-    expect_true("condition_concept_id" %in% names(attr(out, "omop_concepts")))
+    expect_type(out$condition_concept_id, "character")
+    expect_false("condition_concept_id" %in% names(attr(out, "omop_concepts")))
   })
 })
 

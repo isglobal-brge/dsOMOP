@@ -638,12 +638,14 @@ omopStagedRevokeDS <- function(exec_symbol) {
     names(result)[base_names %in% registered],
     attr(result, "omop_concept_cols"), names(attr(result, "omop_concepts"))))
   concept_columns <- intersect(concept_columns, names(result))
+  # Shared concept factors and the text codes of catalog loaders are accepted;
+  # a numeric concept column is a retained pre-2.10.6 table.
   unsafe <- concept_columns[!vapply(result[concept_columns], function(column)
-    is.factor(column) && inherits(column, c("dsomop_concept_factor",
+    is.character(column) || is.factor(column) && inherits(column, c("dsomop_concept_factor",
       "dsomop_category_factor", "dsomop_date_factor")), logical(1))]
   if (length(unsafe)) stop("Concept IDs are always categories since 2.10.6. Columns ",
     paste(sQuote(unsafe), collapse = ", "),
-    " require shared concept factors; republish the source with ds.omop.plan.execute() before applying row verbs.",
+    " hold numeric concept IDs; republish the source with ds.omop.plan.execute() before applying row verbs.",
     call. = FALSE)
   result
 }

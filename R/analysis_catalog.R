@@ -5276,9 +5276,15 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   assigned <- .omopAnalysisExternalOutputFirewall(
     assigned, entry, assign = TRUE, phase = "final"
   )
-  # Catalog loaders share the same final concept presentation boundary as
-  # recipes. External output contracts declare semantics explicitly; built-in
-  # loaders retain the reviewed OMOP concept-column names.
+  # Catalog loaders bring whole clinical tables into the session as private
+  # inputs for protected analyses. Their concept columns hold hundreds of
+  # concepts on any real CDM: sharing those as factor levels would release
+  # them past DataSHIELD's level rule, and refusing would lose the loader. So a
+  # loader keeps concept IDs as text codes: categories, never numbers, the same
+  # at every site and released only through the analyses that read them.
+  # ds.asFactor (dsBase) shares the levels of a narrowed column under the rule.
+  # External output contracts declare semantics explicitly; built-in loaders
+  # retain the reviewed OMOP concept-column names.
   specifications <- entry$meta$output_contract$columns
   registry <- .buildBlueprint(handle)$columns
   columns <- setNames(lapply(names(assigned), function(name) {
@@ -5286,10 +5292,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       (is.null(specifications[[name]]) && (grepl("(^|_)concept_id$", name) || any(vapply(registry, function(table) {
         .conceptDeclaredColumn(name, table)
       }, logical(1)))))
-    column <- .fragmentColumn(if (concept) "integer" else
-      if (is.character(assigned[[name]]) || is.factor(assigned[[name]])) "text" else "numeric")
-    if (concept) attr(column, "concept") <- TRUE
-    column
+    if (concept) assigned[[name]] <<- .conceptIdText(assigned[[name]])
+    .fragmentColumn(if (concept || is.character(assigned[[name]]) || is.factor(assigned[[name]])) "text" else "numeric")
   }), names(assigned))
   attr(assigned, "omop_column_contract") <- columns
   bare_schemas <- identical(handle$target_dialect, "sqlite")
