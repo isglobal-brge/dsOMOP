@@ -26,14 +26,26 @@
   declare levels, group them with `omop_category_recode()` or
   `omop_category_rollup()`, or narrow events with `concepts =`. Each server's
   administrator may also raise `nfilter.levels.max` / `nfilter.levels.density`.
-- Counted releases follow the DataSHIELD table rule only. `ds.omop.value.counts`,
-  `ds.omop.crosstab` and concept drilldowns no longer refuse, or drop the
-  categorical breakdown, because a column has more than `nfilter.levels.max`
-  distinct values: values below `nfilter.tab` persons are still dropped or
-  suppressed and released counts banded, so unreleased rare values no longer
-  block the frequent ones. Generated concept column names (legacy wide pivots
-  and features) and covariate references follow the level rule without a
-  per-concept person minimum.
+- Exploration with many concept codes: for concept columns,
+  `ds.omop.value.counts`, `ds.omop.crosstab` and concept drilldowns release the
+  codes held by at least `nfilter.tab` persons, with banded counts, and no longer
+  refuse because rarer, unreleased codes push a column past
+  `nfilter.levels.max`. Date, time and other non-concept columns keep that level
+  gate, so exact dates are never listed. Cross-tabs are bounded by
+  `dsomop.max_pivot_concepts` supported levels per axis. Generated concept
+  column names (legacy wide pivots and features) and covariate references follow
+  the level rule without a per-concept person minimum, translated or not.
+- Assigning shared levels re-applies the site's own factor-level verdict before
+  anything else (A-27 and legacy contracts), so an assignment cannot be used to
+  test which values occur. Refused generated concept columns are reported by
+  class, never by keys that embed concept IDs. Legacy concept dictionaries
+  reference the identities their same-plan sources admit. Hierarchy rollups over
+  a declared domain (keys or a vocabulary concept set) treat the domain and its
+  targets as declared. Legacy interval outputs present concept IDs as factors.
+- Untranslated legacy plans and catalog assignments that publish concept
+  factors require dsOMOPClient 2.10.6 or later (`concept_protocol`), because
+  older clients do not reconcile those factors across servers; they are refused
+  with a message to update the client.
 - Counts/tables, subset, DP, person-key and sensitive-column protections are
   unchanged.
 
