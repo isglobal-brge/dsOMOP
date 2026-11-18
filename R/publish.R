@@ -623,11 +623,18 @@ omopStagedRevokeDS <- function(exec_symbol) {
   result <- get("result", ctx$target_env, inherits = FALSE)
   rm(list = ctx$id, envir = .publicationRegistry)
   # Row verbs can receive tables retained from an older server session. A
-  # suffix/tagged concept column without a shared factor contract cannot be
+  # registered/tagged concept column without a shared factor contract cannot be
   # repaired from this site's values alone: that would give different model
   # matrix codings across sites. Typed catalog loaders were presented above.
+  registry <- utils::read.csv(system.file("column_classes.csv", package = "dsOMOP"),
+                              stringsAsFactors = FALSE)
+  registered <- unique(c("concept_id", "conceptId",
+    registry$column[registry$semantic_class == "concept"]))
+  # Reducer aliases such as count_concept_id can legitimately be numeric.
+  # Only registered CDM names or explicit lineage identify retained columns.
+  base_names <- sub("[.][xy]$", "", names(result))
   concept_columns <- unique(c(
-    grep("(^|_)concept_id($|[.][xy]$)|^conceptId$", names(result), value = TRUE),
+    names(result)[base_names %in% registered],
     attr(result, "omop_concept_cols"), names(attr(result, "omop_concepts"))))
   concept_columns <- intersect(concept_columns, names(result))
   unsafe <- concept_columns[!vapply(result[concept_columns], function(column)

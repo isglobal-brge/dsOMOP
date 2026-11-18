@@ -69,6 +69,16 @@ test_that("row verbs refuse retained raw concept columns until the source is rep
   expect_error(omopBindRowsDS(tagged, tagged), "always categories since 2.10.6.*republish")
 })
 
+test_that("row verbs retain numeric reducer aliases ending in concept_id", {
+  withr::local_options(.mfix_options)
+  counts <- .mfix_frame(count_concept_id = 1:5)
+  expect_identical(omopSelectDS(counts, "count_concept_id")$count_concept_id, 1:5)
+  expect_identical(.mfix_mut(counts, .mfix_col("count_concept_id"))$answer, 1:5)
+  merged <- omopMergeDS(counts, counts)
+  expect_identical(merged$count_concept_id.x, 1:5)
+  expect_identical(merged$count_concept_id.y, 1:5)
+})
+
 test_that("integer branches and coalesce use one lossless prototype in every order", {
   withr::local_options(.mfix_options)
   big <- bit64::as.integer64(c("9007199254740993", "200", NA, "9223372036854775807", "-9007199254740993"))
