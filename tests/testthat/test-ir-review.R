@@ -380,7 +380,7 @@ test_that("B3: event_level lowering follows the executor's concept-filter preced
   p <- list(outputs = list(e = list(type = "event_level", table = "condition_occurrence",
               concept_set = ids[[1]], filters = list(concept_set = list(ids = ids[[2]])),
               representation = list(format = "long"))),
-            options = list(translate_concepts = FALSE, factor_concepts = FALSE))
+            options = list(translate_concepts = FALSE, factor_concepts = TRUE))
   ir <- .irPrepare(p)
   lowered <- unlist(ir$events[[ir$outputs$e$sources[[1]]$event]]$concept_set$concepts)
   res <- withr::with_options(list(nfilter.subset = 0L), .planExecute(handle, p, list(e = "rv_e")))

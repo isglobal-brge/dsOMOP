@@ -55,7 +55,8 @@ test_that("B2 disjoint and overlapping named bases retain their seed and sibling
     } else {
       result <- .planExecute(h, plan, list(demo = "D_ws2f_demo", other = "D_ws2f_other"))
       expect_identical(result$demo$person_id, c(1L, 3L, 5L, 7L, 9L, 11L))
-      expect_identical(result$demo$gender_concept_id, rep(8507L, 6L))
+      expect_true(is.factor(result$demo$gender_concept_id))
+  expect_identical(as.character(result$demo$gender_concept_id), rep("8507", 6L))
       expect_identical(result$other$person_id, 1:15)
     }
   }

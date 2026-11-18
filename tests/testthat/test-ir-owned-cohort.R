@@ -154,7 +154,8 @@ test_that("A-25 full execution retains sibling locality and pre-existing table o
   expect_true(.planValidate(h, plan)$valid)
   result <- .planExecute(h, plan, list(demo = "D_demo", sibling = "D_sibling"))
   expect_identical(result$demo$person_id, c(1L, 3L, 5L, 7L, 9L, 11L))
-  expect_identical(result$demo$gender_concept_id, rep(8507L, 6L))
+  expect_true(is.factor(result$demo$gender_concept_id))
+  expect_identical(as.character(result$demo$gender_concept_id), rep("8507", 6L))
   expect_identical(result$sibling$person_id, 1:15)
   expect_identical(DBI::dbReadTable(h$conn, ref), before)
   expect_true(ref %in% h$temp_tables)
@@ -216,7 +217,8 @@ test_that("A-25 index execution keeps recurrent event identity and its filter an
   result <- .planExecute(h, plan, list(demo = "D_demo"))
   persons <- c(1L, 3L, 5L, 7L, 9L, 11L)
   expect_identical(sort(result$demo$person_id), rep(persons, each = 2L))
-  expect_identical(result$demo$gender_concept_id, rep(8507L, 12L))
+  expect_true(is.factor(result$demo$gender_concept_id))
+  expect_identical(as.character(result$demo$gender_concept_id), rep("8507", 12L))
   # Supplemental episode-level evidence accompanies full execution above.
   pop <- .planResolvePopulations(h, plan, .buildBlueprint(h))$p
   rows <- DBI::dbGetQuery(h$conn, paste0("SELECT subject_id, cohort_start_date, ",

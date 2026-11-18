@@ -19,7 +19,7 @@
     outputs = list(owned = list(type = "baseline", population_id = "owned",
       columns = "gender_concept_id"), sibling = list(type = "baseline",
       population_id = "everyone", columns = "gender_concept_id")),
-    options = list(translate_concepts = FALSE, factor_concepts = FALSE,
+    options = list(translate_concepts = FALSE, factor_concepts = TRUE,
       block_sensitive = TRUE))
 }
 

@@ -250,6 +250,9 @@
   plan <- .irJsonForm(plan)
   version <- .irPlanVersion(plan)
   .irValidateEnvelope(plan)
+  if (isFALSE(plan$options$factor_concepts)) {
+    .irReject("factor_concepts = FALSE is no longer supported: concept IDs are always categories since 2.10.6.")
+  }
   .ohdsiPreflightValidity(handle, plan)
   if (!identical(version, 2L)) {
     outputs <- plan[["outputs"]]

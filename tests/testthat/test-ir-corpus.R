@@ -60,14 +60,14 @@ test_that("every corpus plan belongs to a reviewed block of the frozen classific
   "v1-352"                      # a dictionary over outputs the plan does not declare
 )
 
-# A-27/CR-28 newly refuses these four frozen translation/factor conflicts.
+# Version 2.10.6 refuses factor_concepts = FALSE in every frozen plan.
 # Keep the historical class rows and IR snapshots unchanged.
-.IRC_A27_CONFLICTS <- c("v1-125", "v1-126", "v1-244", "v1-246")
+.IRC_A27_CONFLICTS <- c("v1-125", "v1-126", "v1-127", "v1-128", "v1-168",
+                        "v1-244", "v1-246", "v1-282", "v1-296", "v1-298", "v1-386")
 .irc_expect_a27_conflict <- function(rec, got) {
-  expect_identical(rec$plan$options$translate_concepts, TRUE, info = rec$id)
   expect_identical(rec$plan$options$factor_concepts, FALSE, info = rec$id)
   expect_identical(got$outcome, "refused", info = rec$id)
-  expect_match(got$message, "factor_concepts = FALSE conflicts with concept translation", fixed = TRUE)
+  expect_match(got$message, "concept IDs are always categories since 2.10.6", fixed = TRUE)
 }
 
 test_that("validation outcomes agree with each block's class and the baseline's run", {
@@ -111,8 +111,8 @@ test_that("every corpus plan reproduces its golden IR document, digest and annex
     want <- golden[[i]]
     got <- .irc_outcome(rec$plan)
     if (rec$id %in% .IRC_A27_CONFLICTS) {
-      expect_identical(want$outcome, "ir", info = rec$id)
-      expect_identical(.planSemanticDigest(want$ir)$sha256, want$digest, info = rec$id)
+      expect_true(want$outcome %in% c("ir", "no_ir"), info = rec$id)
+      if (want$outcome == "ir") expect_identical(.planSemanticDigest(want$ir)$sha256, want$digest, info = rec$id)
       .irc_expect_a27_conflict(rec, got)
       next
     }
