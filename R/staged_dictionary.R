@@ -1,6 +1,6 @@
 # Concept-reference support for SQL-streamed staged outputs.
 
-.declaredOutputConceptIds <- function(handle, output) {
+.declaredOutputConceptIds <- function(handle, output, expand = TRUE) {
   if (!is.list(output)) return(integer(0))
   type <- tolower(output$type %||% "event_level")
   sets <- list()
@@ -21,6 +21,8 @@
   }
   ids <- unlist(lapply(sets, function(set) {
     if (is.null(set)) return(integer(0))
+    if (!expand) return(if (is.list(set) && !is.null(names(set)))
+      unlist(set$concepts %||% set$ids, use.names = FALSE) else unlist(set, use.names = FALSE))
     .resolveConceptSet(handle, set)
   }), use.names = FALSE)
   sort(unique(as.integer(ids[!is.na(ids)])))
@@ -47,7 +49,11 @@
       concept_id = .declaredOutputConceptIds(handle, outputs[[name]])
     )
   }), source_outputs)
-  .buildConceptDictionary(
+  result <- .buildConceptDictionary(
     handle, results = synthetic, source_outputs = source_outputs
   )
+  attr(result, "omop_dictionary_declared") <- as.character(unique(unlist(lapply(
+    outputs[source_outputs], function(output) .declaredOutputConceptIds(handle, output, expand = FALSE)),
+    use.names = FALSE)))
+  result
 }

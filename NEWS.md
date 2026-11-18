@@ -1,3 +1,27 @@
+# dsOMOP 2.10.6 (2026-11-18)
+
+- Concept IDs are categories everywhere; DataSHIELD's factor-level rule.
+  Concept-valued outputs, including aliases, value-preserving reducers, joins,
+  reference components and staged outputs, always use shared factors. With
+  `translate_concepts = FALSE`, labels are decimal IDs in numeric ID order:
+  compare labels such as `"4306655"`, not numbers. `factor_concepts = TRUE`
+  remains accepted; `factor_concepts = FALSE` is no longer supported.
+- Observed level discovery follows dsBase 6.3.5 `asFactorDS1`: refuse when the
+  number of distinct nondeclared levels exceeds `nfilter.levels.max` or
+  `nfilter.levels.density` times the output column length, including missing
+  rows. There is no per-level `nfilter.tab` minimum or federation-union cap;
+  assignment of the shared domain has no additional level-count rule.
+  Stricter discovery protects nothing: `ds.asFactor` on the same column already
+  releases these levels, and declared per-concept 0/1 columns give exact counts
+  through their means. Looser discovery would create a disclosure gap.
+- Analyst-declared levels, label maps, complete recodes and binary domains need
+  no discovery. Locally discovered vocabulary expansions remain observed.
+  Refusals identify the column, site and rule without counts and revoke outputs;
+  declare levels, group them with `omop_category_recode()` or
+  `omop_category_rollup()`, or narrow events with `concepts =`.
+  Counts/tables, subset, DP, person-key and sensitive-column protections, and
+  admission of generated per-concept column names, are unchanged.
+
 # dsOMOP 2.10.5 (2026-11-15)
 
 - Release: paired server/client 2.10.5, with checked numeric expressions,

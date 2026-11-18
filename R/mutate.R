@@ -435,6 +435,16 @@
 # double storage of integer64, and an untyped missing destination must retain
 # the selected datetime class and timezone.
 .mutateCommon <- function(values, type, numeric_coerce = .mutateDouble) {
+  if (identical(type, "text") && any(vapply(values, inherits, logical(1), "dsomop_concept_factor"))) {
+    factors <- Filter(function(x) inherits(x, "dsomop_concept_factor"), values)
+    # Branches operate on already shared domains. Retain their complete union,
+    # including unused levels, so selectors never rediscover local occurrence.
+    levels <- unique(unlist(lapply(factors, levels), use.names = FALSE))
+    if (all(vapply(values, function(x) is.factor(x) || all(is.na(x)), logical(1)))) {
+      return(list(values = lapply(values, function(x) .conceptFactor(as.character(x), levels)),
+                  prototype = .conceptFactor(character(), levels)))
+    }
+  }
   if (identical(type, "numeric")) {
     return(list(values = lapply(values, numeric_coerce), prototype = numeric(0)))
   }

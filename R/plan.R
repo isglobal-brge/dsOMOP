@@ -3992,19 +3992,11 @@
         stop("concept_dictionary is derived from other outputs and cannot ",
              "apply filters$custom directly.", call. = FALSE)
       }
-      results[[out_name]] <- if (staged || !isFALSE(plan$options$translate_concepts)) {
-        .buildDeclaredConceptDictionary(
-          handle,
-          outputs = outputs,
-          source_outputs = out$source_outputs
-        )
-      } else {
-        .buildConceptDictionary(
-          handle,
-          results = results,
-          source_outputs = out$source_outputs
-        )
-      }
+      results[[out_name]] <- .buildDeclaredConceptDictionary(
+        handle,
+        outputs = outputs,
+        source_outputs = out$source_outputs
+      )
     }, error = function(e) {
       if (!inherits(e, "dsomop_plan_rejection") ||
           !e$code %in% c("coverage_ambiguous", "join_cardinality", "match_candidates_exceeded",

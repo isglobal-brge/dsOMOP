@@ -2314,7 +2314,8 @@
 #' @param person_ids Numeric vector; person IDs
 #' @param time_window Named list
 #' @param cohort_table Character; cohort temp table name
-#' @param translate_concepts Logical; replace concept IDs with names
+#' @param translate_concepts Logical; select vocabulary labels for concept
+#'   factors. FALSE selects decimal ID labels; assigned concepts remain factors.
 #' @param representation Character; "long", "wide", "features", or "sparse".
 #' @param feature_specs Named list; for features mode
 #' @param representation_grain Character; aggregation unit for wide/features,
@@ -5426,7 +5427,8 @@
 #' @param cohort_table Character; temp table name with cohort members
 #' @param columns Character vector; person columns to include
 #' @param derived Character vector; derived fields to compute
-#' @param translate_concepts Logical; translate concept IDs to names
+#' @param translate_concepts Logical; select vocabulary labels for concept
+#'   factors. FALSE selects decimal ID labels; assigned concepts remain factors.
 #' @param age_breaks Optional increasing integer age-band lower bounds.
 #' @return Data frame with one row per cohort member
 #' @keywords internal

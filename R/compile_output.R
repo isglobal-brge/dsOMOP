@@ -558,12 +558,16 @@
                           use.names = FALSE))
   events <- sort(events, method = "radix")
   pairs <- list()
+  declared <- character()
   for (e in events) {
     ev <- ir[["events"]][[e]]
     if (is.null(ev[["table"]])) next
     concept <- .compileConceptSet(ctx, ev[["concept_set"]])
     if (!identical(concept$state, "set")) next
     ids <- sort(unique(as.integer(concept$ids)))
+    set <- ev[["concept_set"]]
+    if (is.character(set)) set <- ir$concept_sets[[set]]
+    declared <- union(declared, as.character(unlist(set$concepts, use.names = FALSE)))
     if (length(ids)) pairs[[length(pairs) + 1L]] <- data.frame(source = e, concept_id = ids,
                                                                stringsAsFactors = FALSE)
   }
@@ -586,6 +590,9 @@
                   vocabulary_id = .fragmentColumn("text", TRUE, "measure"),
                   concept_class_id = .fragmentColumn("text", TRUE, "measure"),
                   source = .fragmentColumn("text", FALSE, "measure"))
+  # Only literal input IDs are public. Locally expanded vocabulary identities
+  # remain observed levels even in a dictionary with no patient rows.
+  attr(columns$concept_id, "concept_declared") <- declared
   part <- .outputComponent(inputs, name, name, frame, columns, NULL, grain = "none")
   .outputCompiled(name, list(part))
 }
@@ -1553,11 +1560,15 @@
 }
 
 .outputCovariateRefColumns <- function() {
-  list(covariate_id = .fragmentColumn("integer", FALSE, "measure"),
+  columns <- list(covariate_id = .fragmentColumn("integer", FALSE, "measure"),
        source = .fragmentColumn("text", FALSE, "measure"),
        concept_id = .fragmentColumn("integer", TRUE, "concept"),
        concept_name = .fragmentColumn("text", TRUE, "measure"),
        analysis = .fragmentColumn("text", FALSE, "measure"))
+  # These identities name the covariate columns already admitted by the output
+  # registry; they do not discover an additional domain of column values.
+  attr(columns$concept_id, "concept_reference_admitted") <- TRUE
+  columns
 }
 
 # The rows of one output source for every roster row, inside the given

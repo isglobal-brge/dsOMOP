@@ -5276,6 +5276,22 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   assigned <- .omopAnalysisExternalOutputFirewall(
     assigned, entry, assign = TRUE, phase = "final"
   )
+  # Catalog loaders share the same final concept presentation boundary as
+  # recipes. External output contracts declare semantics explicitly; built-in
+  # loaders retain the reviewed OMOP concept-column names.
+  specifications <- entry$meta$output_contract$columns
+  registry <- .buildBlueprint(handle)$columns
+  columns <- setNames(lapply(names(assigned), function(name) {
+    concept <- identical(specifications[[name]]$semantic, "concept_id") ||
+      (is.null(specifications[[name]]) && any(vapply(registry, function(table) {
+        .conceptDeclaredColumn(name, table)
+      }, logical(1))))
+    column <- .fragmentColumn(if (concept) "integer" else
+      if (is.character(assigned[[name]]) || is.factor(assigned[[name]])) "text" else "numeric")
+    if (concept) attr(column, "concept") <- TRUE
+    column
+  }), names(assigned))
+  attr(assigned, "omop_column_contract") <- columns
   bare_schemas <- identical(handle$target_dialect, "sqlite")
   effective_schema <- function(value) {
     if (bare_schemas || is.null(value) || !nzchar(value)) "" else value
