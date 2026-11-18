@@ -304,6 +304,18 @@ test_that('unmapped kept categories and local hierarchy expansion require discov
   unused <- .conceptPresent(ctx,data.frame(person_id=1:2,cause=c(1L,2L)),list(cause=column))
   expect_true('concept:92' %in% .conceptLevelReport(unused)$levels$cause)
   expect_length(.conceptLevelReport(unused)$unsafe,0)
+  # Descendant expansion remains private when every possible output target is
+  # written explicitly. No local source mapping or digest enters the report.
+  rollup$domain <- list(concepts=1L,include_descendants=TRUE)
+  attr(column,'category_spec') <- unclass(dsOMOPClient::omop_category_spec(rollup=rollup,levels=c('concept:90','concept:91')))
+  public_expansion <- .conceptPresent(ctx,data.frame(person_id=1:2,cause=c(1L,2L)),list(cause=column))
+  report <- .conceptLevelReport(public_expansion)
+  expect_length(report$unsafe,0)
+  expect_setequal(report$levels$cause,c('concept:90','concept:91'))
+  expect_null(report$categories$cause$rollup$mapping)
+  expect_null(report$categories$cause$rollup$digest)
+  expect_false(grepl('concept:2"',.jcsCanonical(report),fixed=TRUE))
+  expect_identical(attr(public_expansion,'omop_concepts')$cause$ids,c('concept:90','concept:91'))
   wrapper <- .fragmentColumn('text',TRUE,'measure')
   attr(wrapper,'category_spec') <- unclass(dsOMOPClient::omop_category_spec(ordered=FALSE))
   wrapped <- .categoryPresent(ctx,frame,list(cause=wrapper))
@@ -325,4 +337,36 @@ test_that('category reassignment covers actual rows without disclosing unused pr
   out <- .conceptRelevel(frame,list(concept_protocol=1L,columns=list(cause=shared)))
   expect_identical(levels(out$cause),'1')
   expect_identical(as.character(out$cause),c('1','1'))
+})
+
+test_that('untranslated dictionary factors preserve the separate vocabulary name column', {
+  ctx <- list(handle=.cl_backends$sqlite$handle,ir=list(options=list(translate_concepts=FALSE),variables=list()))
+  raw <- data.frame(concept_id=c(45000123L,45000124L),concept_name=c('Original name one','Original name two'))
+  frame <- .conceptPresent(ctx,raw,list(concept_id=.fragmentColumn('integer',TRUE,'concept')))
+  expect_identical(as.character(frame$concept_id),as.character(raw$concept_id))
+  expect_identical(frame$concept_name,raw$concept_name)
+  shared <- .conceptResolve(unname(attr(frame,'omop_concepts')$concept_id$records))
+  expect_identical(.conceptRelevel(frame,list(concept_protocol=1L,columns=list(concept_id=shared)))$concept_name,raw$concept_name)
+  ctx$ir$options$translate_concepts <- TRUE
+  translated <- .conceptPresent(ctx,raw,list(concept_id=.fragmentColumn('integer',TRUE,'concept')))
+  expect_identical(translated$concept_name,as.character(translated$concept_id))
+})
+
+test_that('hierarchy-derived binary schemas release declarations without local maps', {
+  skip_if_not_installed('dsOMOPClient')
+  ctx <- list(handle=.cl_backends$sqlite$handle,ir=list(options=list(),variables=list()))
+  rollup <- dsOMOPClient::omop_category_rollup('snomed',separation=1L,
+    domain=list(concepts=1L,include_descendants=TRUE))
+  input <- list(category_spec=unclass(dsOMOPClient::omop_category_spec(rollup=rollup)))
+  testthat::local_mocked_bindings(.categoryRollupMap=function(...)stop('Local vocabulary must remain private'))
+  column <- .fragmentColumn('integer',TRUE,'measure')
+  attr(column,'semantic_flag') <- TRUE
+  attr(column,'category_input_contract') <- .categoryInputContract(ctx,input)
+  frame <- data.frame(person_id=1:2,flag=c(0L,1L))
+  attr(frame,'omop_codebook_schema') <- .categoryReleaseSchema(ctx,frame,list(flag=column))
+  report <- .conceptLevelReport(frame)
+  declaration <- report$schema$columns[[2]]$derivation$category_input
+  expect_identical(declaration,list(variable=input))
+  expect_null(declaration$maps)
+  expect_length(report$unsafe,0)
 })

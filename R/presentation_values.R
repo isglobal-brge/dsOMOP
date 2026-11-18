@@ -106,7 +106,7 @@
       }
       records<-get(".categoryVocabularyLabels",mode="function")(ctx$handle,records,s)
     }
-    rollup <- NULL
+    rollup <- NULL; public_rollup <- FALSE
     discovered <- as.character(unlist(c$discovered,use.names=FALSE))
     if(!is.null(s$rollup) && s$rollup$kind!="none") {
       if(!.categoryConceptProducer(list(producer=producer))) .categoryReject("Hierarchy rollup requires concept identities.")
@@ -147,14 +147,27 @@
       public <- unique(c(public_domain,unlist(s$rollup$ancestors,use.names=FALSE),unlist(s$rollup$priority,use.names=FALSE)))
       declared <- union(intersect(declared,names(records)),intersect(public,names(records)))
       discovered <- union(discovered,setdiff(union(targets,names(rollup$mapping)),declared))
+      if(length(public_targets) && all(targets %in% public_targets)) {
+        # A complete analyst-declared hierarchy level needs no local discovery.
+        # Consume the private source map here: publishing it (or its digest)
+        # would reveal locally expanded vocabulary identities unnecessarily.
+        ids <- vapply(ids,function(key)if(is.na(key))NA_character_ else records[[key]]$effective_id %||% key,"")
+        sentinels <- records[grepl("^special:",names(records))]
+        records <- c(target_records,sentinels)
+        declared <- union(public_targets,names(sentinels))
+        discovered <- character()
+        rollup <- list(adapter=rollup$adapter,levels=as.list(public_targets))
+        producer <- list(kind="concept"); producer_order <- character(); producer_ordered <- FALSE
+        public_rollup <- TRUE
+      }
     }
     effective_spec<-s
     if(is.list(s[["order"]]$metadata))effective_spec[["order"]]<-list(kind="category_order",keys=as.list(.categoryOrderCheck(s[["order"]])))
     contract<-list(spec=effective_spec,producer=producer,producer_order=as.list(producer_order),producer_ordered=producer_ordered)
     if(!is.null(rollup))contract$rollup<-rollup
-    if(!flag && identical(c$kind,"category")) {
+    if(!flag && identical(c$kind,"category") && !public_rollup) {
       inherited<-.categoryNullableStrings(.categoryMergedAliases(c$resolved$aliases))
-      if(!is.null(rollup))inherited<-vapply(inherited,function(key) {
+      if(!is.null(rollup$mapping))inherited<-vapply(inherited,function(key) {
         if(is.na(key))return(NA_character_)
         if(grepl("^special:",key))return(key)
         rollup$mapping[[key]][1L] %||% NA_character_

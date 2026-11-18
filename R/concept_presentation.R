@@ -127,7 +127,7 @@
   if (length(contracts)) {
     attr(frame, "omop_concepts") <- contracts
     attr(frame, "omop_concept_cols") <- names(contracts)
-    if ("concept_id" %in% names(contracts) && "concept_name" %in% names(frame)) {
+    if (translate && "concept_id" %in% names(contracts) && "concept_name" %in% names(frame)) {
       frame$concept_name <- as.character(frame$concept_id)
     }
   }
@@ -285,7 +285,7 @@
   }
   attr(df, "omop_concepts") <- contracts
   df <- .conceptReferenceNames(df, contracts)
-  if ("concept_id" %in% names(contracts) && "concept_name" %in% names(df)) {
+  if (!isFALSE(contracts$concept_id$translate) && "concept_id" %in% names(contracts) && "concept_name" %in% names(df)) {
     df$concept_name <- as.character(df$concept_id)
   }
   if (length(attr(df, "omop_generated_columns")) && !length(spec$names)) stop("Incomplete shared generated-column names.", call. = FALSE)

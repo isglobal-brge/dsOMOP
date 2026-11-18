@@ -2920,8 +2920,8 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
 #' @return A named list with \code{levels} (named list mapping
 #'   each safe concept-id column to its character levels), \code{unsafe}
 #'   (character vector of concept-id columns that failed the disclosure gate),
-#'   and \code{nfilter_levels_max} (the server's level cap, so the client can
-#'   reconcile heterogeneous caps). A-27 reports also carry the concept
+#'   \code{unsafe_rules} (rule names by refused column, without counts), and
+#'   \code{nfilter_levels_max} (server policy metadata). A-27 reports also carry the concept
 #'   protocol, permitted ID/name/version candidates, generated/reference naming
 #'   identities, stable keys and evidence binding.
 #' @seealso \code{\link{omopAsFactorColumnsDS}}, \code{\link{.assertSafeLevels}}
@@ -2970,7 +2970,8 @@ omopFactorLevelsDS <- function(df) {
 #' union at every retained site. Absent local categories are unused levels;
 #' only explicit user recodes may merge identities. Generated names are
 #' validated against the complete component schema. Incomplete coverage,
-#' unsafe levels and invalid names fail and trigger federation rollback.
+#' invalid names and integrity failures trigger federation rollback. Level-count
+#' rules apply only during discovery, never to assignment of the shared domain.
 #' Vocabulary evidence is rechecked before assignment. Verified protected
 #' lineage is preserved only through this checked identity-preserving route.
 #' Staged files are rewritten privately and their existing manifest updated.

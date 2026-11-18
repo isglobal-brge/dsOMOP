@@ -1,12 +1,8 @@
 .categoryInputContract <- function(ctx,input) {
-  maps<-list()
-  walk<-function(x,path="input") {
-    if(!is.list(x))return(NULL)
-    if(!is.null(x$category_spec$rollup)&&x$category_spec$rollup$kind!="none")maps[[path]]<<-.categoryRollupMap(ctx$handle,x$category_spec$rollup)
-    for(i in seq_along(x))if(is.list(x[[i]]))walk(x[[i]],paste0(path,"/",names(x)[i] %||% i))
-  }
-  walk(input)
-  list(variable=input,maps=maps)
+  # This declaration is released in codebook/report schemas, including for
+  # public binary indicators and counts. Local vocabulary expansion belongs to
+  # private execution and must never be attached to these public declarations.
+  list(variable=input)
 }
 
 .categorySetIndicator <- function(ctx,raw,spec,key,missing="propagate",labels=NULL) {

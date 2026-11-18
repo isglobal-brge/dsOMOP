@@ -154,7 +154,7 @@
       frame[[col]] <- if (identical(meta$contracts[[col]]$kind,"category")) .categoryFactor(values,spec$columns[[col]]) else if ((meta$contracts[[col]]$kind %||% "") %in% c("date","number")) .dateOrdered(values, levels = as.character(unlist(spec$columns[[col]]$levels, use.names = FALSE))) else .conceptFactor(values, levels = as.character(unlist(spec$columns[[col]]$levels, use.names = FALSE)))
     }
     frame <- .conceptReferenceNames(frame, meta$contracts)
-    if ("concept_id" %in% names(mappings) && "concept_name" %in% names(frame)) frame$concept_name <- as.character(frame$concept_id)
+    if (!isFALSE(meta$contracts$concept_id$translate) && "concept_id" %in% names(mappings) && "concept_name" %in% names(frame)) frame$concept_name <- as.character(frame$concept_id)
     names(frame) <- unname(new_names[names(frame)])
     types <<- vapply(frame, function(x) paste(typeof(x), paste(class(x), collapse = "/"), sep = "|"), "")
     if (descriptor$metadata$format == "parquet") {
@@ -246,7 +246,7 @@
         if((meta$contracts[[col]]$kind %||% "") %in% c("date","number")) .dateOrdered(values,levels) else .conceptFactor(values, levels = levels)
     }
     frame <- .conceptReferenceNames(frame, meta$contracts)
-    if ("concept_id" %in% names(meta$contracts) && "concept_name" %in% names(frame)) frame$concept_name <- as.character(frame$concept_id)
+    if (!isFALSE(meta$contracts$concept_id$translate) && "concept_id" %in% names(meta$contracts) && "concept_name" %in% names(frame)) frame$concept_name <- as.character(frame$concept_id)
     mapping <- unlist(meta$names, use.names = TRUE)
     names(frame) <- unname(mapping[names(frame)])
     frame
