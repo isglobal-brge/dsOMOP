@@ -47,10 +47,17 @@
   treat the domain and its targets as declared. Legacy interval outputs present
   concept IDs as factors. `omopBindRowsDS` keeps shared concept factors and
   refuses inputs whose level sets differ.
-- Untranslated legacy plans and catalog assignments that publish concept
-  factors require dsOMOPClient 2.10.6 or later (`concept_protocol`), because
-  older clients do not reconcile those factors across servers; they are refused
-  with a message to update the client.
+- Catalog loaders (the library's assign queries, such as
+  `condition_occurrence.load`) keep concept IDs as text codes: categories, never
+  numbers, identical at every site. They bring whole tables in as private inputs
+  for protected analyses, and their hundreds of concepts could not be shared as
+  factor levels without passing DataSHIELD's level rule; `ds.asFactor` shares a
+  narrowed column's levels under that rule. Row verbs accept these codes and
+  shared factors, and refuse numeric concept columns retained from older tables.
+- Untranslated legacy plans (and their DP preparation) require dsOMOPClient
+  2.10.6 or later (`concept_protocol`), because older clients do not reconcile
+  their concept factors across servers; they are refused with a message to
+  update the client.
 - Counts/tables, subset, DP, person-key and sensitive-column protections are
   unchanged.
 
