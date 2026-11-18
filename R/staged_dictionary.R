@@ -107,8 +107,10 @@
   result <- .buildConceptDictionary(
     handle, results = synthetic, source_outputs = source_outputs
   )
+  # Concept-set expansion reads only the public vocabulary tables, so expanded
+  # identities are declared like the literal ones.
   attr(result, "omop_dictionary_declared") <- as.character(unique(unlist(lapply(
-    outputs[source_outputs], function(output) .declaredOutputConceptIds(handle, output, expand = FALSE)),
+    outputs[source_outputs], function(output) .declaredOutputConceptIds(handle, output, expand = TRUE)),
     use.names = FALSE)))
   result
 }

@@ -565,9 +565,7 @@
     concept <- .compileConceptSet(ctx, ev[["concept_set"]])
     if (!identical(concept$state, "set")) next
     ids <- sort(unique(as.integer(concept$ids)))
-    set <- ev[["concept_set"]]
-    if (is.character(set)) set <- ir$concept_sets[[set]]
-    declared <- union(declared, as.character(unlist(set$concepts, use.names = FALSE)))
+    declared <- union(declared, as.character(ids))
     if (length(ids)) pairs[[length(pairs) + 1L]] <- data.frame(source = e, concept_id = ids,
                                                                stringsAsFactors = FALSE)
   }
@@ -590,8 +588,8 @@
                   vocabulary_id = .fragmentColumn("text", TRUE, "measure"),
                   concept_class_id = .fragmentColumn("text", TRUE, "measure"),
                   source = .fragmentColumn("text", FALSE, "measure"))
-  # Only literal input IDs are public. Locally expanded vocabulary identities
-  # remain observed levels even in a dictionary with no patient rows.
+  # Concept sets resolve on the public vocabulary tables only, so the whole
+  # resolved set is declared: no level of this dictionary comes from patient rows.
   attr(columns$concept_id, "concept_declared") <- declared
   part <- .outputComponent(inputs, name, name, frame, columns, NULL, grain = "none")
   .outputCompiled(name, list(part))
@@ -2254,9 +2252,11 @@
   all_rows <- list()
   others <- character(0)
   unavailable <- FALSE
+  declared_concepts <- character(0)
   for (i in seq_along(srcs)) {
     path <- paste0("/outputs/", name, "/sources/", i - 1L)
     src <- .reduceSource(ctx, srcs[[i]])
+    declared_concepts <- union(declared_concepts, .eventDeclaredConcepts(src))
     if (!src$available) { unavailable <- TRUE; next }
     cols <- names(src$fragment$columns)
     extra <- list()
@@ -2452,6 +2452,9 @@
   frame <- handled$frame
   columns <- handled$columns
   .outputCheckNames(setdiff(names(columns), c("row_id", "cohort_row_id", "person_id")), name, grain)
+  if (length(declared_concepts) && "concept_id" %in% names(columns)) {
+    attr(columns$concept_id, "concept_declared") <- declared_concepts
+  }
   status <- if (unavailable) "unavailable" else "ok"
   part <- .outputComponent(inputs, name, name, frame, columns, cons,
                            grain = if (per_event) "person" else "episode", status = status)

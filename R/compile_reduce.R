@@ -1008,7 +1008,15 @@
   columns <- stats::setNames(lapply(out_names, function(c) .fragmentColumn(type, TRUE, "measure")),
                              out_names)
   if (value_concept && fn %in% c("first_value", "last_value", "nth_value", "closest_value", "mode", "min", "max")) {
-    for (col in names(columns)) attr(columns[[col]], "concept") <- TRUE
+    # A value taken from the event's own scoped concept column lies in the
+    # event's resolved concept set, which is public vocabulary metadata.
+    own_column <- identical(value_col, "concept_id") ||
+      (!is.null(src$meta$concept_col) && identical(tolower(value_col), tolower(src$meta$concept_col)))
+    declared_concepts <- if (own_column) .eventDeclaredConcepts(src) else character(0)
+    for (col in names(columns)) {
+      attr(columns[[col]], "concept") <- TRUE
+      if (length(declared_concepts)) attr(columns[[col]], "concept_declared") <- declared_concepts
+    }
   }
   if (!src$available) return(.reduceUnavailable(ctx, cons, name, columns))
   window <- r[["window"]]

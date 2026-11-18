@@ -147,6 +147,19 @@
   get(name, envir = memo, inherits = FALSE)
 }
 
+# The declared domain of a source's concept_id column. A table event restricted
+# by a concept set only returns rows whose scoped concept column lies in that
+# set. The set resolves on the public vocabulary tables (concept,
+# concept_ancestor, concept_relationship), never on patient rows, so its IDs are
+# declared levels: building a factor from them releases nothing about which
+# concepts occur at a site. Unrestricted sources declare nothing.
+.eventDeclaredConcepts <- function(src) {
+  meta <- src$meta
+  if (!identical(src$kind, "event") || !is.list(meta) || !identical(meta$kind, "table") ||
+      !identical(meta$concept$state, "set")) return(character(0))
+  .conceptIdText(sort(unique(as.integer(meta$concept$ids))))
+}
+
 #' Compile an event source by name, with its dependencies
 #'
 #' Resolves the node through \code{ctx$ir}, its concept set through
