@@ -174,7 +174,9 @@ test_that("standard reference selectors and surfacing precedence preserve legacy
     expected <- DBI::dbGetQuery(handle$conn, paste(
       "SELECT reference_concept_id, metadata_type_concept_id, value_as_number",
       "FROM metadata WHERE reference_concept_id = 201820"))
-    expect_identical(.planExecute(handle, plan, c(ref = "R"))$ref, expected)
+    # 2.10.6: concept columns are ID-labelled factors; compare their IDs.
+    got <- .expect_legacy_concept_ids(.planExecute(handle, plan, c(ref = "R"))$ref, expected)
+    expect_identical(got, expected)
   }
 })
 
@@ -215,6 +217,7 @@ test_that("legacy reference proof reaches public memory and staged inventories",
                        check.names = FALSE)
       }
     }
+    if (identical(mode, "memory")) value <- .expect_legacy_concept_ids(value, expected_mode)
     expect_identical(value, expected_mode)
     expect_true(evalq(omopStagedRevokeDS("exec"), target))
     expect_identical(ls(target), character(0))

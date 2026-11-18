@@ -612,12 +612,13 @@ test_that("merge keeps its ordinary validations and ignores DP provenance", {
 
   concept_x_raw <- data.frame(
     person_id = 1:6,
-    measurement_concept_id = 101:106,
+    measurement_concept_id = .conceptFactor(as.character(101:106), as.character(101:106)),
     stringsAsFactors = FALSE
   )
+  # Published concept columns are shared factors since 2.10.6.
   concept_y_raw <- data.frame(
     person_id = 1:6,
-    measurement_concept_id = 201:206,
+    measurement_concept_id = .conceptFactor(as.character(201:206), as.character(201:206)),
     stringsAsFactors = FALSE
   )
   attr(concept_x_raw, "omop_concept_cols") <- "measurement_concept_id"
@@ -726,11 +727,14 @@ test_that("factor harmonization invalidates DP provenance", {
     .testPseudonymize(raw), producer = "test/factor-source",
     episode_domain = "factor-episode-domain"
   )
+  # Since 2.10.6 a legacy contract must cover every tagged concept column.
   first <- omopAsFactorColumnsDS(source, list(
-    gender_concept_id = c("8507", "8532")
+    gender_concept_id = c("8507", "8532"),
+    race_concept_id = c("1", "2")
   ))
   reordered <- omopAsFactorColumnsDS(source, list(
-    gender_concept_id = c("9999", "8532", "8507")
+    gender_concept_id = c("9999", "8532", "8507"),
+    race_concept_id = c("2", "1")
   ))
   two_columns <- omopAsFactorColumnsDS(source, list(
     gender_concept_id = c("8507", "8532"),
@@ -745,17 +749,17 @@ test_that("factor harmonization invalidates DP provenance", {
     "dsomop_dp_provenance", exact = TRUE
   ))
   no_op <- omopAsFactorColumnsDS(first, list(
-    gender_concept_id = levels(first$gender_concept_id)
+    gender_concept_id = levels(first$gender_concept_id),
+    race_concept_id = levels(first$race_concept_id)
   ))
   expect_identical(no_op, first)
   expect_null(attr(no_op, "dsomop_dp_provenance", exact = TRUE))
 
-  excluded <- omopAsFactorColumnsDS(source, list(
+  # An incomplete contract fails closed; the sealed source stays valid.
+  expect_error(omopAsFactorColumnsDS(source, list(
     gender_concept_id = "8507"
-  ))
-  expect_silent(.dsomopDpVerifyPersonLocal(excluded))
-  expect_identical(excluded, source)
-  expect_identical(.dp_capsule(excluded), .dp_capsule(source))
+  )), "always categories since 2[.]10[.]6")
+  expect_silent(.dsomopDpVerifyPersonLocal(source))
 })
 
 test_that("QueryLibrary assign provenance rejects every scoped execution", {

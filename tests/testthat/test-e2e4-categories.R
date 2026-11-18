@@ -142,7 +142,9 @@ test_that("v1 baseline and features publish categorical domains", {
     b <- read(B); f <- read(F)
     expect_true(is.ordered(b$age_group)); expect_identical(levels(b$age_group), c("0-17","18-64","65+"))
     expect_true(is.factor(f$sex)); expect_false(is.ordered(f$sex)); expect_identical(levels(f$sex), c("F","M"))
-    if (translated) expect_true(is.factor(b$gender_concept_id)) else expect_false(is.factor(b$gender_concept_id))
+    # Concept IDs are categories since 2.10.6; untranslated labels are the IDs.
+    expect_true(is.factor(b$gender_concept_id))
+    if (!translated) expect_true(all(grepl("^[0-9]+$", levels(b$gender_concept_id))))
     omopStagedRevokeDS("O_exec")
   }
 })
