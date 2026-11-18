@@ -61,6 +61,13 @@
   out
 }
 
+# Translation selects labels only. Identity and the factor release contract do
+# not depend on whether a vocabulary name is requested.
+.conceptIdRecords <- function(ids) {
+  setNames(lapply(ids, function(id) list(id = id, name = NULL,
+    vocabulary = NULL, version = NULL, origin = "fallback", label = id)), ids)
+}
+
 .conceptPresent <- function(ctx, frame, columns) {
   for(n in intersect(names(frame),names(columns))) {
     mask<-attr(frame[[n]],"category_defined")
@@ -88,11 +95,7 @@
     }
   }
   frame <- .numberCapture(frame, columns)
-  if (!.reduceTranslate(ctx)) {
-    frame<-.categoryPresent(ctx,frame,columns)
-    if(.categoryNative(ctx$ir)||length(.categoryCapabilities(ctx$ir)))attr(frame,"omop_codebook_schema")<-.categoryReleaseSchema(ctx,frame,columns)
-    return(frame)
-  }
+  translate <- .reduceTranslate(ctx)
   contracts <- attr(frame, "omop_concepts") %||% list()
   for (col in intersect(names(columns), names(frame))) {
     if (!.conceptColumn(columns[[col]])) next
@@ -103,16 +106,18 @@
     map <- .conceptMapOverlay(recipe_map, variable_map)
     ids <- as.character(frame[[col]])
     all_ids <- unique(c(ids[!is.na(ids)], names(map)))
-    records <- .conceptVocabulary(ctx$handle, all_ids)
-    for (id in names(map)) {
+    records <- if (translate) .conceptVocabulary(ctx$handle, all_ids) else .conceptIdRecords(all_ids)
+    for (id in if (translate) names(map) else character()) {
       records[[id]]$origin <- if (id %in% names(variable_map)) "variable" else "recipe"
       records[[id]]$label <- unname(map[[id]])
     }
     resolved <- .conceptResolve(unname(records))
     values <- resolved$labels[match(ids, resolved$ids)]
     frame[[col]] <- .conceptFactor(values, levels = resolved$levels)
-    contracts[[col]] <- list(ids = ids, records = records, declared = names(map),
-                              owner = owner, resolved = resolved)
+    contracts[[col]] <- list(ids = ids, records = records,
+                              declared = union(names(map), attr(columns[[col]], "concept_declared")),
+                              reference_admitted = isTRUE(attr(columns[[col]], "concept_reference_admitted")),
+                              translate = translate, owner = owner, resolved = resolved)
     if (col == "conceptId" && "covariateId" %in% names(frame)) {
       contracts[[col]]$reference_keys <- setNames(ids, as.character(frame$covariateId))
       contracts[[col]]$resolved$naming_ids <- unique(ids[!is.na(ids)])
@@ -127,9 +132,10 @@
   }
   frame <- .categoryPresent(ctx, frame, columns)
   contracts <- attr(frame,"omop_concepts") %||% contracts
-  frame <- .conceptReferenceNames(frame, contracts)
+  if (translate) frame <- .conceptReferenceNames(frame, contracts)
   generated <- list()
   for (key in intersect(names(columns), names(frame))) {
+    if (!translate) next
     g <- attr(columns[[key]], "concept_name")
     if (is.null(g)) next
     owner <- g$owner
@@ -375,6 +381,7 @@
   for (col in names(contracts)) {
     old <- contracts[[col]]$records
     if ((contracts[[col]]$kind %||% "") %in% c("date","number","category")) next
+    if (isFALSE(contracts[[col]]$translate)) next
     fresh <- .conceptVocabulary(handle, names(old))
     for (id in names(old)) if (old[[id]]$origin %in% c('variable','recipe')) {
       fresh[[id]]$origin <- old[[id]]$origin; fresh[[id]]$label <- old[[id]]$label
@@ -402,6 +409,7 @@
 # Legacy sparse feature descriptions are names, independent of value recodes.
 .conceptReferenceNames <- function(frame, contracts) {
   c <- contracts$conceptId
+  if (isFALSE(c$translate)) return(frame)
   if (is.null(c) || !all(c("covariateId", "covariateName", "analysisId") %in% names(frame))) return(frame)
   ids <- as.character(unlist(c$reference_keys, use.names = TRUE)[as.character(frame$covariateId)])
   shared <- c$resolved

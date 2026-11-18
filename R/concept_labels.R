@@ -164,14 +164,14 @@
 }
 
 .conceptNeedsPresentation <- function(plan) {
-  !isFALSE(plan$options$translate_concepts) || .conceptHasMaps(plan) || .dateNeedsPresentation(plan)
+  TRUE # Concept IDs are categories even when their labels are decimal IDs.
 }
 
 .conceptValidatePlan <- function(plan, wire = FALSE) {
   .categoryPlanCheck(plan)
   options <- plan$options
-  if (!isFALSE(options$translate_concepts) && isFALSE(options$factor_concepts)) {
-    stop("factor_concepts = FALSE conflicts with concept translation; remove it or set translate_concepts = FALSE.", call. = FALSE)
+  if (isFALSE(options$factor_concepts)) {
+    stop("factor_concepts = FALSE is no longer supported: concept IDs are always categories since 2.10.6.", call. = FALSE)
   }
   nodes <- c(list(options = options), if (length(plan$variables)) setNames(plan$variables, paste0("variables.", names(plan$variables))) else list())
   for (path in names(nodes)) for (key in c("labels", "column_names")) {
@@ -201,7 +201,7 @@
     "Label precedence: variable recode, recipe recode, vocabulary name, decimal ID fallback. Explicit equal recodes merge categories.",
     "Federation: permitted ID union, including declared unused levels; newest comparable vocabulary version, then bytewise name tie. Unresolved versions never establish recency.",
     "Generated names: ASCII snake_case vocabulary tokens; colliding automatic names gain concept-ID suffixes. Vocabulary-dependent names are unresolved until permitted federation reconciliation.") else
-      "Concept presentation disabled: numeric IDs and untranslated generated keys; labels, column_names and factor_concepts are inactive."
+      "Concept presentation: factors labelled by decimal concept ID, in numeric ID order, with identical levels at every retained site; vocabulary labels and generated names are inactive."
   for (name in names(plan$variables)) {
     v <- plan$variables[[name]]
     source <- if (!is.null(v$raw)) paste(v$raw$table, v$raw$column, sep = ".") else
