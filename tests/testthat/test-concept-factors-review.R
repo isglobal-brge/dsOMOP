@@ -59,12 +59,17 @@ test_that("generated concept columns share one admission and refusals never name
   .ws7_keys(list(h))
   withr::local_options(list(nfilter.subset = 3, nfilter.tab = 3, nfilter.levels.max = 1,
                             nfilter.levels.density = 0.33))
-  translated <- .planExecute(h, .cfr_pivot_plan(TRUE), list(m = "M"))$m
-  report <- .conceptLevelReport(translated)
-  expect_true("generated concept columns" %in% report$unsafe)
-  expect_false(any(grepl("[0-9]{4,}", c(report$unsafe, names(report$unsafe_rules)))))
-  expect_false(any(grepl("[0-9]{4,}", report$keys)))
-  expect_error(.planExecute(h, .cfr_pivot_plan(FALSE), list(m = "M")), "Disclosive|insufficient")
+  # Refused at publication, translated or not: never assigned, never named.
+  for (translate in c(TRUE, FALSE)) {
+    error <- tryCatch(.planExecute(h, .cfr_pivot_plan(translate), list(m = "M")), error = identity)
+    expect_s3_class(error, "dsomop_plan_rejection")
+    expect_identical(error$reason, "concept_level_rule")
+    expect_identical(.rejectionEntry(error)$reason, "concept_level_rule")
+    expect_false(grepl("[0-9]{4,}", conditionMessage(error)))
+  }
+  withr::local_options(list(nfilter.levels.max = 40, nfilter.levels.density = 1))
+  admitted <- .planExecute(h, .cfr_pivot_plan(TRUE), list(m = "M"))$m
+  expect_length(.conceptLevelReport(admitted)$unsafe, 0L)
 })
 
 test_that("counted releases keep the level gate on date columns", {
@@ -130,4 +135,36 @@ test_that("legacy interval rows present their concept IDs as categories", {
   })
   expect_true(is.factor(df$concept_id))
   expect_true(all(grepl("^[0-9]+$", levels(df$concept_id))))
+})
+
+test_that("legacy dictionaries name only concept columns, and declared concepts when publishing partially", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h), add = TRUE)
+  .ws7_keys(list(h))
+  outputs <- list(events = list(type = "event_level", table = "condition_occurrence", concept_set = 201820L))
+  # n_concept_id is a count alias whose numbers happen to be valid concept IDs.
+  results <- list(events = data.frame(person_id = c("a", "b"), condition_concept_id = c(201820L, 255573L),
+                                      n_concept_id = c(8507L, 8532L)))
+  withr::local_options(list(dsomop.query_strict = TRUE))
+  full <- .buildDeclaredConceptDictionary(h, outputs, results = results)
+  expect_true(all(c("201820", "255573") %in% as.character(full$concept_id)))
+  expect_false(any(c("8507", "8532") %in% as.character(full$concept_id)))
+  withr::local_options(list(dsomop.query_strict = FALSE))
+  partial <- .buildDeclaredConceptDictionary(h, outputs, results = results)
+  expect_setequal(as.character(partial$concept_id), "201820")
+})
+
+test_that("bind rows keeps shared concept factors and refuses different level sets", {
+  withr::local_options(list(nfilter.subset = 3, nfilter.levels.max = 40, nfilter.levels.density = 1))
+  frame_x <- .testPseudonymize(data.frame(person_id = 1:4))
+  frame_x$condition_concept_id <- .conceptFactor(c("10", "20", "10", "20"), c("10", "20"))
+  frame_y <- .testPseudonymize(data.frame(person_id = 5:8))
+  frame_y$condition_concept_id <- .conceptFactor(c("20", "20", "10", "10"), c("10", "20"))
+  for (f in list(frame_x, frame_y)) expect_true(.is_omop.table(f))
+  bound <- omopBindRowsDS(frame_x, frame_y)
+  expect_s3_class(bound$condition_concept_id, "dsomop_concept_factor")
+  expect_identical(levels(bound$condition_concept_id), c("10", "20"))
+  frame_z <- frame_y
+  frame_z$condition_concept_id <- .conceptFactor(c("20", "20", "10", "10"), c("10", "20", "30"))
+  expect_error(omopBindRowsDS(frame_x, frame_z), "different shared levels")
 })

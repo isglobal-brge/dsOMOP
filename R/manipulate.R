@@ -440,8 +440,20 @@ omopBindRowsDS <- function(x, y) {
   # Align y's column order to x before binding.
   source_y <- y
   y <- y[, names(x), drop = FALSE]
+  # Shared concept factors bind only with identical levels; rbind keeps their
+  # codes but drops their classes, which row verbs require.
+  shared <- c("dsomop_concept_factor", "dsomop_category_factor", "dsomop_date_factor")
+  concept_cols <- names(x)[vapply(names(x), function(col)
+    inherits(x[[col]], shared) || inherits(y[[col]], shared), logical(1))]
+  for (col in concept_cols) {
+    if (!identical(class(x[[col]]), class(y[[col]])) || !identical(levels(x[[col]]), levels(y[[col]]))) {
+      stop("omopBindRowsDS: concept column '", col, "' has different shared levels in the two ",
+           "inputs; publish both from one plan.", call. = FALSE)
+    }
+  }
   result <- rbind(x, y)
   rownames(result) <- NULL
+  for (col in concept_cols) class(result[[col]]) <- class(x[[col]])
 
   result <- .retagOmopTable(result, x, source_y)
   .publishStandalone(result, caller = "omopBindRowsDS",

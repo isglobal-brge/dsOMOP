@@ -151,12 +151,11 @@
   for (key in intersect(names(columns), names(frame))) {
     g <- attr(columns[[key]], "concept_name")
     if (is.null(g)) next
-    if (!translate) {
-      # Untranslated generated names stay ID-based, but their admission is the
-      # same as for translated names: a refused concept column is not released.
-      if (!isTRUE(g$declared) && !isTRUE(g$permitted)) .publishReject("insufficient_support")
-      next
-    }
+    # A generated column name says that its concept occurs. A column this site
+    # does not admit is refused here, at publication, translated or not: it is
+    # never assigned, so no client has to revoke it.
+    if (!isTRUE(g$declared) && !isTRUE(g$permitted)) .conceptLevelReject()
+    if (!translate) next
     owner <- g$owner
     variable <- if (length(owner)) ctx$ir$variables[[owner]] else NULL
     maps <- .conceptMapOverlay(
@@ -201,6 +200,13 @@
   assessment$levels <- setdiff(reported, as.character(unlist(contract$declared, use.names = FALSE)))
   if (!discover) { assessment$safe <- TRUE; assessment$rules <- character() }
   assessment
+}
+
+.conceptLevelReject <- function() {
+  stop(structure(list(message = paste0("Concept factor publication refused: generated concept ",
+                        "columns fail this site's factor-level rule."), call = NULL,
+                      code = "validation_error", reason = "concept_level_rule"),
+                 class = c("dsomop_plan_rejection", "error", "condition")))
 }
 
 .conceptSiteVerdict <- function(report) {

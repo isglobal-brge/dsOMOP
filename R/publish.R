@@ -67,7 +67,8 @@
 # and (A-20 (j)) the bounded realisations of the interval helpers.
 .REJECTION_REASONS <- c("adapter_person_mismatch", "cost_currency_mixed",
                         "stockpile_row_cap", "reducer_row_cap", "category_spec_invalid", "category_domain_incompatible", "category_rollup_ambiguous", "category_source_forbidden", "category_type_unsupported", "repeated_spec_invalid", "repeated_grain_incompatible", "codebook_metadata_missing", "number_daily_input", "number_daily_reducer", "number_daily_quantity", "number_spec_invalid", "number_unit_conflict", "number_source_invalid", "number_representation_conflict", "number_type_unsupported", "number_expression_invalid", "number_dependency_invalid", "date_spec_invalid", "date_source_invalid",
-                        "date_pattern_invalid", "date_policy_conflict", "date_parts_names")
+                        "date_pattern_invalid", "date_policy_conflict", "date_parts_names",
+                        "concept_level_rule")
 
 # The bounded status entry for a dsomop_plan_rejection condition: {code,
 # message} with the constant message per code, plus `reason` only when the

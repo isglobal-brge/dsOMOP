@@ -49,8 +49,9 @@
   }
   read_frame <- function(frame,skip=character()) {
     columns <- .conceptLegacyColumns(list(handle=handle,ir=list(outputs=setNames(list(output),root))),frame,root,component)
-    known <- union(grep("(^|_)concept_id$",names(frame),value=TRUE),
-      union(attr(frame,"omop_concept_cols"),names(columns)[vapply(columns,.conceptColumn,logical(1))]))
+    # Only columns this output classifies as concepts: a count or other reducer
+    # alias named *_concept_id holds numbers, not concept identities.
+    known <- union(attr(frame,"omop_concept_cols"),names(columns)[vapply(columns,.conceptColumn,logical(1))])
     if("conceptId" %in% names(frame))known <- union(known,"conceptId")
     contracts <- attr(frame,"omop_concepts") %||% list()
     for(col in setdiff(union(known,names(contracts)),skip)) {
@@ -98,10 +99,15 @@
     stop("concept_dictionary references unknown source output(s): ",
          paste(missing, collapse = ", "), ".", call. = FALSE)
   }
+  # Strict publication (the default) releases every source or nothing, so the
+  # values a published source carries are references the dictionary may name.
+  # A server that publishes partially could refuse a source and still publish
+  # its dictionary: there the dictionary names declared concepts only.
+  observed <- isTRUE(.omopDisclosureSettings()$query_strict)
   synthetic <- stats::setNames(lapply(source_outputs, function(name) {
     data.frame(
       concept_id = as.integer(union(.declaredOutputConceptIds(handle, outputs[[name]]),
-        .dictionaryObservedIds(handle,results[[name]],outputs[[name]],name)))
+        if (observed) .dictionaryObservedIds(handle,results[[name]],outputs[[name]],name)))
     )
   }), source_outputs)
   result <- .buildConceptDictionary(
