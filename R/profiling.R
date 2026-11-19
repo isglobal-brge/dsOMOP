@@ -662,7 +662,11 @@
 #' @param columns Character vector; columns to check (NULL = all)
 #' @param cohort_table Character; cohort temp table name to scope the
 #'   population (INNER JOIN on subject_id), or NULL.
-#' @return Data frame with column_name and missing_rate
+#' @return Data frame with \code{column_name}, \code{missing_rate},
+#'   \code{n_total} and \code{n_missing}. The counts are banded like every
+#'   other released count (persons for person-bearing tables, rows otherwise);
+#'   \code{n_missing} is released exactly when \code{missing_rate} is, so a
+#'   client can pool the rates as a ratio of sums.
 #' @keywords internal
 .profileMissingness <- function(handle, table, columns = NULL,
                                 cohort_table = NULL) {
@@ -722,6 +726,8 @@
   results <- data.frame(
     column_name = character(0),
     missing_rate = numeric(0),
+    n_total = numeric(0),
+    n_missing = numeric(0),
     stringsAsFactors = FALSE
   )
 
@@ -758,9 +764,16 @@
         (n_missing == 0 || missing_banded > 0)) {
       rate <- round(missing_banded / total_banded, 2)
     }
+    # The banded counts behind the rate, for pooling across servers. The total
+    # is the gated population (at least nfilter.subset units), banded as in
+    # table statistics; the missing count is released only together with the
+    # rate, i.e. when both the missing and the non-missing groups pass
+    # nfilter.tab, and is banded the same way.
     results <- rbind(results, data.frame(
       column_name = col,
       missing_rate = rate,
+      n_total = total_banded,
+      n_missing = if (is.na(rate)) NA_real_ else missing_banded,
       stringsAsFactors = FALSE
     ))
   }

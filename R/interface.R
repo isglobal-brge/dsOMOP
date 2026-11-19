@@ -1351,7 +1351,10 @@ omopDomainCoverageDS <- function(omop_symbol) {
 #' @param cohort Cohort scope: a cohort temp table name, a cohort_definition_id,
 #'   or NULL. Takes precedence over \code{cohort_table}.
 #' @param cohort_table Character; legacy cohort temp table for filtering (NULL)
-#' @return Data frame with missingness rates
+#' @return Data frame with \code{column_name}, \code{missing_rate} and, from
+#'   dsOMOP 2.10.9, the banded counts behind the rate: \code{n_total} (the
+#'   scoped persons, or rows for tables without persons) and \code{n_missing}
+#'   (released only when \code{missing_rate} is).
 #' @examples
 #' \dontrun{
 #' missing <- omopMissingnessDS("omop", "condition_occurrence")

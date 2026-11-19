@@ -1,3 +1,11 @@
+# dsOMOP 2.10.9 (development)
+
+- `omopMissingnessDS()` also returns `n_total` and `n_missing`, the banded
+  counts behind each `missing_rate` (persons for person tables, rows
+  otherwise), so clients can pool missingness across servers. `n_missing` is
+  released only when the rate is; nothing else changes and no method needs to
+  be published again.
+
 # dsOMOP 2.10.8 (2026-11-19)
 
 - Adaptive vocabulary levels: an automatic list climbs the public hierarchy

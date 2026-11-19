@@ -87,6 +87,26 @@ test_that("profileMissingness returns rates", {
   expect_true(all(result$missing_rate >= 0 & result$missing_rate <= 1))
 })
 
+test_that("profileMissingness releases the banded counts behind each rate", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  result <- .profileMissingness(handle, "person")
+  settings <- .omopDisclosureSettings()
+  band <- max(as.integer(settings$nfilter_band), 1L)
+  expect_true(all(c("column_name", "missing_rate", "n_total", "n_missing") %in%
+                    names(result)))
+  expect_true(all(result$n_total >= 0 & result$n_total %% band == 0))
+  # The missing count travels exactly when the rate does, banded the same way.
+  expect_identical(is.na(result$n_missing), is.na(result$missing_rate))
+  released <- !is.na(result$missing_rate)
+  expect_true(any(released))
+  expect_true(all(result$n_missing[released] %% band == 0))
+  expect_equal(result$missing_rate[released],
+               round(result$n_missing[released] / result$n_total[released], 2))
+})
+
 test_that("profileMissingness excludes blocked columns", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
