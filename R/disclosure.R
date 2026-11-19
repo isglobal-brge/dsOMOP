@@ -47,7 +47,7 @@
 #'
 #' @section dsOMOP-Specific Settings:
 #' \describe{
-#'   \item{\code{auto_declared_levels_max} (default 1000)}{Longest public
+#'   \item{\code{auto_declared_levels_max} (default 10000)}{Longest public
 #'     vocabulary list that a concept column whose observed levels fail the
 #'     DataSHIELD level rule declares automatically: every valid concept of
 #'     the vocabularies, domains, classes and standard flags its values have
@@ -186,7 +186,7 @@
                                 getOption("default.dsomop.max_pivot_concepts", 1000L))),
     auto_declared_levels_max = as.numeric(getOption(
                                 "dsomop.auto_declared_levels_max",
-                                getOption("default.dsomop.auto_declared_levels_max", 1000L))),
+                                getOption("default.dsomop.auto_declared_levels_max", 10000L))),
     max_output_columns   = as.numeric(getOption(
                                 "dsomop.max_output_columns",
                                 getOption("default.dsomop.max_output_columns", 5000L))),

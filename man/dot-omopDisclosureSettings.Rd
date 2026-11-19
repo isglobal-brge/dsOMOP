@@ -50,7 +50,7 @@ direct option -> \code{default.*} prefix -> hardcoded fallback.
 \section{dsOMOP-Specific Settings}{
 
 \describe{
-  \item{\code{auto_declared_levels_max} (default 1000)}{Longest public
+  \item{\code{auto_declared_levels_max} (default 10000)}{Longest public
     vocabulary list that a concept column whose observed levels fail the
     DataSHIELD level rule declares automatically: every valid concept of
     the vocabularies, domains, classes and standard flags its values have

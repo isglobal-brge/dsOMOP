@@ -14,10 +14,11 @@
   `omop_category_spec(levels = )` for this now publishes unchanged. Columns
   whose observed levels pass the rule keep exactly those levels, and recipes
   that already publish are unchanged.
-- New server option `dsomop.auto_declared_levels_max` (default 1000; 0 turns
-  automatic lists off): the longest list declared automatically. A longer list
-  is a practical limit, not a disclosure one: it is refused with this rule
-  named, and grouping (`omop_category_rollup()`, `omop_category_recode()`) or
+- New server option `dsomop.auto_declared_levels_max` (default 10000; 0 turns
+  automatic lists off): the longest list declared automatically. On a real
+  Opal, two connections publish 1,000 automatic levels in about 5 s and 14,000
+  in about 25 s. The limit is practical, not a disclosure one: a longer list
+  is refused with this rule named, and grouping (`omop_category_rollup()`, `omop_category_recode()`) or
   an explicit `omop_concept_levels()` list is the analyst's decision. A site
   whose vocabulary tables hold only the concepts its data use already shows
   them through the vocabulary methods; it can set the option to 0.
