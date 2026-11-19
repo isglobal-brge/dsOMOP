@@ -1,3 +1,27 @@
+# dsOMOP 2.10.8 (2026-11-19)
+
+- Adaptive vocabulary levels: an automatic list climbs the public hierarchy
+  (`concept_ancestor`) only as far as DataSHIELD's level rule needs. At each
+  separation every observed concept takes one ancestor (fewest descendants,
+  then smallest ID); the first separation whose containers, with the kinds and
+  leftover values, pass the rule once is kept, and the list is the valid
+  descendants of those containers of the observed kinds. Sixty observed
+  diagnoses in six subgroups declare those subgroups' concepts, not the whole
+  vocabulary. Only the containers and kinds come from the data, and they are
+  counted under the rule; vocabularies without a hierarchy keep the kinds' list.
+- Fingerprints for long public lists: `omopFactorLevelsDS(fingerprint = TRUE)`
+  sends a plain concept column's list of 500 or more declared vocabulary
+  records as a digest, `omopFactorLevelsDS(list_records = )` returns those
+  records once (only for a column the site's report admits), and
+  `omopAsFactorColumnsDS()` rebuilds a compact shared column from the site's
+  own list, checking the list's digest and a digest of the complete shared
+  resolution. Older clients get full reports and specs as before.
+- Faster reconciliation: the relevel reuses its report's evidence digest.
+- Corrected: row verbs (`omopFilterDS`, `omopBindRowsDS`, and the other
+  verbs) over a published recipe output keep its shared factors. Before,
+  publication presented them again, which failed on every v2 output
+  ("argument is of length zero") and read translated labels as concept IDs.
+
 # dsOMOP 2.10.7 (2026-11-19)
 
 - Automatic vocabulary levels: a concept column whose observed levels fail
