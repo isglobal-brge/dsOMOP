@@ -11,8 +11,11 @@ omopAsFactorColumnsDS(df, spec, table_column = NULL)
 by \code{\link{omopPlanExecuteDS}}.}
 
 \item{spec}{An encoded complete A-27 presentation contract, or the legacy
-column-to-level list for an untagged object (decoded via
-\code{\link{.ds_arg}}).}
+  column-to-level list for an untagged object (decoded via
+  \code{\link{.ds_arg}}).
+A spec of \code{kind = "drop_levels"} (dsOMOP 2.10.7) instead returns a copy
+for models whose listed factor columns keep only the given levels, which
+must hold every value; see \code{ds.omop.drop_empty_levels()}.}
 
 \item{table_column}{Optional stable concept-column key for a temporary
 in-memory table analysis copy. Its resolved categories receive lossless

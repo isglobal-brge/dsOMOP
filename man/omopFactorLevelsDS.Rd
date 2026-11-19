@@ -4,11 +4,14 @@
 \alias{omopFactorLevelsDS}
 \title{Report disclosure-safe concept identities for federation reconciliation}
 \usage{
-omopFactorLevelsDS(df)
+omopFactorLevelsDS(df, occurring = NULL)
 }
 \arguments{
 \item{df}{A data frame or staged descriptor previously assigned server-side
 by \code{\link{omopPlanExecuteDS}}.}
+
+\item{occurring}{Optional encoded \code{list(columns = )}: factor column
+names, or \code{"*"} for every published factor column.}
 }
 \value{
 A named list with \code{levels} (named list mapping
@@ -29,6 +32,13 @@ returned. No rows, counts or person keys are disclosed. Staged descriptors
 use their manifest-bound presentation contract. The client resolves labels
 by ID and broadcasts a complete contract through omopAsFactorColumnsDS.
 Older untagged objects retain the legacy factor transport.
+}
+\details{
+With \code{occurring} (dsOMOP 2.10.7), the report instead lists which levels
+of published factor columns hold values at this site, for
+\code{ds.omop.drop_empty_levels()}. That is an observed-level release, so it
+follows the same DataSHIELD rule: a column whose levels in use fail it is
+reported without levels. No counts are returned.
 }
 \seealso{
 \code{\link{omopAsFactorColumnsDS}}, \code{\link{.assertSafeLevels}}

@@ -50,6 +50,13 @@ direct option -> \code{default.*} prefix -> hardcoded fallback.
 \section{dsOMOP-Specific Settings}{
 
 \describe{
+  \item{\code{auto_declared_levels_max} (default 1000)}{Longest public
+    vocabulary list that a concept column whose observed levels fail the
+    DataSHIELD level rule declares automatically: every valid concept of
+    the vocabularies, domains, classes and standard flags its values have
+    (those kinds themselves pass the level rule). Longer lists are not
+    declared, and the column is refused unless its levels are declared or
+    grouped. 0 turns this off.}
   \item{\code{query_strict} (default TRUE)}{When TRUE, only pre-approved
     queries on the allowlist can execute. When FALSE, queries are
     classified on-the-fly (less safe, for development only). Server

@@ -191,6 +191,40 @@
   attr(out,"omop_date_contract")<-list(keys=keys,levels=levels,labels=labels,spec=s,order=order %||% seq_along(levels),declared=unique(public))
   out
 }
+# A year factor or a finer calendar (semester to week, fiscal or not) without
+# level_range whose observed periods fail the DataSHIELD level rule: only the
+# containing years (decades, for years) are discovered, under that same rule,
+# and every period inside them is declared. Which periods occur is not
+# released. Lists longer than dsomop.auto_declared_levels_max stay refused.
+.dateAutoDeclared <- function(x, n) {
+  contract <- attr(x, "omop_date_contract")
+  s <- contract$spec
+  p <- s$precision %||% ""
+  if (is.null(contract) || !p %in% c("year","semester","quarter","month","iso_week","cdc_week","epi_week",
+                                      "fiscal_year","fiscal_semester","fiscal_quarter","fiscal_month")) return(NULL)
+  keys <- contract$levels[match(as.character(x), contract$labels)]
+  observed <- unique(keys[!is.na(keys)])
+  declared <- as.character(unlist(contract$declared, use.names = FALSE))
+  if (!length(setdiff(observed, declared))) return(NULL)
+  years <- suppressWarnings(as.integer(substr(observed, 1L, 4L)))
+  if (anyNA(years)) return(NULL)
+  yearly <- p %in% c("year", "fiscal_year")
+  containers <- unique(if (yearly) years %/% 10L else years)
+  if (!.omopConceptDiscovery(as.character(containers), n)$safe) return(NULL)
+  span <- if (yearly) unlist(lapply(containers, function(d) d * 10L + 0:9)) else containers
+  span <- sort(unique(span[span >= 1L & span <= 9999L]))
+  limit <- .omopDisclosureSettings()$auto_declared_levels_max
+  if (!is.finite(limit) || limit < 1) return(NULL)
+  if (length(span) > limit) return(structure(list(), too_long = TRUE))
+  periods <- unique(unlist(lapply(span, function(y) {
+    days <- seq(.dateMake(max(1L, y - 1L), 1, 1), .dateMake(min(9999L, y + 1L), 12, 31), by = "day")
+    k <- .datePeriod(days, s)$key
+    k[!is.na(k) & substr(k, 1L, 4L) == sprintf("%04d", y)]
+  }), use.names = FALSE))
+  if (length(periods) > limit) return(structure(list(), too_long = TRUE))
+  levels <- sort(unique(c(contract$levels, periods)), method = "radix")
+  .dateFactor(keys, levels, s, NULL, unique(c(declared, periods)))
+}
 .datePart <- function(d,part,s) {
   y<-.dateY(d);m<-.dateM(d);w<-.dateW(d);season<-(m%%12)%/%3+1L
   iso<-.dateWeek(d)

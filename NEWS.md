@@ -1,3 +1,39 @@
+# dsOMOP 2.10.7 (2026-11-19)
+
+- Automatic vocabulary levels: a concept column whose observed levels fail
+  DataSHIELD's factor-level rule declares, on its own, the public vocabulary
+  list that holds them when one is short enough: every valid concept of the
+  vocabularies, domains, classes and standard flags its values have. Those
+  kinds are the only part derived from the data, and they pass the same rule;
+  the list is read from the vocabulary tables, as `omop_concept_levels()`
+  declares it, so which concepts occur is not released. A recipe that needed
+  `omop_category_spec(levels = )` for this now publishes unchanged. Columns
+  whose observed levels pass the rule keep exactly those levels, and recipes
+  that already publish are unchanged.
+- New server option `dsomop.auto_declared_levels_max` (default 1000; 0 turns
+  automatic lists off): the longest list declared automatically. A longer list
+  is a practical limit, not a disclosure one: it is refused with this rule
+  named, and grouping (`omop_category_rollup()`, `omop_category_recode()`) or
+  an explicit `omop_concept_levels()` list is the analyst's decision. A site
+  whose vocabulary tables hold only the concepts its data use already shows
+  them through the vocabulary methods; it can set the option to 0.
+- Calendars: year factors and finer calendars (semester to week, fiscal or not)
+  without `level_range` whose observed periods fail the rule declare every
+  period of their observed years (decades, for years) once those years pass
+  the rule. Which periods occur is not released; the same option bounds the
+  list. `level_range` declares exactly its own periods, as before.
+- Date components stored as REAL/NUMERIC (whole numbers, as in many ETL
+  exports and GiBleed's birth columns) give dates and ages, including
+  `omop_age_at()`. A value that is not a whole number is an invalid component
+  (NA), like any other.
+- Levels for models: `omopFactorLevelsDS(occurring = )` reports which levels of
+  published factor columns hold a value at the site, under the same level
+  rule and without counts, and `omopAsFactorColumnsDS()` with a `drop_levels`
+  spec returns a copy for models whose columns keep only the given levels. The
+  copy first checks this site's own levels in use against the rule, so a
+  refusal never answers, level by level, whether one is in use. Both are
+  existing methods: there is no new method to publish.
+
 # dsOMOP 2.10.6 (2026-11-18)
 
 - Concept IDs are categories everywhere; DataSHIELD's factor-level rule.

@@ -2934,6 +2934,123 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
   .omopConceptDiscovery(.conceptIdText(df[[col]]), nrow(df))
 }
 
+# --- Levels that hold values, for models (dsOMOP 2.10.7) ---
+
+# Published factor columns of an in-memory dsOMOP output, never person keys or
+# protected columns.
+.factorModelColumns <- function(df, columns) {
+  if (!is.data.frame(df) || !.is_omop.table(df)) {
+    stop("Levels in use are reported for in-memory dsOMOP outputs only.", call. = FALSE)
+  }
+  excluded <- union(.PERSON_KEY_COLS(), attr(df, "dsomop_protected") %||% character())
+  candidates <- setdiff(names(df)[vapply(df, is.factor, logical(1))], excluded)
+  columns <- as.character(unlist(columns, use.names = FALSE))
+  if (identical(columns, "*")) return(candidates)
+  if (!length(columns) || anyNA(columns) || anyDuplicated(columns) || !all(columns %in% candidates)) {
+    stop("Levels in use are reported for published factor columns only.", call. = FALSE)
+  }
+  columns
+}
+
+# Which levels hold a value at this site is an observed-level release: it
+# follows the DataSHIELD rule of discovery (dsBase asFactorDS1), k levels in
+# use against nfilter.levels.max and nfilter.levels.density times the rows.
+.factorLevelsInUse <- function(df, col) {
+  f <- df[[col]]
+  used <- levels(f)[levels(f) %in% as.character(f[!is.na(f)])]
+  c(.omopConceptDiscovery(used, nrow(df)), list(used = used))
+}
+
+.factorOccurrenceReport <- function(df, columns) {
+  out <- list(levels = list(), occurring = list(), unsafe = character(), unsafe_rules = list())
+  for (col in .factorModelColumns(df, columns)) {
+    out$levels[[col]] <- levels(df[[col]])
+    a <- .factorLevelsInUse(df, col)
+    if (!isTRUE(a$safe)) {
+      out$unsafe <- c(out$unsafe, col)
+      out$unsafe_rules[[col]] <- a$rules
+      next
+    }
+    out$occurring[[col]] <- a$used
+  }
+  out
+}
+
+# A copy for models whose listed columns keep only the given levels. They must
+# hold every value, and this site's levels in use must pass the rule first:
+# otherwise a refusal could answer, level by level, whether one is in use.
+.factorDropLevels <- function(df, columns) {
+  if (!is.list(columns) || (length(columns) && (is.null(names(columns)) ||
+      anyNA(names(columns)) || anyDuplicated(names(columns))))) {
+    stop("Dropping levels needs one level set per column.", call. = FALSE)
+  }
+  .factorModelColumns(df, if (length(columns)) names(columns) else "*")
+  contracts <- attr(df, "omop_concepts") %||% list()
+  for (col in names(columns)) {
+    f <- df[[col]]
+    keep <- as.character(unlist(columns[[col]], use.names = FALSE))
+    if (!length(keep) || anyNA(keep) || anyDuplicated(keep) || !all(keep %in% levels(f))) {
+      stop("Kept levels must be existing levels of the column.", call. = FALSE)
+    }
+    a <- .factorLevelsInUse(df, col)
+    if (!isTRUE(a$safe)) {
+      stop("Levels in use of a column fail this site's factor-level rule; group the column instead.", call. = FALSE)
+    }
+    if (!all(a$used %in% keep)) stop("Kept levels must hold every value of the column.", call. = FALSE)
+    df[[col]] <- .factorKeep(f, levels(f)[levels(f) %in% keep])
+    contracts[[col]] <- NULL
+  }
+  # The copy is for models: dropped columns leave the presentation contracts,
+  # which must not reconcile them back, and the codebook no longer describes it.
+  if (length(columns)) {
+    attr(df, "omop_concepts") <- contracts
+    tagged <- setdiff(attr(df, "omop_concept_cols"), names(columns))
+    attr(df, "omop_concept_cols") <- if (length(tagged)) tagged else NULL
+    attr(df, "omop_codebook_schema") <- NULL
+  }
+  df
+}
+
+# Rebuild a factor with fewer levels in the same class: shared levels stay
+# unused levels inside model frames, so design matrices still line up.
+.factorKeep <- function(f, keep) {
+  values <- as.character(f)
+  if (inherits(f, "dsomop_category_factor")) {
+    r <- attr(f, "omop_category_contract")
+    at <- match(keep, unlist(r$levels, use.names = FALSE))
+    keys <- unlist(r$keys, use.names = FALSE)[at]
+    aliases <- .categoryNullableStrings(r$aliases)
+    held <- names(aliases)[!is.na(aliases) & aliases %in% keys]
+    ids <- unlist(r$ids, use.names = FALSE)
+    r$labels <- unlist(r$labels, use.names = FALSE)[ids %in% held]
+    r$ids <- ids[ids %in% held]
+    r$aliases <- as.list(aliases[held])
+    r$decisions <- Filter(function(d) d$id %in% held, r$decisions)
+    r$levels <- keep
+    r$keys <- keys
+    if (!isTRUE(r$ordered) && !isTRUE(r$reference %in% keys)) r$reference <- keys[[1L]]
+    r$contrasts$reference <- r$reference
+    return(.categoryFactor(values, r))
+  }
+  if (inherits(f, "dsomop_date_factor")) {
+    contract <- attr(f, "omop_date_contract")
+    out <- .dateOrdered(values, keep)
+    if (!is.null(contract)) {
+      at <- match(keep, contract$labels)
+      contract$levels <- contract$levels[at]
+      contract$labels <- keep
+      contract$order <- contract$order[at]
+      contract$declared <- intersect(contract$declared, contract$levels)
+      contract$keys <- contract$levels[match(values, keep)]
+      attr(out, "omop_date_contract") <- contract
+    }
+    return(out)
+  }
+  out <- factor(values, levels = keep, ordered = is.ordered(f))
+  class(out) <- class(f)
+  out
+}
+
 #' Report disclosure-safe concept identities for federation reconciliation
 #'
 #' A-27 outputs carry declared semantic classes and private ID mappings.
@@ -2946,8 +3063,16 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
 #' by ID and broadcasts a complete contract through omopAsFactorColumnsDS.
 #' Older untagged objects retain the legacy factor transport.
 #'
+#' With \code{occurring} (dsOMOP 2.10.7), the report instead lists which levels
+#' of published factor columns hold values at this site, for
+#' \code{ds.omop.drop_empty_levels()}. That is an observed-level release, so it
+#' follows the same DataSHIELD rule: a column whose levels in use fail it is
+#' reported without levels. No counts are returned.
+#'
 #' @param df A data frame or staged descriptor previously assigned server-side
 #'   by \code{\link{omopPlanExecuteDS}}.
+#' @param occurring Optional encoded \code{list(columns = )}: factor column
+#'   names, or \code{"*"} for every published factor column.
 #' @return A named list with \code{levels} (named list mapping
 #'   each safe concept-id column to its character levels), \code{unsafe}
 #'   (character vector of concept-id columns that failed the disclosure gate),
@@ -2957,7 +3082,8 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
 #'   identities, stable keys and evidence binding.
 #' @seealso \code{\link{omopAsFactorColumnsDS}}, \code{\link{.assertSafeLevels}}
 #' @export
-omopFactorLevelsDS <- function(df) {
+omopFactorLevelsDS <- function(df, occurring = NULL) {
+  if (!is.null(occurring)) return(.factorOccurrenceReport(df, .ds_arg(occurring)$columns))
   if (inherits(df, "FlowerDatasetDescriptor") && !is.null(df$metadata$concept_presentation)) return(.conceptStageReport(df))
   if (is.data.frame(df) && (!is.null(attr(df, "omop_concepts")) ||
       !is.null(attr(df, "omop_generated_columns")) || !is.null(attr(df,"omop_numbers")) || !is.null(attr(df,"omop_codebook_schema")))) return(.conceptLevelReport(df))
@@ -3015,6 +3141,10 @@ omopFactorLevelsDS <- function(df) {
 #' @param spec An encoded complete A-27 presentation contract, or the legacy
 #'   column-to-level list for an untagged object (decoded via
 #'   \code{\link{.ds_arg}}).
+#' A spec of \code{kind = "drop_levels"} (dsOMOP 2.10.7) instead returns a copy
+#' for models whose listed factor columns keep only the given levels, which
+#' must hold every value; see \code{ds.omop.drop_empty_levels()}.
+#'
 #' @param table_column Optional stable concept-column key for a temporary
 #'   in-memory table analysis copy. Its resolved categories receive lossless
 #'   ASCII tokens for dsBase transport; rows, missingness and protected lineage
@@ -3025,6 +3155,11 @@ omopFactorLevelsDS <- function(df) {
 #' @seealso \code{\link{omopFactorLevelsDS}}
 #' @export
 omopAsFactorColumnsDS <- function(df, spec, table_column = NULL) {
+  decoded <- .ds_arg(spec)
+  if (is.list(decoded) && identical(decoded$kind, "drop_levels")) {
+    if (!is.null(table_column)) stop("Dropping levels takes no table column.", call. = FALSE)
+    return(.factorDropLevels(df, decoded$columns))
+  }
   if (!is.null(table_column) && inherits(df, "FlowerDatasetDescriptor")) {
     stop("Table analysis requires an in-memory published concept factor.", call. = FALSE)
   }

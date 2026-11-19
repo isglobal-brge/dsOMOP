@@ -61,7 +61,8 @@
     support <- unlist(meta$support[[col]], use.names = TRUE)
     a <- .conceptAssessIds(c, names(support), meta$total, meta$reference_support, discover)
     if (!a$safe) {
-      out$unsafe <- c(out$unsafe, col); out$unsafe_rules[[col]] <- a$rules
+      out$unsafe <- c(out$unsafe, col)
+      out$unsafe_rules[[col]] <- c(a$rules, if (identical(c$auto_levels, "too_long")) "dsomop.auto_declared_levels_max")
       next
     }
     ids <- union(a$levels, as.character(unlist(c$declared, use.names = FALSE)))
@@ -235,6 +236,8 @@
   reference_support <- attr(descriptor, "omop_reference_support")
   attr(sample, "omop_reference_support") <- reference_support
   attr(sample, "omop_concept_reference") <- reference
+  # The sample holds distinct identities; the level rule uses the output rows.
+  attr(sample, "omop_total_rows") <- total_rows
   raw_sample <- sample
   sample <- .conceptPresent(ctx, sample, columns)
   updated <- .conceptStageCapture(sample, descriptor)

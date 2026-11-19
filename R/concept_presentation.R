@@ -81,7 +81,88 @@
     vocabulary = NULL, version = NULL, origin = "fallback", label = id)), ids)
 }
 
+# Observed concept values whose levels fail the DataSHIELD rule declare the
+# public vocabulary list that holds them, when a short one exists: every valid
+# concept of the vocabularies, domains, classes and standard flags those values
+# have. Those kinds are the only data-derived part, and they pass the same level
+# rule. The list itself is read from the vocabulary tables only, as
+# omop_concept_levels() would declare it; it does not depend on which concepts
+# occur. Lists longer than dsomop.auto_declared_levels_max are left undeclared.
+.conceptAutoDeclared <- function(handle, ids, n) {
+  ids <- unique(as.character(ids[!is.na(ids)]))
+  limit <- .omopDisclosureSettings()$auto_declared_levels_max
+  if (is.null(handle) || !length(ids) || !is.finite(limit) || limit < 1 ||
+      any(!grepl("^[0-9]+$", ids))) return(character())
+  bp <- .buildBlueprint(handle)
+  if (!"concept" %in% bp$tables$table_name[bp$tables$present_in_db]) return(character())
+  fields <- c("concept_id", "vocabulary_id", "domain_id", "concept_class_id", "standard_concept", "invalid_reason")
+  if (!all(fields %in% bp$columns$concept$column_name)) return(character())
+  table <- .qualifyTable(handle, "concept", .resolveTableSchema(handle, "concept", "Vocabulary"))
+  valid <- "(invalid_reason IS NULL OR invalid_reason = '')"
+  kinds <- do.call(rbind, lapply(split(ids, ceiling(seq_along(ids) / 500L)), function(chunk)
+    .executeQuery(handle, paste0("SELECT DISTINCT vocabulary_id, domain_id, concept_class_id, standard_concept FROM ",
+      table, " WHERE ", valid, " AND concept_id IN (", .sqlIdList(chunk), ")"))))
+  if (is.null(kinds) || !nrow(kinds)) return(character())
+  kinds <- unique(as.data.frame(lapply(kinds, as.character), stringsAsFactors = FALSE))
+  if (anyNA(kinds[c("vocabulary_id", "domain_id", "concept_class_id")])) return(character())
+  if (!.omopConceptDiscovery(do.call(paste, c(unname(kinds), sep = "\r")), n)$safe) return(character())
+  same <- vapply(seq_len(nrow(kinds)), function(i) {
+    standard <- kinds$standard_concept[[i]]
+    paste0("(vocabulary_id = ", .quoteLiteral(kinds$vocabulary_id[[i]], handle),
+           " AND domain_id = ", .quoteLiteral(kinds$domain_id[[i]], handle),
+           " AND concept_class_id = ", .quoteLiteral(kinds$concept_class_id[[i]], handle), " AND ",
+           if (is.na(standard) || !nzchar(standard)) "(standard_concept IS NULL OR standard_concept = '')"
+           else paste0("standard_concept = ", .quoteLiteral(standard, handle)), ")")
+  }, "")
+  where <- paste0(valid, " AND (", paste(same, collapse = " OR "), ")")
+  size <- suppressWarnings(as.numeric(.executeQuery(handle,
+    paste0("SELECT COUNT(*) AS n FROM ", table, " WHERE ", where))$n))
+  if (length(size) != 1L || is.na(size)) return(character())
+  # Too long a public list is reported as such (vocabulary metadata only).
+  if (size > limit) return(structure(character(), too_long = TRUE))
+  .conceptIdText(.executeQuery(handle, paste0("SELECT concept_id FROM ", table, " WHERE ", where))$concept_id)
+}
+
 .conceptPresent <- function(ctx, frame, columns) {
+  n <- attr(frame, "omop_total_rows") %||% nrow(frame)
+  out <- .conceptPresentOnce(ctx, frame, columns)
+  # A column that would be refused, and only such a column, is presented again
+  # with its public list declared; recipes that publish are unchanged.
+  if (isTRUE(attr(frame, "omop_concept_reference"))) return(out)
+  contracts <- attr(out, "omop_concepts") %||% list()
+  extended <- FALSE
+  too_long <- character()
+  for (col in intersect(intersect(names(contracts), names(columns)), names(frame))) {
+    c <- contracts[[col]]
+    if (isTRUE(.conceptAssessIds(c, c$ids, n)$safe)) next
+    if (identical(c$kind, "date")) {
+      dated <- .dateAutoDeclared(frame[[col]], n)
+      if (isTRUE(attr(dated, "too_long"))) too_long <- c(too_long, col)
+      if (!is.factor(dated)) next
+      frame[[col]] <- dated
+      extended <- TRUE
+      next
+    }
+    if (!.conceptColumn(columns[[col]]) || !(is.null(c$kind) || identical(c$kind, "category"))) next
+    declared <- as.character(unlist(attr(columns[[col]], "concept_declared"), use.names = FALSE))
+    auto <- .conceptAutoDeclared(ctx$handle, .conceptIdText(frame[[col]]), n)
+    if (isTRUE(attr(auto, "too_long"))) too_long <- c(too_long, col)
+    auto <- setdiff(auto, declared)
+    if (!length(auto)) next
+    attr(columns[[col]], "concept_declared") <- c(declared, auto)
+    extended <- TRUE
+  }
+  # A presentation the declared list does not fit stays refused, as before.
+  if (extended) out <- tryCatch(.conceptPresentOnce(ctx, frame, columns), error = function(e) out)
+  if (length(too_long)) {
+    contracts <- attr(out, "omop_concepts")
+    for (col in intersect(too_long, names(contracts))) contracts[[col]]$auto_levels <- "too_long"
+    attr(out, "omop_concepts") <- contracts
+  }
+  out
+}
+
+.conceptPresentOnce <- function(ctx, frame, columns) {
   for(n in intersect(names(frame),names(columns))) {
     mask<-attr(frame[[n]],"category_defined")
     if(!is.null(mask))attr(columns[[n]],"category_defined")<-mask
@@ -234,7 +315,7 @@
     a <- .conceptAssess(df, col, c, discover)
     if (!isTRUE(a$safe)) {
       out$unsafe <- c(out$unsafe, col)
-      out$unsafe_rules[[col]] <- a$rules
+      out$unsafe_rules[[col]] <- c(a$rules, if (identical(c$auto_levels, "too_long")) "dsomop.auto_declared_levels_max")
       # No observed identity/name metadata for a refused column.
       next
     }

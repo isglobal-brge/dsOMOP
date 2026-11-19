@@ -13,9 +13,12 @@
         row<-have[match(col,tolower(have$column_name)),,drop=FALSE]
         if(!col %in% tolower(have$column_name) || (.assignmentBlockedColumn(col, have) || col %in% .identifierColumns() || col %in% .PERSON_KEY_COLS())) .dateReject("Component source is not a permitted registered integer column.","date_source_invalid")
       }
+      # Whole numbers stored as REAL/NUMERIC are common in ETL exports. A value
+      # that is not a whole number is an invalid component: .dateComponents()
+      # makes it NA, as any other invalid component, so nothing is refused.
       for(col in cols) {
         row<-have[match(col,tolower(have$column_name)),,drop=FALSE]
-        if(!grepl("int",row$db_datatype,ignore.case=TRUE)) .dateReject("Component source columns must have integer database type.","date_source_invalid")
+        if(!grepl("int|real|numeric|decimal|double|float|number",row$db_datatype,ignore.case=TRUE)) .dateReject("Component source columns must have a numeric database type.","date_source_invalid")
       }
       p<-.reducePersonFrame(ctx,cons,extra_columns=cols)
       data<-p[match(as.character(roster$cohort_row_id),as.character(p$row_key)),,drop=FALSE]
@@ -24,7 +27,7 @@
       extra<-list()
       for(col in cols) {
         res<-tryCatch(.predicateResolve(src$catalogue,col,"date components"),error=function(e) .dateReject("Component source is not a permitted registered integer column.","date_source_invalid"))
-        if(!res$type %in% c("integer","bigint")) .dateReject("Component columns must have integer type.","date_source_invalid")
+        if(!res$type %in% c("integer","bigint","numeric")) .dateReject("Component columns must have a numeric type.","date_source_invalid")
         extra[[col]]<-list(expr=paste0("e.",res$column),type=res$type)
       }
       if(!src$available) return(list(lo=as.Date(rep(NA_character_,n)),hi=as.Date(rep(NA_character_,n))))
