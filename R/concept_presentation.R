@@ -498,6 +498,7 @@
     if (identical(c$kind, "date")) out$calendars[[col]] <- c$calendar
     if (identical(c$kind, "category")) out$categories[[col]] <- c$category
     if (length(c$reference_keys)) out$reference_names[[col]] <- unique(unname(c$reference_keys))
+    if (identical(c$resolved$label_style, "safe")) out$styles[[col]] <- "safe"
   }
   generated <- refreshed$generated
   out$generated <- list()
@@ -517,15 +518,18 @@
   out$numbers <- attr(df,"omop_numbers") %||% list()
   out$keys <- setdiff(names(attr(df, "omop_column_names")) %||% names(df), refused_keys)
   if(!is.null(attr(df,"omop_codebook_schema")))out$schema<-attr(df,"omop_codebook_schema")
+  # Capability: this server applies dsBase-safe labels when the client asks.
+  out$label_styles <- "safe"
   out$evidence <- .conceptEvidence(out)
   out
 }
 
 .conceptRelevel <- function(df, spec, table_column = NULL) {
+  # A table copy tokenises one column, or two for a two-way table.
   if (!is.null(table_column) &&
       (!.is_omop.table(df) || !is.character(table_column) ||
-       length(table_column) != 1L || is.na(table_column) ||
-       !table_column %in% names(attr(df, "omop_concepts")))) {
+       !length(table_column) %in% 1:2 || anyNA(table_column) || anyDuplicated(table_column) ||
+       !all(table_column %in% names(attr(df, "omop_concepts"))))) {
     stop("Table analysis requires a published concept column in an omop.table.", call. = FALSE)
   }
   provenance <- NULL
@@ -561,6 +565,8 @@
     if(identical(c$kind,"category")&&!identical(.jcsCanonical(shared$category),.jcsCanonical(c$category))) .categoryReject("Changed category contract.","category_domain_incompatible")
     a <- .conceptAssess(df, col, c, discover = FALSE)
     .conceptValidateResolution(shared, c$records[union(a$levels,c$declared)])
+    # Labels every dsBase function carries, when the client asks for them.
+    if (identical(spec$label_style, "safe") && is.null(table_column)) shared <- .conceptSafeShared(shared)
     ids <- as.character(unlist(shared$ids, use.names = FALSE))
     labels <- unname(.categoryNullableStrings(shared$labels))
     levels <- as.character(unlist(shared$levels, use.names = FALSE))
@@ -573,11 +579,11 @@
     }
     values <- labels[match(c$ids, ids)]
     df[[col]] <- if (identical(c$kind,"category")) .categoryFactor(values,shared) else if ((c$kind %||% "") %in% c("date","number")) .dateOrdered(values, levels = levels) else .conceptFactor(values, levels = levels)
-    if (identical(col, table_column)) {
+    if (col %in% table_column) {
       # One token per resolved category, including deliberate recode merges.
       # Only ASCII tokens cross dsBase's comma-delimited level transport.
       # Relabelling levels preserves every factor code and actual NA exactly.
-      levels(df[[col]]) <- paste0("C", seq_along(levels))
+      levels(df[[col]]) <- paste0(c("C", "D")[[match(col, table_column)]], seq_along(levels))
     }
     c$resolved <- shared
     contracts[[col]] <- c

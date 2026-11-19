@@ -3067,6 +3067,65 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
 
 # Rebuild a factor with fewer levels in the same class: shared levels stay
 # unused levels inside model frames, so design matrices still line up.
+# A copy for tables and summaries (dsOMOP 2.10.9). At this site, the values of
+# a category held by fewer than nfilter.tab distinct people become missing, so
+# dsBase's small-cell checks pass on the rest: those counts were never released,
+# and now they no longer block every other category. While the people made
+# missing number 1 to nfilter.tab - 1, the next smallest category (then the
+# first in level order) is made missing too, so that a total minus a table
+# never gives a small count. With joint = TRUE the categories are the cells of
+# the listed columns together (a two-way table). Levels stay the shared set;
+# the copy keeps its rows; nothing is returned to the client.
+.factorSuppressSmall <- function(df, columns, joint = FALSE) {
+  cols <- .factorModelColumns(df, if (length(columns)) columns else "*")
+  key <- .omopPersonKeys(df)
+  if (!length(key)) stop("Small categories are counted per person: this table has no person key.", call. = FALSE)
+  threshold <- as.numeric(.omopDisclosureSettings()$nfilter_tab)
+  p <- match(df[[key[[1L]]]], unique(df[[key[[1L]]]]))
+  persons <- max(c(p, 1L))
+  contracts <- attr(df, "omop_concepts") %||% list()
+  physical <- attr(df, "omop_column_names")
+  key_of <- function(col) if (length(physical) && col %in% physical) names(physical)[match(col, physical)] else col
+  for (group in if (isTRUE(joint)) list(cols) else as.list(cols)) {
+    # One code per category (or cell); rows missing in any listed column are in none.
+    code <- as.numeric(as.integer(df[[group[[1L]]]]))
+    for (col in group[-1L]) code <- (code - 1) * max(nlevels(df[[col]]), 1L) + as.integer(df[[col]])
+    hit <- which(!is.na(code))
+    if (!length(hit)) next
+    cells <- sort(unique(code[hit]))
+    index <- match(code[hit], cells)
+    first <- !duplicated((as.numeric(index) - 1) * persons + p[hit])
+    people <- tabulate(index[first], nbins = length(cells))
+    small <- which(people < threshold)
+    suppressed <- function(s) sum(!duplicated(p[hit][index %in% s]))
+    total <- suppressed(small)
+    rest <- setdiff(seq_along(cells), small)
+    rest <- rest[order(people[rest], rest)]
+    while (total > 0 && total < threshold && length(rest)) {
+      small <- c(small, rest[[1L]]); rest <- rest[-1L]
+      total <- suppressed(small)
+    }
+    drop <- hit[index %in% small]
+    if (!length(drop)) next
+    for (col in group) {
+      f <- df[[col]]
+      f[drop] <- NA
+      df[[col]] <- f
+      c <- contracts[[key_of(col)]]
+      if (!is.null(c) && length(c$ids) == nrow(df)) {
+        c$ids[drop] <- NA
+        contracts[[key_of(col)]] <- c
+      }
+    }
+  }
+  if (length(contracts)) attr(df, "omop_concepts") <- contracts
+  # A copy is not a sealed DP input: never carry the source's DP lineage.
+  attr(df, "dsomop_dp_provenance") <- NULL
+  attr(df, "dsomop_dp_filter_state") <- NULL
+  attr(df, "dsomop_dp_release_persons") <- NULL
+  df
+}
+
 .factorKeep <- function(f, keep) {
   values <- as.character(f)
   if (inherits(f, "dsomop_category_factor")) {
@@ -3245,6 +3304,14 @@ omopAsFactorColumnsDS <- function(df, spec, table_column = NULL) {
   if (is.list(decoded) && identical(decoded$kind, "drop_levels")) {
     if (!is.null(table_column)) stop("Dropping levels takes no table column.", call. = FALSE)
     return(.factorDropLevels(df, decoded$columns))
+  }
+  if (is.list(decoded) && identical(decoded$kind, "suppress_small")) {
+    if (!is.null(table_column)) stop("Small categories take no table column.", call. = FALSE)
+    return(.factorSuppressSmall(df, as.character(unlist(decoded$columns, use.names = FALSE)), isTRUE(decoded$joint)))
+  }
+  # A two-way table names its two columns in one encoded argument.
+  if (is.character(table_column) && length(table_column) == 1L && startsWith(table_column, "B64:")) {
+    table_column <- as.character(unlist(.ds_arg(table_column), use.names = FALSE))
   }
   if (!is.null(table_column) && inherits(df, "FlowerDatasetDescriptor")) {
     stop("Table analysis requires an in-memory published concept factor.", call. = FALSE)
