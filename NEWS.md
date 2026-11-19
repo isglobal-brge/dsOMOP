@@ -14,6 +14,11 @@
   another script takes its identity; collisions get a suffix). Level reports
   say which columns carry them.
 - Two-way table copies for `ds.omop.table(by = )`.
+- `omopMissingnessDS()` also returns `n_total` and `n_missing`, the banded
+  counts behind each `missing_rate` (persons for person tables, rows
+  otherwise), so clients can pool missingness across servers. `n_missing` is
+  released only when the rate is; nothing else changes and no method needs to
+  be published again.
 
 # dsOMOP 2.10.8 (2026-11-19)
 

@@ -17,7 +17,11 @@
 population (INNER JOIN on subject_id), or NULL.}
 }
 \value{
-Data frame with column_name and missing_rate
+Data frame with \code{column_name}, \code{missing_rate},
+  \code{n_total} and \code{n_missing}. The counts are banded like every
+  other released count (persons for person-bearing tables, rows otherwise);
+  \code{n_missing} is released exactly when \code{missing_rate} is, so a
+  client can pool the rates as a ratio of sums.
 }
 \description{
 Get missingness rates for columns
