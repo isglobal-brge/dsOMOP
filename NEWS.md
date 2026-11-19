@@ -54,7 +54,8 @@
   their records once instead of scanning them per level, so presentation time
   grows linearly with the number of declared levels (it grew quadratically:
   14,000 levels took about 15 minutes on Opal, now about 25 s). Encoded
-  arguments longer than a million characters decode whole on older R.
+  arguments longer than a million characters decode whole (substring()
+  stopped at one million characters).
 
 # dsOMOP 2.10.6 (2026-11-18)
 

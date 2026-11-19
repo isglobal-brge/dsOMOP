@@ -143,7 +143,7 @@
 
   schema <- .resolveTableSchema(handle, "concept", "Vocabulary")
   concept_table <- .qualifyTable(handle, "concept", schema)
-  res <- do.call(rbind, lapply(.sqlIdChunks(as.integer(concept_ids)), function(ids)
+  res <- do.call(rbind, lapply(.sqlIdChunks(concept_ids), function(ids)
     .executeQuery(handle, paste0(
       "SELECT concept_id, concept_name, domain_id, vocabulary_id, standard_concept",
       " FROM ", concept_table,
