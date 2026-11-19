@@ -86,7 +86,7 @@
         else pending_n[[col]] <<- (pending_n[[col]] %||% 0)+as.numeric(counted[[col]] %||% fixed %||% nrow(frame))
         next
       }
-      n <- counted[[col]] %||% fixed %||% .contractObservations(frame,contract)
+      n <- counted[[col]] %||% fixed %||% .densityObservations(frame,contract$ids)
       if(releasable(contract,as.character(contract$ids),n))append_ids(.dictionaryContractIds(contract,contract$ids))
     }
   }

@@ -2939,19 +2939,22 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
 .densityObservations <- function(df, values) {
   key <- .omopPersonKeys(df)
   if (!length(key) || length(values) != nrow(df)) return(as.numeric(length(values)))
-  person <- df[[key[[1L]]]]
-  p <- match(person, unique(person))
+  p <- match(df[[key[[1L]]]], unique(df[[key[[1L]]]]))
   v <- match(values, unique(values))
-  as.numeric(sum(!duplicated((as.numeric(p) - 1) * max(c(v, 1L)) + v)))
+  width <- max(c(v, 1L))
+  pair <- if (max(c(p, 0L)) * as.numeric(width) < .Machine$integer.max) (p - 1L) * width + v else
+    (as.numeric(p) - 1) * width + v
+  as.numeric(sum(!duplicated(pair)))
 }
 
 # The same count over the chunks of one output keeps distinct person/value
-# keys only up to the size that decides every verdict of the level rule.
+# keys only up to a size that decides every verdict of the level rule (and,
+# in practice, its rule names): memory stays bounded.
 .densityBound <- function() {
   s <- .omopDisclosureSettings()
   density <- suppressWarnings(as.numeric(s$nfilter_levels_density))
   if (length(density) != 1L || is.na(density) || density <= 0) return(1)
-  ceiling(as.numeric(s$nfilter_levels_max) / density) + 1
+  max(ceiling(as.numeric(s$nfilter_levels_max) / density) + 1, 1e5)
 }
 .densityKeys <- function(person, values, seen = character(), bound = .densityBound()) {
   if (length(seen) >= bound) return(seen)
