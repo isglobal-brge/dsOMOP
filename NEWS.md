@@ -1,4 +1,4 @@
-# dsOMOP 2.10.9 (development)
+# dsOMOP 2.10.9 (2026-11-19)
 
 - Copies for tables: `omopAsFactorColumnsDS(kind = "suppress_small")` makes the
   values of categories (or, for a two-way table, cells) held by fewer than
