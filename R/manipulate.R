@@ -151,6 +151,10 @@
   concept_codes <- names(result)[sub("[.][xy]$", "", names(result)) %in% concept_codes]
   attr(result, "omop_concept_codes") <- if (length(concept_codes)) concept_codes else NULL
   attr(result, "dsomop_pseudonymization") <- pseudonymization
+  # Level rules never weigh a result against more rows than its largest
+  # source had: stacked or joined copies of the same rows are not more people.
+  rows <- vapply(sources, function(s) as.numeric(.densityRows(s)), numeric(1))
+  if (length(rows)) attr(result, "dsomop_density_rows") <- min(as.numeric(nrow(result)), max(rows))
   # A verb over published sources: their factors are already presented.
   if (any(vapply(sources, function(s) !is.null(attr(s, "omop_concepts", exact = TRUE)), logical(1))))
     attr(result, "omop_republished") <- TRUE

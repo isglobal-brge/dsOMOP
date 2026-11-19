@@ -124,8 +124,10 @@
     stop("Incomplete disclosure-safe staged concept contract.", call. = FALSE)
   }
   mappings <- list()
-  # Fingerprints are checked against the same refreshed records as the report.
-  refreshed <- .conceptRefresh(meta$contracts, meta$generated, meta$handle)$contracts
+  # Fingerprints are checked against the same refreshed records as the report
+  # (read again only when a compact column needs them).
+  compact <- any(vapply(names(meta$contracts), function(col) !is.null(spec$columns[[col]]$list), logical(1)))
+  refreshed <- if (compact) .conceptRefresh(meta$contracts, meta$generated, meta$handle)$contracts
   for (col in names(meta$contracts)) {
     shared <- spec$columns[[col]]
     if (!is.null(shared$list)) {

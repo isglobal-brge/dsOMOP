@@ -274,7 +274,7 @@
 }
 
 .conceptPresent <- function(ctx, frame, columns) {
-  n <- attr(frame, "omop_total_rows") %||% nrow(frame)
+  n <- attr(frame, "omop_total_rows") %||% .densityRows(frame)
   out <- .conceptPresentOnce(ctx, frame, columns)
   # A column that would be refused, and only such a column, is presented again
   # with its public list declared; recipes that publish are unchanged.
@@ -464,7 +464,7 @@
 
 .conceptAssess <- function(df, col, contract, discover = TRUE) {
   if (length(contract$ids) != nrow(df)) stop("Incomplete concept identity metadata.", call. = FALSE)
-  .conceptAssessIds(contract, contract$ids, nrow(df),
+  .conceptAssessIds(contract, contract$ids, .densityRows(df),
     if(isTRUE(attr(df,"omop_concept_reference")))attr(df,"omop_reference_support"), discover)
 }
 

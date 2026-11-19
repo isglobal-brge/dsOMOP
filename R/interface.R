@@ -2931,8 +2931,17 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
   list(levels = observed, safe = !length(rules), rules = rules)
 }
 
+# The rows a frame's levels are weighed against under the density rule: its
+# own rows, never more than its publication had. Stacking or joining copies of
+# the same rows adds rows, not people (dsOMOP 2.10.8).
+.densityRows <- function(df) {
+  cap <- suppressWarnings(as.numeric(attr(df, "dsomop_density_rows", exact = TRUE)))
+  if (length(cap) != 1L || is.na(cap)) return(as.numeric(nrow(df)))
+  min(as.numeric(nrow(df)), cap)
+}
+
 .omopConceptLevelAssessment <- function(df, col, person_col = NULL) {
-  .omopConceptDiscovery(.conceptIdText(df[[col]]), nrow(df))
+  .omopConceptDiscovery(.conceptIdText(df[[col]]), .densityRows(df))
 }
 
 # --- Levels that hold values, for models (dsOMOP 2.10.7) ---
@@ -2964,7 +2973,7 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
 .factorLevelsInUse <- function(df, col) {
   f <- df[[col]]
   used <- levels(f)[levels(f) %in% as.character(f[!is.na(f)])]
-  c(.omopConceptDiscovery(used, nrow(df)), list(used = used))
+  c(.omopConceptDiscovery(used, .densityRows(df)), list(used = used))
 }
 
 .factorOccurrenceReport <- function(df, columns) {
@@ -3267,7 +3276,7 @@ omopAsFactorColumnsDS <- function(df, spec, table_column = NULL) {
   # answer is given only for columns whose observed levels this site could
   # release anyway, so success or failure cannot probe which values occur.
   for (col in allowed_cols) {
-    verdict <- .omopConceptDiscovery(.conceptIdText(source[[col]]), nrow(source))
+    verdict <- .omopConceptDiscovery(.conceptIdText(source[[col]]), .densityRows(source))
     if (!isTRUE(verdict$safe)) {
       stop("Concept factor assignment refused by this site's factor-level rule (",
            paste(verdict$rules, collapse = " / "), ").", call. = FALSE)

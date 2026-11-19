@@ -16,6 +16,13 @@
   `omopAsFactorColumnsDS()` rebuilds a compact shared column from the site's
   own list, checking the list's digest and a digest of the complete shared
   resolution. Older clients get full reports and specs as before.
+- Level reports never weigh a column against more rows than its publication
+  had: a verb result counts at most the rows of its largest source, so
+  stacking or joining copies of the same rows (`omopBindRowsDS`,
+  `omopMergeDS`, row binds of other packages that keep the attributes) no
+  longer loosens DataSHIELD's `nfilter.levels.density`. This holds for the
+  concept level reports, the levels-in-use report of
+  `ds.omop.drop_empty_levels()` and the legacy factor transport.
 - Faster reconciliation: the relevel reuses its report's evidence digest.
 - Corrected: verbs over a published recipe output keep its shared factors.
   Before, publication presented them again, which failed on every v2 output
