@@ -1,3 +1,20 @@
+# dsOMOP 2.10.9 (development)
+
+- Copies for tables: `omopAsFactorColumnsDS(kind = "suppress_small")` makes the
+  values of categories (or, for a two-way table, cells) held by fewer than
+  `nfilter.tab` people at a site missing, with secondary suppression so that a
+  total minus a table never gives a small count. Used by
+  `ds.omop.drop_small_categories()` and `ds.omop.table(small = "missing")`; the
+  published table is unchanged.
+- Labels that dsBase's functions carry on Opal: Opal's expression parser rejects
+  spaces, accented letters and most punctuation in strings, and `ds.table()`
+  splits its level list at commas. When the client asks, published factor
+  labels keep ASCII letters, digits, `.`, `_`, `-` and `+` (common Latin
+  letters transliterated with a fixed table, the same at every site; a label in
+  another script takes its identity; collisions get a suffix). Level reports
+  say which columns carry them.
+- Two-way table copies for `ds.omop.table(by = )`.
+
 # dsOMOP 2.10.8 (2026-11-19)
 
 - Adaptive vocabulary levels: an automatic list climbs the public hierarchy
