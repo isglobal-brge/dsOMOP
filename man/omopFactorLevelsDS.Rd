@@ -4,7 +4,12 @@
 \alias{omopFactorLevelsDS}
 \title{Report disclosure-safe concept identities for federation reconciliation}
 \usage{
-omopFactorLevelsDS(df, occurring = NULL)
+omopFactorLevelsDS(
+  df,
+  occurring = NULL,
+  fingerprint = NULL,
+  list_records = NULL
+)
 }
 \arguments{
 \item{df}{A data frame or staged descriptor previously assigned server-side
@@ -12,6 +17,12 @@ by \code{\link{omopPlanExecuteDS}}.}
 
 \item{occurring}{Optional encoded \code{list(columns = )}: factor column
 names, or \code{"*"} for every published factor column.}
+
+\item{fingerprint}{Optional encoded logical: report long public lists by
+digest (\code{lists}) instead of by record.}
+
+\item{list_records}{Optional column name: return the public list records of
+that column (a fingerprinted report's list), for the client to read once.}
 }
 \value{
 A named list with \code{levels} (named list mapping
@@ -39,6 +50,12 @@ of published factor columns hold values at this site, for
 \code{ds.omop.drop_empty_levels()}. That is an observed-level release, so it
 follows the same DataSHIELD rule: a column whose levels in use fail it is
 reported without levels. No counts are returned.
+
+With \code{fingerprint = TRUE} (dsOMOP 2.10.8), a plain concept column's
+long public list (500 or more declared vocabulary records) is reported as its
+length and digest instead of its records; \code{list_records} returns those
+records once, only for a column this site's report admits. Both carry
+vocabulary metadata only.
 }
 \seealso{
 \code{\link{omopAsFactorColumnsDS}}, \code{\link{.assertSafeLevels}}

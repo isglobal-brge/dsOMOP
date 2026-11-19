@@ -17,10 +17,12 @@
   own list, checking the list's digest and a digest of the complete shared
   resolution. Older clients get full reports and specs as before.
 - Faster reconciliation: the relevel reuses its report's evidence digest.
-- Corrected: row verbs (`omopFilterDS`, `omopBindRowsDS`, and the other
-  verbs) over a published recipe output keep its shared factors. Before,
-  publication presented them again, which failed on every v2 output
+- Corrected: verbs over a published recipe output keep its shared factors.
+  Before, publication presented them again, which failed on every v2 output
   ("argument is of length zero") and read translated labels as concept IDs.
+  `omopFilterDS` and `omopBindRowsDS` also keep the concept identities of the
+  rows they keep or stack, so level reports (and `ds.omop.table()`) work on
+  their results.
 
 # dsOMOP 2.10.7 (2026-11-19)
 

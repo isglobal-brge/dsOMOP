@@ -804,5 +804,5 @@ omopMutateDS <- function(x, exprs) {
   keep <- .verbPredicateMask(pred, frame) %in% TRUE
   result <- x[keep, , drop = FALSE]
   rownames(result) <- NULL
-  result
+  .conceptRowsContracts(result, x, keep)
 }

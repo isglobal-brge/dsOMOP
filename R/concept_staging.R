@@ -124,9 +124,15 @@
     stop("Incomplete disclosure-safe staged concept contract.", call. = FALSE)
   }
   mappings <- list()
+  # Fingerprints are checked against the same refreshed records as the report.
+  refreshed <- .conceptRefresh(meta$contracts, meta$generated, meta$handle)$contracts
   for (col in names(meta$contracts)) {
     shared <- spec$columns[[col]]
-    if (!is.null(shared$list)) shared <- .conceptExpandShared(meta$contracts[[col]], shared)
+    if (!is.null(shared$list)) {
+      shared <- .conceptExpandShared(refreshed[[col]], shared)
+      # Later steps (the chunk rewrite) read the complete shared column.
+      spec$columns[[col]] <- shared
+    }
     if (identical(meta$contracts[[col]]$kind, "date") && !identical(.jcsCanonical(shared$calendar), .jcsCanonical(meta$contracts[[col]]$calendar))) .dateReject("Changed staged calendar identity.")
     if(identical(meta$contracts[[col]]$kind,"category")&&!identical(.jcsCanonical(shared$category),.jcsCanonical(meta$contracts[[col]]$category))) .categoryReject("Changed staged category contract.","category_domain_incompatible")
     .conceptValidateResolution(shared, meta$contracts[[col]]$records[union(report$levels[[col]], .conceptListPart(meta$contracts[[col]]))])

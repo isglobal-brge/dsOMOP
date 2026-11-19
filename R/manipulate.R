@@ -158,6 +158,41 @@
   result
 }
 
+# Row verbs over published outputs keep each contract's per-row identities
+# aligned with the rows they keep or stack; contracts that cannot be aligned
+# are dropped (later concept reports then refuse instead of misreading rows).
+.conceptDropContracts <- function(result) {
+  attr(result, "omop_concepts") <- NULL
+  attr(result, "dsomop_levels_shared") <- NULL
+  result
+}
+.conceptRowsContracts <- function(result, source, rows) {
+  contracts <- attr(source, "omop_concepts", exact = TRUE)
+  if (!length(contracts)) return(result)
+  for (col in names(contracts)) {
+    if (length(contracts[[col]]$ids) != nrow(source)) return(.conceptDropContracts(result))
+    contracts[[col]]$ids <- contracts[[col]]$ids[rows]
+  }
+  attr(result, "omop_concepts") <- contracts
+  result
+}
+.conceptBindContracts <- function(result, x, y) {
+  cx <- attr(x, "omop_concepts", exact = TRUE)
+  cy <- attr(y, "omop_concepts", exact = TRUE)
+  if (!length(cx) && !length(cy)) return(result)
+  if (!setequal(names(cx), names(cy))) return(.conceptDropContracts(result))
+  for (col in names(cx)) {
+    a <- cx[[col]]; b <- cy[[col]]
+    same <- identical(a[setdiff(names(a), "ids")], b[setdiff(names(b), "ids")])
+    if (!same || length(a$ids) != nrow(x) || length(b$ids) != nrow(y)) return(.conceptDropContracts(result))
+    cx[[col]]$ids <- c(a$ids, b$ids)
+  }
+  attr(result, "omop_concepts") <- cx
+  if (!isTRUE(attr(x, "dsomop_levels_shared", exact = TRUE)) || !isTRUE(attr(y, "dsomop_levels_shared", exact = TRUE)))
+    attr(result, "dsomop_levels_shared") <- NULL
+  result
+}
+
 #' Merge two omop.table frames on the person key (Assign)
 #'
 #' @description
@@ -347,6 +382,7 @@ omopFilterDS <- function(x, var = NULL, op = NULL, value = NULL, expr = NULL) {
   keep[is.na(keep) | is.na(col)] <- FALSE
   result <- x[keep, , drop = FALSE]
   rownames(result) <- NULL
+  result <- .conceptRowsContracts(result, x, keep)
 
   result <- .retagOmopTable(result, x)
   .publishStandalone(result, caller = "omopFilterDS",
@@ -462,6 +498,7 @@ omopBindRowsDS <- function(x, y) {
   result <- rbind(x, y)
   rownames(result) <- NULL
   for (col in concept_cols) class(result[[col]]) <- class(x[[col]])
+  result <- .conceptBindContracts(result, x, source_y)
 
   result <- .retagOmopTable(result, x, source_y)
   .publishStandalone(result, caller = "omopBindRowsDS",

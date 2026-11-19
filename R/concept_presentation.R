@@ -125,8 +125,10 @@
            else paste0("standard_concept = ", .quoteLiteral(standard, handle)), ")")
   }, "")
   where <- paste0(valid, " AND (", paste(same, collapse = " OR "), ")")
-  # Climb the public hierarchy only as far as needed; else the kinds' list.
-  adaptive <- .conceptAdaptiveContainers(handle, bp, found, leftover, kind_keys, where, n, limit)
+  # Climb the public hierarchy only as far as needed; else (or on any failure)
+  # the kinds' list.
+  adaptive <- tryCatch(.conceptAdaptiveContainers(handle, bp, found, leftover, kind_keys, where, n, limit),
+                       error = function(e) NULL)
   if (!is.null(adaptive)) return(adaptive)
   size <- suppressWarnings(as.numeric(.executeQuery(handle,
     paste0("SELECT COUNT(*) AS n FROM ", table, " WHERE ", where))$n))
@@ -141,10 +143,11 @@
 # declare the descendants of a few public hierarchy containers that hold the
 # observed values, climbing concept_ancestor only as far as the DataSHIELD rule
 # needs. At each separation every observed concept takes one ancestor (fewest
-# descendants, then smallest ID; its top ancestor when the hierarchy is
-# shallower; itself when it has none). The first separation whose containers,
-# with the kinds and the leftover values, pass the rule once is kept, and the
-# list is the valid descendants of those containers of the observed kinds.
+# descendants, then smallest ID; the nearest lower one when its hierarchy skips
+# that separation or ends lower; itself when it has none). The first separation
+# whose containers, with the kinds and the leftover values, pass the rule once
+# is kept, and the list is the valid descendants of those containers of the
+# observed kinds.
 # Only the containers and kinds come from the data, and they are counted under
 # the rule (they never leave the server as such); the list is vocabulary
 # metadata, as calendars declare every period of their observed years.
@@ -169,14 +172,17 @@
     ") GROUP BY ancestor_concept_id"))))
   size_of <- setNames(suppressWarnings(as.numeric(counts$n)), .conceptIdText(counts$ancestor_concept_id))
   up$size <- unname(size_of[up$ancestor]); up$size[is.na(up$size)] <- Inf
-  by_concept <- split(up, factor(up$descendant, levels = observed))
+  # One ordering serves every height: per concept, highest separation first,
+  # then fewest descendants, then smallest ID.
+  up <- up[order(up$descendant, -up$separation, up$size, suppressWarnings(as.numeric(up$ancestor)), method = "radix"), , drop = FALSE]
   for (s in sort(unique(up$separation))) {
-    picks <- vapply(observed, function(o) {
-      rows <- by_concept[[o]]
-      if (is.null(rows) || !nrow(rows)) return(o)
-      rows <- rows[rows$separation == min(s, max(rows$separation)), , drop = FALSE]
-      rows$ancestor[order(rows$size, suppressWarnings(as.numeric(rows$ancestor)), method = "radix")[[1L]]]
-    }, "", USE.NAMES = FALSE)
+    # Each concept's ancestor at this height, or the nearest one below it
+    # (hierarchies may skip separations); a concept with none is its own
+    # container.
+    below <- up[up$separation <= s, , drop = FALSE]
+    first <- below[!duplicated(below$descendant), , drop = FALSE]
+    picks <- first$ancestor[match(observed, first$descendant)]
+    picks[is.na(picks)] <- observed[is.na(picks)]
     containers <- unique(picks)
     keys <- c(paste0("subtree:", containers), kind_keys)
     if (!.omopConceptDiscovery(c(keys, leftover), n)$safe) next
@@ -249,6 +255,8 @@
   full$levels <- unique(unname(labels[ids]))
   full$vocabulary <- unname(vocabulary[ids])
   # The client's digest of its complete resolution: rebuilt exactly, or refused.
+  # A consistency check only; the rebuilt column then passes the same
+  # validation as a complete shared column.
   rebuilt <- unclass(as.character(openssl::sha256(charToRaw(enc2utf8(paste(full$ids, full$labels, full$vocabulary,
     sep = "\t", collapse = "\n"))))))
   if (!identical(rebuilt, as.character(unlist(shared$list$resolution)))) {
@@ -542,7 +550,10 @@
   for (col in names(contracts)) {
     c <- contracts[[col]]
     shared <- spec$columns[[col]]
-    if (!is.null(shared$list)) shared <- .conceptExpandShared(c, shared)
+    if (!is.null(shared$list)) {
+      shared <- .conceptExpandShared(c, shared)
+      spec$columns[[col]] <- shared
+    }
     if (identical(c$kind, "date") && !identical(.jcsCanonical(shared$calendar), .jcsCanonical(c$calendar))) .dateReject("Changed shared calendar identity.")
     if(identical(c$kind,"category")&&!identical(.jcsCanonical(shared$category),.jcsCanonical(c$category))) .categoryReject("Changed category contract.","category_domain_incompatible")
     a <- .conceptAssess(df, col, c, discover = FALSE)

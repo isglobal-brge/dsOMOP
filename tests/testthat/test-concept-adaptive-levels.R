@@ -2,12 +2,15 @@
 # as far as the DataSHIELD rule needs, and declares the descendants of those
 # few containers instead of every concept of the observed kinds.
 
-.hier_handle <- function() {
+# With gap = TRUE, leaves have no group rows (separations 1 and 3 only), as
+# when concept_ancestor holds part of a vocabulary, and 100 more concepts of
+# the same kind lie outside the hierarchy.
+.hier_handle <- function(gap = FALSE) {
   h <- create_test_handle()
   root <- 990000000L; groups <- 990000001:990000005
   subgroups <- 990000100L + 0:49
   leaves <- 990001000L + 0:4999
-  ids <- c(root, groups, subgroups, leaves)
+  ids <- c(root, groups, subgroups, leaves, if (gap) 990100000L + 1:100)
   DBI::dbWriteTable(h$conn, "concept", data.frame(concept_id = ids, concept_name = paste("H", ids),
     domain_id = "Condition", vocabulary_id = "Hier", concept_class_id = "Clinical Finding", standard_concept = "S",
     concept_code = as.character(ids), valid_start_date = "2000-01-01", valid_end_date = "2099-12-31",
@@ -18,8 +21,9 @@
     data.frame(a = ids, d = ids, s = 0L),
     data.frame(a = root, d = c(groups, subgroups, leaves), s = c(rep(1L, 5L), rep(2L, 50L), rep(3L, 5000L))),
     data.frame(a = group_of_sub, d = subgroups, s = 1L),
-    data.frame(a = group_of_sub[match(sub_of_leaf, subgroups)], d = leaves, s = 2L),
+    if (!gap) data.frame(a = group_of_sub[match(sub_of_leaf, subgroups)], d = leaves, s = 2L),
     data.frame(a = sub_of_leaf, d = leaves, s = 1L))
+  ca <- ca[ca$d %in% c(root, groups, subgroups, leaves), , drop = FALSE]
   names(ca) <- c("ancestor_concept_id", "descendant_concept_id", "min_levels_of_separation")
   ca$max_levels_of_separation <- ca$min_levels_of_separation
   DBI::dbWriteTable(h$conn, "concept_ancestor", ca, append = TRUE)
@@ -73,5 +77,24 @@ test_that("a vocabulary without hierarchy keeps the kinds' list", {
                             dsomop.auto_declared_levels_max = NULL))
   out <- .conceptAutoDeclared(h, as.character(ids[1:50]), 500)
   expect_setequal(out, as.character(ids))
+  expect_false(any(startsWith(attr(out, "kinds"), "subtree:")))
+})
+
+test_that("a hierarchy that skips a separation climbs past the gap", {
+  x <- .hier_handle(gap = TRUE); on.exit(cleanup_handle(x$handle), add = TRUE)
+  withr::local_options(list(nfilter.levels.max = 40, nfilter.levels.density = 0.33,
+                            dsomop.auto_declared_levels_max = NULL))
+  # 45 subgroups are too many; at separation 2 the leaves keep their subgroups
+  # (no group rows), so the root holds them: its 5,056 concepts, not the 5,156
+  # of the kind.
+  spread <- as.character(c(x$leaves[(0:44) * 100L + 1L], x$leaves[(0:14) * 100L + 2L]))
+  out <- .conceptAutoDeclared(x$handle, spread, 200)
+  expect_true(all(spread %in% out))
+  expect_identical(grep("^subtree:", attr(out, "kinds"), value = TRUE), paste0("subtree:", x$root))
+  expect_length(out, 5056L)
+  # Any failure of the climb falls back to the kinds' list.
+  testthat::local_mocked_bindings(.conceptAdaptiveContainers = function(...) stop("unavailable"), .package = "dsOMOP")
+  out <- .conceptAutoDeclared(x$handle, spread, 200)
+  expect_length(out, 5156L)
   expect_false(any(startsWith(attr(out, "kinds"), "subtree:")))
 })

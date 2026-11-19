@@ -3093,10 +3093,20 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
 #' follows the same DataSHIELD rule: a column whose levels in use fail it is
 #' reported without levels. No counts are returned.
 #'
+#' With \code{fingerprint = TRUE} (dsOMOP 2.10.8), a plain concept column's
+#' long public list (500 or more declared vocabulary records) is reported as its
+#' length and digest instead of its records; \code{list_records} returns those
+#' records once, only for a column this site's report admits. Both carry
+#' vocabulary metadata only.
+#'
 #' @param df A data frame or staged descriptor previously assigned server-side
 #'   by \code{\link{omopPlanExecuteDS}}.
 #' @param occurring Optional encoded \code{list(columns = )}: factor column
 #'   names, or \code{"*"} for every published factor column.
+#' @param fingerprint Optional encoded logical: report long public lists by
+#'   digest (\code{lists}) instead of by record.
+#' @param list_records Optional column name: return the public list records of
+#'   that column (a fingerprinted report's list), for the client to read once.
 #' @return A named list with \code{levels} (named list mapping
 #'   each safe concept-id column to its character levels), \code{unsafe}
 #'   (character vector of concept-id columns that failed the disclosure gate),
