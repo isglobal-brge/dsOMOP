@@ -125,6 +125,9 @@
            else paste0("standard_concept = ", .quoteLiteral(standard, handle)), ")")
   }, "")
   where <- paste0(valid, " AND (", paste(same, collapse = " OR "), ")")
+  # Climb the public hierarchy only as far as needed; else the kinds' list.
+  adaptive <- .conceptAdaptiveContainers(handle, bp, found, leftover, kind_keys, where, n, limit)
+  if (!is.null(adaptive)) return(adaptive)
   size <- suppressWarnings(as.numeric(.executeQuery(handle,
     paste0("SELECT COUNT(*) AS n FROM ", table, " WHERE ", where))$n))
   if (length(size) != 1L || is.na(size)) return(character())
@@ -132,6 +135,69 @@
   if (size > limit) return(structure(character(), too_long = TRUE))
   structure(.conceptIdText(.executeQuery(handle, paste0("SELECT concept_id FROM ", table, " WHERE ", where))$concept_id),
             kinds = kind_keys)
+}
+
+# Adaptive containers (2.10.8): instead of every concept of the observed kinds,
+# declare the descendants of a few public hierarchy containers that hold the
+# observed values, climbing concept_ancestor only as far as the DataSHIELD rule
+# needs. At each separation every observed concept takes one ancestor (fewest
+# descendants, then smallest ID; its top ancestor when the hierarchy is
+# shallower; itself when it has none). The first separation whose containers,
+# with the kinds and the leftover values, pass the rule once is kept, and the
+# list is the valid descendants of those containers of the observed kinds.
+# Only the containers and kinds come from the data, and they are counted under
+# the rule (they never leave the server as such); the list is vocabulary
+# metadata, as calendars declare every period of their observed years.
+.conceptAdaptiveContainers <- function(handle, bp, found, leftover, kind_keys, kind_where, n, limit) {
+  tables <- bp$tables$table_name[bp$tables$present_in_db]
+  fields <- c("ancestor_concept_id", "descendant_concept_id", "min_levels_of_separation")
+  if (!"concept_ancestor" %in% tables || !all(fields %in% bp$columns$concept_ancestor$column_name)) return(NULL)
+  ancestry <- .qualifyTable(handle, "concept_ancestor", .resolveTableSchema(handle, "concept_ancestor", "Vocabulary"))
+  concept <- .qualifyTable(handle, "concept", .resolveTableSchema(handle, "concept", "Vocabulary"))
+  observed <- unique(.conceptIdText(found$concept_id))
+  up <- do.call(rbind, lapply(.sqlIdChunks(observed), function(chunk) .executeQuery(handle, paste0(
+    "SELECT descendant_concept_id, ancestor_concept_id, min_levels_of_separation FROM ", ancestry,
+    " WHERE min_levels_of_separation > 0 AND descendant_concept_id IN (", chunk, ")"))))
+  if (is.null(up) || !nrow(up)) return(NULL)
+  up <- data.frame(descendant = .conceptIdText(up$descendant_concept_id), ancestor = .conceptIdText(up$ancestor_concept_id),
+                   separation = suppressWarnings(as.numeric(up$min_levels_of_separation)), stringsAsFactors = FALSE)
+  up <- up[!is.na(up$separation) & up$ancestor != up$descendant, , drop = FALSE]
+  if (!nrow(up)) return(NULL)
+  candidates <- unique(up$ancestor)
+  counts <- do.call(rbind, lapply(.sqlIdChunks(candidates), function(chunk) .executeQuery(handle, paste0(
+    "SELECT ancestor_concept_id, COUNT(*) AS n FROM ", ancestry, " WHERE ancestor_concept_id IN (", chunk,
+    ") GROUP BY ancestor_concept_id"))))
+  size_of <- setNames(suppressWarnings(as.numeric(counts$n)), .conceptIdText(counts$ancestor_concept_id))
+  up$size <- unname(size_of[up$ancestor]); up$size[is.na(up$size)] <- Inf
+  by_concept <- split(up, factor(up$descendant, levels = observed))
+  for (s in sort(unique(up$separation))) {
+    picks <- vapply(observed, function(o) {
+      rows <- by_concept[[o]]
+      if (is.null(rows) || !nrow(rows)) return(o)
+      rows <- rows[rows$separation == min(s, max(rows$separation)), , drop = FALSE]
+      rows$ancestor[order(rows$size, suppressWarnings(as.numeric(rows$ancestor)), method = "radix")[[1L]]]
+    }, "", USE.NAMES = FALSE)
+    containers <- unique(picks)
+    keys <- c(paste0("subtree:", containers), kind_keys)
+    if (!.omopConceptDiscovery(c(keys, leftover), n)$safe) next
+    # Every container's descendants, and observed containers themselves (a
+    # vocabulary need not list a concept as its own ancestor); all containers
+    # are counted under the rule.
+    alone <- intersect(containers, observed)
+    parents <- containers
+    # An admin's large nfilter.levels.max keeps every IN list short too.
+    under <- paste0("(", paste0("ancestor_concept_id IN (", .sqlIdChunks(parents), ")", collapse = " OR "), ")")
+    within <- paste0(kind_where, " AND concept_id IN (SELECT descendant_concept_id FROM ", ancestry, " WHERE ", under, ")")
+    size <- if (length(parents)) suppressWarnings(as.numeric(.executeQuery(handle,
+      paste0("SELECT COUNT(*) AS n FROM ", concept, " WHERE ", within))$n)) else 0
+    if (length(size) != 1L || is.na(size)) return(NULL)
+    # Higher containers only grow the list: past the limit here, it stays so.
+    if (size + length(alone) > limit) return(NULL)
+    listed <- if (size > 0) .conceptIdText(.executeQuery(handle,
+      paste0("SELECT concept_id FROM ", concept, " WHERE ", within))$concept_id) else character()
+    return(structure(union(listed, alone), kinds = keys))
+  }
+  NULL
 }
 
 .conceptPresent <- function(ctx, frame, columns) {
