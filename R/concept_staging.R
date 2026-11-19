@@ -28,6 +28,7 @@
   schema <- attr(df,"omop_codebook_schema")
   if (!length(contracts) && !length(generated) && !length(numbers) && is.null(schema)) return(descriptor)
   totals <- nrow(df)
+  observations <- lapply(contracts, function(c) .densityObservations(df, c$ids))
   support <- lapply(contracts, function(c) {
     ids <- unique(c$ids[!is.na(c$ids)])
     setNames(rep(1L, length(ids)), ids)
@@ -39,7 +40,7 @@
     handle = attr(df, "omop_presentation_handle"),
     names = attr(df, "omop_column_names") %||% setNames(names(df), names(df)),
     reference_support = reference_support,
-    support = support, total = totals))
+    support = support, total = totals, observations = observations))
   descriptor
 }
 
@@ -59,7 +60,7 @@
   for (col in names(meta$contracts)) {
     c <- meta$contracts[[col]]
     support <- unlist(meta$support[[col]], use.names = TRUE)
-    a <- .conceptAssessIds(c, names(support), meta$total, meta$reference_support, discover)
+    a <- .conceptAssessIds(c, names(support), meta$observations[[col]] %||% meta$total, meta$reference_support, discover)
     if (!a$safe) {
       out$unsafe <- c(out$unsafe, col)
       out$unsafe_rules[[col]] <- c(a$rules, if (identical(c$auto_levels, "too_long")) "dsomop.auto_declared_levels_max")
@@ -225,6 +226,7 @@
   reference_rows <- list()
   identities <- list()
   total_rows <- 0L
+  keys <- list(); bound <- .densityBound()
   .publishReadChunks(descriptor, function(frame) {
     if (is.null(prototype)) {
       prototype <<- frame[FALSE, , drop = FALSE]
@@ -235,10 +237,13 @@
     }
     concept_cols <- names(columns)[vapply(columns, .conceptColumn, logical(1))]
     total_rows <<- total_rows + nrow(frame)
+    key <- .omopPersonKeys(frame)
     for (col in intersect(concept_cols, names(frame))) {
       ids <- .conceptIdText(frame[[col]])
       observed <- unique(ids[!is.na(ids)])
       identities[[col]] <<- union(identities[[col]], observed)
+      # A person's repeated value counts once over every chunk.
+      if (length(key)) keys[[col]] <<- .densityKeys(frame[[key[[1L]]]], ids, keys[[col]] %||% character(), bound)
 
     }
   })
@@ -250,8 +255,12 @@
   reference_support <- attr(descriptor, "omop_reference_support")
   attr(sample, "omop_reference_support") <- reference_support
   attr(sample, "omop_concept_reference") <- reference
-  # The sample holds distinct identities; the level rule uses the output rows.
+  # The sample holds distinct identities; the level rule uses the output's
+  # observations (its rows, a person's repeated value once).
   attr(sample, "omop_total_rows") <- total_rows
+  observations <- lapply(setNames(names(identities), names(identities)), function(col)
+    if (is.null(keys[[col]])) total_rows else length(keys[[col]]))
+  attr(sample, "omop_density_observations") <- observations
   raw_sample <- sample
   sample <- .conceptPresent(ctx, sample, columns)
   updated <- .conceptStageCapture(sample, descriptor)
@@ -263,6 +272,7 @@
   })
   names(mappings) <- names(meta$contracts)
   meta$total <- total_rows
+  meta$observations <- observations[intersect(names(observations), names(meta$contracts))]
   if (!is.null(reference_support)) {
     meta$reference_support <- reference_support
   }

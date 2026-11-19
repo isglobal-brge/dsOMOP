@@ -225,12 +225,16 @@ test_that('A27 declared-only value recodes cannot change sparse feature names', 
   expect_identical(attr(value,'omop_concepts')$conceptId$resolved$naming_ids,'1')
 })
 
-test_that('concept discovery uses output rows including NA and ignores per-level support', {
+test_that('concept discovery counts observations including NA and ignores per-level support', {
   ctx <- list(handle=.cl_backends$sqlite$handle, ir=list(options=list(),variables=list()))
-  raw <- data.frame(person_id=rep('one',10),cause=c(45000123L,45000124L,rep(NA_integer_,8)))
+  raw <- data.frame(person_id=1:10,cause=c(45000123L,45000124L,rep(NA_integer_,8)))
   frame <- .conceptPresent(ctx,raw,list(cause=.fragmentColumn('integer',TRUE,'concept')))
+  # One person's ten rows are three observations (two concepts and missing).
+  one <- withr::with_options(list(dsomop.auto_declared_levels_max=0),
+    .conceptPresent(ctx,transform(raw,person_id='one'),list(cause=.fragmentColumn('integer',TRUE,'concept'))))
   withr::local_options(list(nfilter.tab=10,nfilter.levels.max=2,nfilter.levels.density=0.2))
   expect_length(.conceptLevelReport(frame)$unsafe,0)
+  expect_identical(.conceptLevelReport(one)$unsafe_rules$cause,'nfilter.levels.density')
   withr::local_options(list(nfilter.levels.max=1))
   expect_identical(.conceptLevelReport(frame)$unsafe_rules$cause,'nfilter.levels.max')
   withr::local_options(list(nfilter.levels.max=2,nfilter.levels.density=0.1))
@@ -267,14 +271,19 @@ test_that('declared category domains and complete recodes reveal no local subset
   expect_identical(as.character(.conceptRelevel(frame,list(concept_protocol=1L,columns=list(cause=shared)))$cause),c('Grouped',NA_character_))
 })
 
-test_that('staged discovery uses the same row denominator and public declaration rule', {
+test_that('staged discovery uses the same observation count and public declaration rule', {
   testthat::local_mocked_bindings(.conceptStageData=function(descriptor) .ds_arg(descriptor$metadata$concept_presentation))
   ctx <- list(handle=.cl_backends$sqlite$handle,ir=list(options=list(),variables=list()))
-  frame <- .conceptPresent(ctx,data.frame(person_id=rep('same',10),cause=c(45000123L,45000124L,rep(NA_integer_,8))),list(cause=.fragmentColumn('integer',TRUE,'concept')))
+  raw <- data.frame(person_id=1:10,cause=c(45000123L,45000124L,rep(NA_integer_,8)))
+  frame <- .conceptPresent(ctx,raw,list(cause=.fragmentColumn('integer',TRUE,'concept')))
   descriptor <- .conceptStageCapture(frame,list(metadata=list()))
+  one <- withr::with_options(list(dsomop.auto_declared_levels_max=0),
+    .conceptPresent(ctx,transform(raw,person_id='same'),list(cause=.fragmentColumn('integer',TRUE,'concept'))))
   withr::local_options(list(nfilter.tab=10,nfilter.levels.max=2,nfilter.levels.density=0.2))
   expect_identical(.conceptStageReport(descriptor)$levels,.conceptLevelReport(frame)$levels)
   expect_length(.conceptStageReport(descriptor)$unsafe,0)
+  # As in memory, one person's ten rows are three observations.
+  expect_identical(.conceptStageReport(.conceptStageCapture(one,list(metadata=list())))$unsafe_rules$cause,'nfilter.levels.density')
   withr::local_options(list(nfilter.levels.density=0.1))
   expect_identical(.conceptStageReport(descriptor)$unsafe_rules$cause,'nfilter.levels.density')
   ctx$ir$options$labels <- list('45000123'='First','45000124'='Second')

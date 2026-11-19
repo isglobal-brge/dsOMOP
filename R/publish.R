@@ -448,8 +448,6 @@
       # kept, removed or stacked add no level, so nothing new is released.
       if (isTRUE(attr(value, "omop_republished", exact = TRUE))) columns <- NULL
       if (!is.null(columns)) value <- .conceptPresent(ctx, value, columns)
-      # Copies stacked or joined later weigh levels against these rows at most.
-      attr(value, "dsomop_density_rows") <- .densityRows(value)
     }
     if (inherits(value, "FlowerDatasetDescriptor") && !.dsomopDpIsV2(ctx$ir)) {
       value <- .conceptStagePresent(ctx, value, root = pc$output, component = pc$component, reference = identical(pc$grain, "none"))

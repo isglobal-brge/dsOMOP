@@ -274,7 +274,9 @@
 }
 
 .conceptPresent <- function(ctx, frame, columns) {
-  n <- attr(frame, "omop_total_rows") %||% .densityRows(frame)
+  # Staged samples carry each column's observations over the whole output.
+  counted <- attr(frame, "omop_density_observations")
+  total <- attr(frame, "omop_total_rows")
   out <- .conceptPresentOnce(ctx, frame, columns)
   # A column that would be refused, and only such a column, is presented again
   # with its public list declared; recipes that publish are unchanged.
@@ -284,6 +286,7 @@
   too_long <- character()
   for (col in intersect(intersect(names(contracts), names(columns)), names(frame))) {
     c <- contracts[[col]]
+    n <- counted[[col]] %||% total %||% .densityObservations(frame, c$ids)
     if (isTRUE(.conceptAssessIds(c, c$ids, n)$safe)) next
     if (identical(c$kind, "date")) {
       dated <- tryCatch(.dateAutoDeclared(frame[[col]], n), error = function(e) NULL)
@@ -464,7 +467,7 @@
 
 .conceptAssess <- function(df, col, contract, discover = TRUE) {
   if (length(contract$ids) != nrow(df)) stop("Incomplete concept identity metadata.", call. = FALSE)
-  .conceptAssessIds(contract, contract$ids, .densityRows(df),
+  .conceptAssessIds(contract, contract$ids, .densityObservations(df, contract$ids),
     if(isTRUE(attr(df,"omop_concept_reference")))attr(df,"omop_reference_support"), discover)
 }
 

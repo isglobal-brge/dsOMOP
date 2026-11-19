@@ -61,7 +61,9 @@
     plain$reference_admitted <- FALSE
     isTRUE(.conceptAssessIds(plain,observed,n)$safe)
   }
-  pending <- list(); rows <- 0
+  # Observations as the source's own report counts them: rows, a person's
+  # repeated value once (chunks of one output share a bounded key set).
+  pending <- list(); pending_keys <- list(); pending_n <- list(); bound <- .densityBound()
   read_frame <- function(frame,skip=character()) {
     columns <- .conceptLegacyColumns(list(handle=handle,ir=list(outputs=setNames(list(output),root))),frame,root,component)
     # Only columns this output classifies as concepts: a count or other reducer
@@ -70,22 +72,30 @@
     if("conceptId" %in% names(frame))known <- union(known,"conceptId")
     contracts <- attr(frame,"omop_concepts") %||% list()
     # Covariate references have one row per concept: like their own release,
-    # the rule counts the persons behind them.
-    n <- attr(frame,"omop_total_rows") %||% attr(frame,"omop_reference_support")$total %||% nrow(frame)
+    # the rule counts the persons behind them. SQL components carry their counts.
+    counted <- attr(frame,"omop_density_observations")
+    fixed <- attr(frame,"omop_total_rows") %||% attr(frame,"omop_reference_support")$total
+    key <- .omopPersonKeys(frame)
     for(col in setdiff(union(known,names(contracts)),skip)) {
       contract <- contracts[[col]]
       if(is.null(contract)) {
         # Columns without a contract are gated once, over every chunk.
         pending[[col]] <<- union(pending[[col]],normalise(frame[[col]]))
+        if(is.null(counted[[col]]) && is.null(fixed) && length(key))
+          pending_keys[[col]] <<- .densityKeys(frame[[key[[1L]]]],frame[[col]],pending_keys[[col]] %||% character(),bound)
+        else pending_n[[col]] <<- (pending_n[[col]] %||% 0)+as.numeric(counted[[col]] %||% fixed %||% nrow(frame))
         next
       }
+      n <- counted[[col]] %||% fixed %||% .densityObservations(frame,contract$ids)
       if(releasable(contract,as.character(contract$ids),n))append_ids(.dictionaryContractIds(contract,contract$ids))
     }
-    rows <<- rows+n
   }
   flush <- function() {
-    for(col in names(pending))if(releasable(NULL,pending[[col]],rows))append_ids(pending[[col]])
-    pending <<- list(); rows <<- 0
+    for(col in names(pending)) {
+      n <- if(!is.null(pending_keys[[col]])) length(pending_keys[[col]]) else pending_n[[col]] %||% 0
+      if(releasable(NULL,pending[[col]],n))append_ids(pending[[col]])
+    }
+    pending <<- list(); pending_keys <<- list(); pending_n <<- list()
   }
   if(inherits(value,"FlowerDatasetDescriptor")) {
     capsule <- if(!is.null(value$metadata$concept_presentation)) .ds_arg(value$metadata$concept_presentation)
@@ -93,7 +103,8 @@
     for(col in names(contracts)) {
       observed <- names(capsule$support[[col]])
       # Covariate references count persons, as their own release and memory do.
-      if(releasable(contracts[[col]],observed,capsule$reference_support$total %||% capsule$total %||% length(observed)))
+      if(releasable(contracts[[col]],observed,capsule$reference_support$total %||% capsule$observations[[col]] %||%
+                    capsule$total %||% length(observed)))
         append_ids(.dictionaryContractIds(contracts[[col]],observed))
     }
     physical <- as.character(unlist(capsule$names[names(contracts)],use.names=FALSE))
@@ -112,6 +123,11 @@
           frame <- .executeQuery(handle,paste0("SELECT DISTINCT ",paste(fields,collapse=", ")," FROM (",item$sql,") dsomop_dictionary_concepts"))
           # The rule uses the component's rows, not its distinct values.
           attr(frame,"omop_total_rows") <- as.numeric(.executeQuery(handle,paste0("SELECT COUNT(*) AS n FROM (",item$sql,") dsomop_dictionary_rows"))$n)
+          # With a person key, each field's distinct person/value observations.
+          person <- intersect(.PERSON_KEY_COLS(),item$columns)
+          if(length(person)) attr(frame,"omop_density_observations") <- setNames(lapply(fields,function(field)
+            as.numeric(.executeQuery(handle,paste0("SELECT COUNT(*) AS n FROM (SELECT DISTINCT ",person[[1L]],", ",field,
+              " FROM (",item$sql,") dsomop_dictionary_inner) dsomop_dictionary_pairs"))$n)),fields)
           append_ids(.dictionaryObservedIds(handle,frame,output,root,name))
         }
       }
