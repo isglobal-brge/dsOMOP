@@ -18,7 +18,8 @@
   counts behind each `missing_rate` (persons for person tables, rows
   otherwise), so clients can pool missingness across servers. `n_missing` is
   released only when the rate is; nothing else changes and no method needs to
-  be published again.
+  be published again. `omopConceptDrilldownDS()` does the same for its
+  missingness (banded record counts; the total is the summary's `n_records`).
 
 # dsOMOP 2.10.8 (2026-11-19)
 

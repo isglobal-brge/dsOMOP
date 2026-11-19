@@ -17,7 +17,9 @@
 }
 \value{
 Named list with summary, numeric_summary, categorical_values,
-  date_range, missingness
+  date_range, missingness (\code{column_name}, \code{missing_rate} and
+  the banded record counts behind it, \code{n_total} and \code{n_missing},
+  the latter released exactly when the rate is)
 }
 \description{
 Returns summary stats, numeric distribution, categorical values, date

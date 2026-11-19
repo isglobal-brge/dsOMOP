@@ -2319,7 +2319,9 @@
 #' @param concept_id Integer; concept ID to drill into
 #' @param concept_col Character; concept column (NULL = auto-detect)
 #' @return Named list with summary, numeric_summary, categorical_values,
-#'   date_range, missingness
+#'   date_range, missingness (\code{column_name}, \code{missing_rate} and
+#'   the banded record counts behind it, \code{n_total} and \code{n_missing},
+#'   the latter released exactly when the rate is)
 #' @keywords internal
 .profileConceptDrilldown <- function(handle, table, concept_id,
                                       concept_col = NULL) {
@@ -2565,6 +2567,8 @@
 
   missingness <- data.frame(column_name = character(0),
                             missing_rate = numeric(0),
+                            n_total = numeric(0),
+                            n_missing = numeric(0),
                             stringsAsFactors = FALSE)
 
   if (!is.na(total) && total > 0) {
@@ -2603,9 +2607,14 @@
           total_banded > 0 && (n_missing == 0 || missing_banded > 0)) {
         rate <- round(missing_banded / total_banded, 2)
       }
+      # The banded record counts behind the rate, for pooling: the total is
+      # the drilldown's banded record count (its summary), the missing count
+      # is released only with the rate (both groups pass nfilter.tab).
       missingness <- rbind(missingness, data.frame(
         column_name = col,
         missing_rate = rate,
+        n_total = total_banded,
+        n_missing = if (is.na(rate)) NA_real_ else missing_banded,
         stringsAsFactors = FALSE
       ))
     }
