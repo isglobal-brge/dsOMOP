@@ -40,7 +40,7 @@
       value<-.categorySetIndicator(ctx,operand$value,spec,d$key,d$missing,if(length(owner))ctx$ir$variables[[owner]]$labels else NULL)
     } else {
       tmp<-data.frame(value=operand$value)
-      presented<-.conceptPresent(local,tmp,list(value=col))
+      presented<-.conceptPresentOnce(local,tmp,list(value=col))
       contract<-attr(presented,"omop_concepts")$value
       if(is.null(contract)||!identical(contract$kind,"category")) .categoryReject("Column indicators require a typed category identity.")
       alias<-.categoryNullableStrings(contract$resolved$aliases)

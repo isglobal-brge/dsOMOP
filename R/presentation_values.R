@@ -205,6 +205,11 @@
     frame[[n]]<-.categoryFactor(values,resolved)
     contracts[[n]]<-list(kind="category",category=contract,ids=ids,records=records,
       declared=declared,discovered=discovered,resolved=resolved,owner=owner)
+    # A concept producer's automatic list keeps its kinds under the rule.
+    if(!flag && length(c$auto_kinds)) {
+      contracts[[n]]$auto_kinds<-c$auto_kinds
+      contracts[[n]]$auto_declared<-lev[match(c$auto_declared,old_ids)]
+    }
 
   }
   if(length(contracts))attr(frame,"omop_concepts")<-contracts
@@ -244,6 +249,11 @@
     resolved<-.dateResolveRecords(unname(records),identity)
     declared<-c$declared %||% setdiff(c$levels,unique(ids[!is.na(ids)]))
     contracts[[col]]<-list(kind="date",calendar=identity,ids=ids,records=records,declared=declared,resolved=resolved)
+    # Completed calendar periods: their observed years count under the rule.
+    if(length(c$auto_containers)) {
+      contracts[[col]]$auto_kinds<-c$auto_containers
+      contracts[[col]]$auto_declared<-c$auto_periods
+    }
   }
   if(length(contracts)) attr(frame,"omop_concepts")<-contracts
   frame

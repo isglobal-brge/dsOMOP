@@ -10,6 +10,7 @@
   class(frame) <- c("omop.table", class(frame))
   attr(frame, "omop_concepts") <- list(cause = list(ids = values))
   attr(frame, "omop_concept_cols") <- "cause"
+  attr(frame, "dsomop_levels_shared") <- TRUE
   frame
 }
 
@@ -52,4 +53,25 @@ test_that("the copy keeps only given levels, and refuses like the report would",
   for (keep in list(sprintf("l%02d", 1:60), sprintf("l%02d", 2:60)))
     expect_error(omopAsFactorColumnsDS(wide, spec(list(cause = as.list(keep)))), "factor-level rule")
   expect_identical(omopAsFactorColumnsDS(frame, spec(list()))$cause, frame$cause)
+})
+
+test_that("raw outputs before reconciliation release nothing, whatever is asked", {
+  withr::local_options(list(nfilter.levels.max = 40, nfilter.levels.density = 0.33))
+  raw <- .ml_frame(sprintf("l%02d", 1:50), sprintf("l%02d", 1:50))
+  attr(raw, "dsomop_levels_shared") <- NULL
+  expect_error(omopFactorLevelsDS(raw, list(columns = list("*"))), "reconciled")
+  spec <- function(keep) list(kind = "drop_levels", columns = list(cause = as.list(keep)))
+  # The same refusal whether a probed level exists or not: no oracle.
+  for (keep in list(sprintf("l%02d", 1:50), c(sprintf("l%02d", 1:49), "zz")))
+    expect_error(omopAsFactorColumnsDS(raw, spec(keep)), "reconciled")
+})
+
+test_that("a model copy carries no DP lineage of its source", {
+  withr::local_options(list(nfilter.levels.max = 40, nfilter.levels.density = 0.33))
+  frame <- .ml_frame(c("a", "b"), c("a", "b", "c"))
+  attr(frame, "dsomop_dp_provenance") <- list(mac = "stale")
+  attr(frame, "dsomop_dp_filter_state") <- list(state = 1)
+  copy <- omopAsFactorColumnsDS(frame, list(kind = "drop_levels", columns = list(cause = list("a", "b"))))
+  expect_null(attr(copy, "dsomop_dp_provenance"))
+  expect_null(attr(copy, "dsomop_dp_filter_state"))
 })

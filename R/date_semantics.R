@@ -200,8 +200,9 @@
   contract <- attr(x, "omop_date_contract")
   s <- contract$spec
   p <- s$precision %||% ""
-  if (is.null(contract) || !p %in% c("year","semester","quarter","month","iso_week","cdc_week","epi_week",
-                                      "fiscal_year","fiscal_semester","fiscal_quarter","fiscal_month")) return(NULL)
+  if (is.null(contract) || !is.null(s$level_range) ||
+      !p %in% c("year","semester","quarter","month","iso_week","cdc_week","epi_week",
+                "fiscal_year","fiscal_semester","fiscal_quarter","fiscal_month")) return(NULL)
   keys <- contract$levels[match(as.character(x), contract$labels)]
   observed <- unique(keys[!is.na(keys)])
   declared <- as.character(unlist(contract$declared, use.names = FALSE))
@@ -223,7 +224,12 @@
   }), use.names = FALSE))
   if (length(periods) > limit) return(structure(list(), too_long = TRUE))
   levels <- sort(unique(c(contract$levels, periods)), method = "radix")
-  .dateFactor(keys, levels, s, NULL, unique(c(declared, periods)))
+  out <- .dateFactor(keys, levels, s, NULL, unique(c(declared, periods)))
+  completed <- attr(out, "omop_date_contract")
+  completed$auto_containers <- paste0(if (yearly) "decade:" else "year:", containers)
+  completed$auto_periods <- setdiff(periods, declared)
+  attr(out, "omop_date_contract") <- completed
+  out
 }
 .datePart <- function(d,part,s) {
   y<-.dateY(d);m<-.dateM(d);w<-.dateW(d);season<-(m%%12)%/%3+1L

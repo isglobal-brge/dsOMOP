@@ -101,7 +101,7 @@
     local$ir$variables[[dep]]<-input
     cols<-rec$columns;attr(cols[[cn]],"concept_owner")<-dep
     numeric<-.numberOutputColumns(rows,cols,list(format="long"),"input","input",recipe=NULL)
-    presented<-.conceptPresent(local,numeric$frame,numeric$columns)
+    presented<-.conceptPresentOnce(local,numeric$frame,numeric$columns)
     c<-attr(presented,"omop_concepts")[[cn]]
     if(is.null(c)) .categoryReject("Indicators require statically declared category identity.")
     if(identical(c$kind,"category")) {
@@ -153,7 +153,7 @@
     local$ir$variables[[dep]]<-input
     cols<-rec$columns;attr(cols[[cn]],"concept_owner")<-dep
     presented<-.numberOutputColumns(rows,cols,list(format="long"),"input","input",recipe=NULL)
-    presented<-.conceptPresent(local,presented$frame,presented$columns)
+    presented<-.conceptPresentOnce(local,presented$frame,presented$columns)
     contract<-attr(presented,"omop_concepts")[[cn]]
     if(flag) {
       keys<-if(is.factor(presented[[cn]])) {

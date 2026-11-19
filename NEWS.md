@@ -4,9 +4,13 @@
   DataSHIELD's factor-level rule declares, on its own, the public vocabulary
   list that holds them when one is short enough: every valid concept of the
   vocabularies, domains, classes and standard flags its values have. Those
-  kinds are the only part derived from the data, and they pass the same rule;
-  the list is read from the vocabulary tables, as `omop_concept_levels()`
-  declares it, so which concepts occur is not released. A recipe that needed
+  kinds are the only part derived from the data: they count under the same rule
+  together with any remaining observed values (invalid or unknown concepts).
+  The list is read from the vocabulary tables, as `omop_concept_levels()`
+  declares it, so the levels themselves do not reveal which concepts occur;
+  counts over them keep their usual cell rules. Only publication applies it:
+  intermediate presentations inside a recipe (category reducers, indicators)
+  are unchanged, and so are dictionaries. A recipe that needed
   `omop_category_spec(levels = )` for this now publishes unchanged. Columns
   whose observed levels pass the rule keep exactly those levels, and recipes
   that already publish are unchanged.
@@ -27,12 +31,24 @@
   `omop_age_at()`. A value that is not a whole number is an invalid component
   (NA), like any other.
 - Levels for models: `omopFactorLevelsDS(occurring = )` reports which levels of
-  published factor columns hold a value at the site, under the same level
-  rule and without counts, and `omopAsFactorColumnsDS()` with a `drop_levels`
-  spec returns a copy for models whose columns keep only the given levels. The
-  copy first checks this site's own levels in use against the rule, so a
-  refusal never answers, level by level, whether one is in use. Both are
-  existing methods: there is no new method to publish.
+  the concept columns of a reconciled output hold a value at the site, under
+  the same level rule and without counts, and `omopAsFactorColumnsDS()` with a
+  `drop_levels` spec returns a copy for models whose columns keep only the
+  given levels. Both refuse an output that has not been reconciled (its levels
+  are still this site's own observed values), and the copy checks this site's
+  levels in use against the rule before anything else, so a refusal never
+  answers, level by level, whether one is in use. The copy carries no DP
+  lineage. Both are existing methods: there is no new method to publish.
+- Corrected: a legacy `concept_dictionary` output names a source column's
+  observed concepts only when that list passes DataSHIELD's level rule on its
+  own (declared concepts aside). Before, it named them whatever the column's
+  verdict, including when the source column was refused, so a client could
+  receive them before the refusal revoked the outputs.
+- Vocabulary lookups split long concept lists (at most 500 per query), so
+  declared lists longer than 1000 work on every SQL dialect.
+- Faster long level lists: concept and category resolution group their records
+  once instead of scanning them per level, so presentation time grows linearly
+  with the number of declared levels (it grew quadratically).
 
 # dsOMOP 2.10.6 (2026-11-18)
 

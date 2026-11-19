@@ -37,7 +37,7 @@
 
 .dictionaryObservedIds <- function(handle, value, output, root, component=root) {
   ids <- character()
-  append_ids <- function(x) {
+  normalise <- function(x) {
     if(is.numeric(x) && !inherits(x,"integer64")) {
       if(any(!is.na(x) & (!is.finite(x) | x<0 | x>2147483647 | x!=trunc(x))))
         stop("Concept dictionary requires valid OMOP concept identities.",call.=FALSE)
@@ -45,8 +45,23 @@
     }
     x <- as.character(x[!is.na(x)])
     if(length(x) && any(!grepl("^[0-9]+$",x)))stop("Concept dictionary requires original concept identities.",call.=FALSE)
-    ids <<- union(ids,x)
+    unique(x)
   }
+  append_ids <- function(x) ids <<- union(ids,normalise(x))
+  # A source column names its observed concepts only when that list passes the
+  # DataSHIELD level rule on its own, its plan-declared levels aside. Neither a
+  # refused column nor one presented with an automatic vocabulary list (whose
+  # observed values exceed the rule) may reveal which concepts occur here.
+  releasable <- function(contract, observed, n) {
+    if(is.null(contract)) return(isTRUE(.omopConceptDiscovery(observed,n)$safe))
+    plain <- contract
+    plain$declared <- setdiff(as.character(unlist(contract$declared,use.names=FALSE)),
+                              as.character(unlist(contract$auto_declared,use.names=FALSE)))
+    plain$auto_kinds <- NULL
+    plain$reference_admitted <- FALSE
+    isTRUE(.conceptAssessIds(plain,observed,n)$safe)
+  }
+  pending <- list(); rows <- 0
   read_frame <- function(frame,skip=character()) {
     columns <- .conceptLegacyColumns(list(handle=handle,ir=list(outputs=setNames(list(output),root))),frame,root,component)
     # Only columns this output classifies as concepts: a count or other reducer
@@ -54,19 +69,39 @@
     known <- union(attr(frame,"omop_concept_cols"),names(columns)[vapply(columns,.conceptColumn,logical(1))])
     if("conceptId" %in% names(frame))known <- union(known,"conceptId")
     contracts <- attr(frame,"omop_concepts") %||% list()
+    # Covariate references have one row per concept: like their own release,
+    # the rule counts the persons behind them.
+    n <- attr(frame,"omop_total_rows") %||% attr(frame,"omop_reference_support")$total %||% nrow(frame)
     for(col in setdiff(union(known,names(contracts)),skip)) {
       contract <- contracts[[col]]
-      append_ids(if(is.null(contract))frame[[col]] else .dictionaryContractIds(contract,contract$ids))
+      if(is.null(contract)) {
+        # Columns without a contract are gated once, over every chunk.
+        pending[[col]] <<- union(pending[[col]],normalise(frame[[col]]))
+        next
+      }
+      if(releasable(contract,as.character(contract$ids),n))append_ids(.dictionaryContractIds(contract,contract$ids))
     }
+    rows <<- rows+n
+  }
+  flush <- function() {
+    for(col in names(pending))if(releasable(NULL,pending[[col]],rows))append_ids(pending[[col]])
+    pending <<- list(); rows <<- 0
   }
   if(inherits(value,"FlowerDatasetDescriptor")) {
     capsule <- if(!is.null(value$metadata$concept_presentation)) .ds_arg(value$metadata$concept_presentation)
     contracts <- capsule$contracts %||% list()
-    for(col in names(contracts))append_ids(.dictionaryContractIds(contracts[[col]],names(capsule$support[[col]])))
+    for(col in names(contracts)) {
+      observed <- names(capsule$support[[col]])
+      if(releasable(contracts[[col]],observed,capsule$total %||% length(observed)))
+        append_ids(.dictionaryContractIds(contracts[[col]],observed))
+    }
     physical <- as.character(unlist(capsule$names[names(contracts)],use.names=FALSE))
     .publishReadChunks(value,function(frame)read_frame(frame,skip=physical))
-  } else if(is.data.frame(value))read_frame(value)
-  else if(inherits(value,"omop_temporal_sql_components")) {
+    flush()
+  } else if(is.data.frame(value)) {
+    read_frame(value)
+    flush()
+  } else if(inherits(value,"omop_temporal_sql_components")) {
     for(name in names(value$components)) {
       item <- value$components[[name]]
       if(identical(item$kind,"data"))append_ids(.dictionaryObservedIds(handle,item$data,output,root,name))
@@ -74,6 +109,8 @@
         fields <- intersect(item$columns,c("conceptId",grep("(^|_)concept_id$",item$columns,value=TRUE)))
         if(length(fields)) {
           frame <- .executeQuery(handle,paste0("SELECT DISTINCT ",paste(fields,collapse=", ")," FROM (",item$sql,") dsomop_dictionary_concepts"))
+          # The rule uses the component's rows, not its distinct values.
+          attr(frame,"omop_total_rows") <- as.numeric(.executeQuery(handle,paste0("SELECT COUNT(*) AS n FROM (",item$sql,") dsomop_dictionary_rows"))$n)
           append_ids(.dictionaryObservedIds(handle,frame,output,root,name))
         }
       }

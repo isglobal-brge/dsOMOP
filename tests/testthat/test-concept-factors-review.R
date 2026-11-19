@@ -143,8 +143,9 @@ test_that("legacy dictionaries name only concept columns, and declared concepts 
   .ws7_keys(list(h))
   outputs <- list(events = list(type = "event_level", table = "condition_occurrence", concept_set = 201820L))
   # n_concept_id is a count alias whose numbers happen to be valid concept IDs.
-  results <- list(events = data.frame(person_id = c("a", "b"), condition_concept_id = c(201820L, 255573L),
-                                      n_concept_id = c(8507L, 8532L)))
+  # Ten rows: the observed, undeclared 255573 passes the level rule on its own.
+  results <- list(events = data.frame(person_id = letters[1:10], condition_concept_id = rep(c(201820L, 255573L), 5L),
+                                      n_concept_id = rep(c(8507L, 8532L), 5L)))
   withr::local_options(list(dsomop.query_strict = TRUE))
   full <- .buildDeclaredConceptDictionary(h, outputs, results = results)
   expect_true(all(c("201820", "255573") %in% as.character(full$concept_id)))

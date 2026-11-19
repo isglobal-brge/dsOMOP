@@ -105,10 +105,13 @@
   if (length(records) && identical(records[[1L]]$kind,"category")) return(.categoryResolveRecords(records))
   if(length(records) && any(vapply(records,function(r)identical(r$kind,"number"),logical(1)))) return(.numberResolveRecords(records))
   if (length(records) && any(vapply(records, function(x) identical(x$kind, "date"), logical(1)))) return(.dateResolveRecords(records))
-  ids <- unique(vapply(records, function(x) x$id, ""))
+  record_ids <- vapply(records, function(x) x$id, "")
+  ids <- unique(record_ids)
   ids <- ids[.conceptIdOrder(ids)]
+  # One pass groups each identity's candidate records (linear in the list).
+  by_id <- split(records, factor(record_ids, levels = ids))
   result <- lapply(ids, function(id) {
-    rows <- records[vapply(records, function(x) identical(x$id, id), logical(1))]
+    rows <- by_id[[id]]
     user <- Filter(function(x) x$origin %in% c("variable", "recipe"), rows)
     if (length(user)) {
       priority <- vapply(user, function(x) if (x$origin == "variable") 1L else 2L, 0L)
@@ -132,8 +135,7 @@
   list(ids = ids, labels = vapply(result, function(x) x$label, ""),
        levels = unique(vapply(result, function(x) x$label, "")),
        vocabulary = vapply(ids, function(id) {
-         rows <- records[vapply(records, function(x) identical(x$id, id), logical(1))]
-         .conceptChooseName(rows)$name %||% paste0("concept_", id)
+         .conceptChooseName(by_id[[id]])$name %||% paste0("concept_", id)
        }, ""), decisions = result)
 }
 

@@ -366,14 +366,14 @@
 #' @keywords internal
 .vocabTranslateColumns <- function(handle, df) {
   contract <- attr(df, "omop_column_contract")
-  if (!is.null(contract)) return(.conceptPresent(list(handle = handle, ir = list(options = list(), variables = list())), df, contract))
+  if (!is.null(contract)) return(.conceptPresentOnce(list(handle = handle, ir = list(options = list(), variables = list())), df, contract))
   bp <- .buildBlueprint(handle)
   declared <- unique(unlist(lapply(bp$columns, function(registry) {
     registry$column_name[vapply(registry$column_name, .conceptDeclaredColumn, logical(1), registry = registry)]
   }), use.names = FALSE))
   columns <- setNames(lapply(intersect(names(df), declared), function(x) .fragmentColumn("integer", TRUE, "concept")),
                       intersect(names(df), declared))
-  .conceptPresent(list(handle = handle, ir = list()), df, columns)
+  .conceptPresentOnce(list(handle = handle, ir = list()), df, columns)
 }
 
 #' Get the ancestors and descendants of a set of concepts

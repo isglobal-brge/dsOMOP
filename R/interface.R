@@ -22,8 +22,9 @@
 .ds_arg <- function(x) {
   if (is.character(x) && length(x) == 1) {
     if (startsWith(x, "B64:")) {
-      # URL-safe base64 → standard base64
-      b64 <- substring(x, 5)
+      # URL-safe base64 → standard base64. substring() stops at character
+      # 1e6 by default on older R, which would truncate long arguments.
+      b64 <- substr(x, 5L, nchar(x))
       b64 <- gsub("-", "+", b64)
       b64 <- gsub("_", "/", b64)
       # Restore padding
@@ -2936,14 +2937,19 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
 
 # --- Levels that hold values, for models (dsOMOP 2.10.7) ---
 
-# Published factor columns of an in-memory dsOMOP output, never person keys or
-# protected columns.
+# Concept factor columns of an in-memory dsOMOP output whose levels are the
+# shared union the client reconciled (and so already knows), never person keys
+# or protected columns. A raw output before reconciliation holds this site's
+# own observed levels, which only its level report may release under the rule.
 .factorModelColumns <- function(df, columns) {
-  if (!is.data.frame(df) || !.is_omop.table(df)) {
-    stop("Levels in use are reported for in-memory dsOMOP outputs only.", call. = FALSE)
+  if (!is.data.frame(df) || !.is_omop.table(df) || !isTRUE(attr(df, "dsomop_levels_shared"))) {
+    stop("Levels in use are reported for reconciled in-memory dsOMOP outputs only.", call. = FALSE)
   }
   excluded <- union(.PERSON_KEY_COLS(), attr(df, "dsomop_protected") %||% character())
-  candidates <- setdiff(names(df)[vapply(df, is.factor, logical(1))], excluded)
+  keys <- names(attr(df, "omop_concepts") %||% list())
+  physical <- attr(df, "omop_column_names")
+  shared <- if (length(physical)) unname(ifelse(keys %in% names(physical), physical[keys], keys)) else keys
+  candidates <- setdiff(intersect(shared, names(df)[vapply(df, is.factor, logical(1))]), excluded)
   columns <- as.character(unlist(columns, use.names = FALSE))
   if (identical(columns, "*")) return(candidates)
   if (!length(columns) || anyNA(columns) || anyDuplicated(columns) || !all(columns %in% candidates)) {
@@ -2962,9 +2968,13 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
 }
 
 .factorOccurrenceReport <- function(df, columns) {
-  out <- list(levels = list(), occurring = list(), unsafe = character(), unsafe_rules = list())
+  out <- list(levels = list(), occurring = list(), reference = list(), unsafe = character(), unsafe_rules = list())
   for (col in .factorModelColumns(df, columns)) {
     out$levels[[col]] <- levels(df[[col]])
+    r <- attr(df[[col]], "omop_category_contract")
+    if (!is.null(r$reference)) {
+      out$reference[[col]] <- unlist(r$levels, use.names = FALSE)[match(r$reference, unlist(r$keys, use.names = FALSE))]
+    }
     a <- .factorLevelsInUse(df, col)
     if (!isTRUE(a$safe)) {
       out$unsafe <- c(out$unsafe, col)
@@ -2986,28 +2996,37 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
   }
   .factorModelColumns(df, if (length(columns)) names(columns) else "*")
   contracts <- attr(df, "omop_concepts") %||% list()
+  # Generated columns are named physically; their contracts use stable keys.
+  physical <- attr(df, "omop_column_names")
+  keys <- vapply(names(columns), function(col)
+    if (length(physical) && col %in% physical) names(physical)[match(col, physical)] else col, "")
   for (col in names(columns)) {
     f <- df[[col]]
     keep <- as.character(unlist(columns[[col]], use.names = FALSE))
-    if (!length(keep) || anyNA(keep) || anyDuplicated(keep) || !all(keep %in% levels(f))) {
-      stop("Kept levels must be existing levels of the column.", call. = FALSE)
-    }
+    # The rule comes first: a refusal must not depend on which levels were sent.
     a <- .factorLevelsInUse(df, col)
     if (!isTRUE(a$safe)) {
       stop("Levels in use of a column fail this site's factor-level rule; group the column instead.", call. = FALSE)
     }
+    if (!length(keep) || anyNA(keep) || anyDuplicated(keep) || !all(keep %in% levels(f))) {
+      stop("Kept levels must be existing levels of the column.", call. = FALSE)
+    }
     if (!all(a$used %in% keep)) stop("Kept levels must hold every value of the column.", call. = FALSE)
     df[[col]] <- .factorKeep(f, levels(f)[levels(f) %in% keep])
-    contracts[[col]] <- NULL
+    contracts[[keys[[col]]]] <- NULL
   }
   # The copy is for models: dropped columns leave the presentation contracts,
   # which must not reconcile them back, and the codebook no longer describes it.
   if (length(columns)) {
     attr(df, "omop_concepts") <- contracts
-    tagged <- setdiff(attr(df, "omop_concept_cols"), names(columns))
+    tagged <- setdiff(attr(df, "omop_concept_cols"), keys)
     attr(df, "omop_concept_cols") <- if (length(tagged)) tagged else NULL
     attr(df, "omop_codebook_schema") <- NULL
   }
+  # A copy is not a sealed DP input: never carry the source's DP lineage.
+  attr(df, "dsomop_dp_provenance") <- NULL
+  attr(df, "dsomop_dp_filter_state") <- NULL
+  attr(df, "dsomop_dp_release_persons") <- NULL
   df
 }
 
@@ -3028,7 +3047,11 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
     r$decisions <- Filter(function(d) d$id %in% held, r$decisions)
     r$levels <- keep
     r$keys <- keys
-    if (!isTRUE(r$ordered) && !isTRUE(r$reference %in% keys)) r$reference <- keys[[1L]]
+    if (!isTRUE(r$ordered) && !isTRUE(r$reference %in% keys)) {
+      # A reference empty at every site becomes the first kept category.
+      ordinary <- keys[!grepl("^special:", keys)]
+      r$reference <- if (length(ordinary)) ordinary[[1L]] else keys[[1L]]
+    }
     r$contrasts$reference <- r$reference
     return(.categoryFactor(values, r))
   }

@@ -33,5 +33,7 @@ test_that("dictionary collection uses factor identity metadata and composite ref
   output <- list(type="event_level",table="condition_occurrence",columns=c(alias="condition_concept_id"))
   expect_setequal(.dictionaryObservedIds(handle,source,output,"events"),c("201820","44818518"))
   composite <- list(covariateRef=data.frame(conceptId=c(201820L,44818518L)))
+  # Real covariate references carry the persons behind them (the rule's n).
+  attr(composite$covariateRef,"omop_reference_support") <- list(counts=c(`201820`=5L,`44818518`=5L),total=50L)
   expect_setequal(.dictionaryObservedIds(handle,composite,output,"events"),c("201820","44818518"))
 })

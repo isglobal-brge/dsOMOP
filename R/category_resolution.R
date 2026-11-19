@@ -7,7 +7,8 @@
     .categoryReject("Category semantics differ across retained sites.","category_domain_incompatible")
   contract <- contracts[[1L]]; s <- contract$spec
   ids <- unique(vapply(records,function(r)r$id,"")); ids <- ids[.categoryKeyOrder(ids)]
-  by_id <- setNames(lapply(ids,function(id)Filter(function(r)identical(r$id,id),records)),ids)
+  # One pass groups each key's records (linear in the list).
+  by_id <- split(records,factor(vapply(records,function(r)r$id,""),levels=ids))
   # Resolve vocabulary names before presentation. Language candidates win over
   # English fallback; automatic equal names never form an equivalence group.
   rows <- lapply(ids,function(id) {

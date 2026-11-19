@@ -53,8 +53,10 @@
   cols <- bp$columns$concept$column_name
   fields <- intersect(c("concept_id", "concept_name", "vocabulary_id"), cols)
   if (!all(c("concept_id", "concept_name") %in% fields)) return(out)
-  info <- .executeQuery(handle, paste0("SELECT ", paste(fields, collapse = ", "),
-    " FROM ", table, " WHERE concept_id IN (", .sqlIdList(ids), ")"))
+  # IN lists stay short for every dialect (Oracle allows at most 1000 items).
+  info <- do.call(rbind, lapply(split(ids, ceiling(seq_along(ids) / 500L)), function(chunk)
+    .executeQuery(handle, paste0("SELECT ", paste(fields, collapse = ", "),
+      " FROM ", table, " WHERE concept_id IN (", .sqlIdList(chunk), ")"))))
   versions <- character()
   if ("vocabulary" %in% tables && all(c("vocabulary_id", "vocabulary_version") %in%
                                       bp$columns$vocabulary$column_name)) {
@@ -105,7 +107,10 @@
   if (is.null(kinds) || !nrow(kinds)) return(character())
   kinds <- unique(as.data.frame(lapply(kinds, as.character), stringsAsFactors = FALSE))
   if (anyNA(kinds[c("vocabulary_id", "domain_id", "concept_class_id")])) return(character())
-  if (!.omopConceptDiscovery(do.call(paste, c(unname(kinds), sep = "\r")), n)$safe) return(character())
+  # The kinds are data-derived: they are counted with the column's remaining
+  # observed values in one application of the rule (see .conceptAssessIds).
+  kind_keys <- paste0("kind:", do.call(paste, c(unname(kinds), sep = "|")))
+  if (!.omopConceptDiscovery(kind_keys, n)$safe) return(character())
   same <- vapply(seq_len(nrow(kinds)), function(i) {
     standard <- kinds$standard_concept[[i]]
     paste0("(vocabulary_id = ", .quoteLiteral(kinds$vocabulary_id[[i]], handle),
@@ -120,7 +125,8 @@
   if (length(size) != 1L || is.na(size)) return(character())
   # Too long a public list is reported as such (vocabulary metadata only).
   if (size > limit) return(structure(character(), too_long = TRUE))
-  .conceptIdText(.executeQuery(handle, paste0("SELECT concept_id FROM ", table, " WHERE ", where))$concept_id)
+  structure(.conceptIdText(.executeQuery(handle, paste0("SELECT concept_id FROM ", table, " WHERE ", where))$concept_id),
+            kinds = kind_keys)
 }
 
 .conceptPresent <- function(ctx, frame, columns) {
@@ -136,7 +142,7 @@
     c <- contracts[[col]]
     if (isTRUE(.conceptAssessIds(c, c$ids, n)$safe)) next
     if (identical(c$kind, "date")) {
-      dated <- .dateAutoDeclared(frame[[col]], n)
+      dated <- tryCatch(.dateAutoDeclared(frame[[col]], n), error = function(e) NULL)
       if (isTRUE(attr(dated, "too_long"))) too_long <- c(too_long, col)
       if (!is.factor(dated)) next
       frame[[col]] <- dated
@@ -145,11 +151,16 @@
     }
     if (!.conceptColumn(columns[[col]]) || !(is.null(c$kind) || identical(c$kind, "category"))) next
     declared <- as.character(unlist(attr(columns[[col]], "concept_declared"), use.names = FALSE))
-    auto <- .conceptAutoDeclared(ctx$handle, .conceptIdText(frame[[col]]), n)
+    # Any failure reading the vocabulary means no automatic list, never an error.
+    auto <- tryCatch(.conceptAutoDeclared(ctx$handle, .conceptIdText(frame[[col]]), n),
+                     error = function(e) character())
     if (isTRUE(attr(auto, "too_long"))) too_long <- c(too_long, col)
+    kinds <- attr(auto, "kinds")
     auto <- setdiff(auto, declared)
     if (!length(auto)) next
     attr(columns[[col]], "concept_declared") <- c(declared, auto)
+    attr(columns[[col]], "concept_auto_declared") <- auto
+    attr(columns[[col]], "concept_auto_kinds") <- kinds
     extended <- TRUE
   }
   # A presentation the declared list does not fit stays refused, as before.
@@ -213,6 +224,11 @@
                               declared = declared,
                               reference_admitted = isTRUE(attr(columns[[col]], "concept_reference_admitted")),
                               translate = translate, owner = owner, resolved = resolved)
+    # An automatic vocabulary list: its data-derived kinds count under the rule.
+    if (length(attr(columns[[col]], "concept_auto_kinds"))) {
+      contracts[[col]]$auto_declared <- as.character(attr(columns[[col]], "concept_auto_declared"))
+      contracts[[col]]$auto_kinds <- as.character(attr(columns[[col]], "concept_auto_kinds"))
+    }
     if (col == "conceptId" && "covariateId" %in% names(frame)) {
       contracts[[col]]$reference_keys <- setNames(ids, as.character(frame$covariateId))
       contracts[[col]]$resolved$naming_ids <- unique(ids[!is.na(ids)])
@@ -277,7 +293,10 @@
   # to row values. Those identities are observed too, unless explicitly public.
   discovered <- as.character(unlist(contract$discovered, use.names = FALSE))
   reported <- union(observed, intersect(discovered, names(contract$records)))
-  assessment <- .omopConceptDiscovery(union(observed, discovered), n, contract$declared)
+  # The kinds behind an automatic list are counted with the remaining observed
+  # values, never reported: together they must fit the rule once.
+  kinds <- as.character(unlist(contract$auto_kinds, use.names = FALSE))
+  assessment <- .omopConceptDiscovery(c(union(observed, discovered), kinds), n, contract$declared)
   assessment$levels <- setdiff(reported, as.character(unlist(contract$declared, use.names = FALSE)))
   if (!discover) { assessment$safe <- TRUE; assessment$rules <- character() }
   assessment
@@ -421,6 +440,9 @@
     names(df) <- unname(mapping[names(df)])
     attr(df, "omop_column_names") <- mapping
   }
+  # Every concept column now holds the shared union the client computed, so its
+  # levels are public to it; level reports for models accept only such frames.
+  if (is.null(table_column)) attr(df, "dsomop_levels_shared") <- TRUE
   if (!is.null(provenance)) {
     # Only the verified ID-preserving transformation above reaches this seal.
     # Rows, keys and numeric measures are untouched; deliberate merges are
