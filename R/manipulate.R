@@ -151,6 +151,9 @@
   concept_codes <- names(result)[sub("[.][xy]$", "", names(result)) %in% concept_codes]
   attr(result, "omop_concept_codes") <- if (length(concept_codes)) concept_codes else NULL
   attr(result, "dsomop_pseudonymization") <- pseudonymization
+  # A verb over published sources: their factors are already presented.
+  if (any(vapply(sources, function(s) !is.null(attr(s, "omop_concepts", exact = TRUE)), logical(1))))
+    attr(result, "omop_republished") <- TRUE
   class(result) <- union("omop.table", class(result))
   result
 }

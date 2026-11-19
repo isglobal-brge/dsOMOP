@@ -200,6 +200,71 @@
   NULL
 }
 
+# Fingerprint transport (2.10.8). A long public list of a plain concept column
+# travels as its digest: the declared identities whose records come from the
+# vocabulary (or decimal fallback), never user labels or observed values. Each
+# site still decides its own verdict; the list is only ever returned for a
+# column that passes it.
+.CONCEPT_LIST_MIN <- 500L
+.conceptListPart <- function(c) {
+  if (!is.null(c$kind) || isTRUE(c$reference_admitted)) return(character())
+  declared <- unique(as.character(unlist(c$declared, use.names = FALSE)))
+  if (length(declared) < .CONCEPT_LIST_MIN) return(character())
+  plain <- declared[vapply(c$records[declared], function(r)
+    is.list(r) && (r$origin %||% "") %in% c("vocabulary", "fallback"), logical(1))]
+  if (length(plain) < .CONCEPT_LIST_MIN) return(character())
+  plain[.conceptIdOrder(plain)]
+}
+.conceptListDigest <- function(records, ids) {
+  r <- records[ids]
+  field <- function(key) vapply(r, function(x) {
+    v <- x[[key]]
+    if (is.null(v) || !length(v) || is.na(v[[1L]])) "" else as.character(v[[1L]])
+  }, "", USE.NAMES = FALSE)
+  text <- paste(ids, field("name"), field("vocabulary"), field("version"), field("label"), field("origin"),
+                sep = "\t", collapse = "\n")
+  unclass(as.character(openssl::sha256(charToRaw(enc2utf8(text)))))
+}
+# Rebuild a compact shared column: the site's own copy of the list (checked by
+# its digest), the shared extra identities and the labels that differ from the
+# list's own resolution. The result equals the client's complete resolution.
+.conceptExpandShared <- function(c, shared) {
+  listed <- .conceptListPart(c)
+  if (!length(listed) || !identical(as.integer(unlist(shared$list$n)), length(listed)) ||
+      !identical(.conceptListDigest(c$records, listed), as.character(unlist(shared$list$digest)))) {
+    stop("The shared concept list changed; reconcile again.", call. = FALSE)
+  }
+  own <- .conceptResolve(unname(c$records[listed]))
+  extra <- as.character(unlist(shared$ids, use.names = FALSE))
+  labels <- setNames(own$labels, own$ids)
+  vocabulary <- setNames(unname(own$vocabulary), own$ids)
+  labels[extra] <- unname(.categoryNullableStrings(shared$labels))
+  vocabulary[extra] <- as.character(unlist(shared$vocabulary, use.names = FALSE))
+  ids <- union(listed, extra)
+  ids <- ids[.conceptIdOrder(ids)]
+  full <- shared
+  full$list <- NULL
+  full$ids <- ids
+  full$labels <- unname(labels[ids])
+  full$levels <- unique(unname(labels[ids]))
+  full$vocabulary <- unname(vocabulary[ids])
+  # The client's digest of its complete resolution: rebuilt exactly, or refused.
+  rebuilt <- unclass(as.character(openssl::sha256(charToRaw(enc2utf8(paste(full$ids, full$labels, full$vocabulary,
+    sep = "\t", collapse = "\n"))))))
+  if (!identical(rebuilt, as.character(unlist(shared$list$resolution)))) {
+    stop("The shared concept resolution could not be rebuilt; reconcile again.", call. = FALSE)
+  }
+  full
+}
+# The records of a column's public list, for the client to fetch once.
+.conceptListRecords <- function(report, contracts, col) {
+  if (!is.character(col) || length(col) != 1L || is.na(col) || is.null(report$lists[[col]])) {
+    stop("No public concept list for this column.", call. = FALSE)
+  }
+  listed <- .conceptListPart(contracts[[col]])
+  list(column = col, digest = report$lists[[col]]$digest, records = unname(contracts[[col]]$records[listed]))
+}
+
 .conceptPresent <- function(ctx, frame, columns) {
   n <- attr(frame, "omop_total_rows") %||% nrow(frame)
   out <- .conceptPresentOnce(ctx, frame, columns)
@@ -395,7 +460,7 @@
     if(isTRUE(attr(df,"omop_concept_reference")))attr(df,"omop_reference_support"), discover)
 }
 
-.conceptLevelReport <- function(df, discover = TRUE) {
+.conceptLevelReport <- function(df, discover = TRUE, fingerprint = FALSE) {
   contracts <- attr(df, "omop_concepts") %||% list()
   refreshed <- .conceptRefresh(contracts, attr(df, "omop_generated_columns") %||% list(), attr(df, "omop_presentation_handle"))
   contracts <- refreshed$contracts
@@ -412,6 +477,11 @@
       next
     }
     permitted <- union(a$levels, c$declared)
+    listed <- if (isTRUE(fingerprint)) .conceptListPart(c) else character()
+    if (length(listed)) {
+      out$lists[[col]] <- list(n = length(listed), digest = .conceptListDigest(c$records, listed))
+      permitted <- setdiff(permitted, listed)
+    }
     out$levels[[col]] <- permitted
     out$concepts[[col]] <- unname(c$records[permitted])
     if (identical(c$kind, "date")) out$calendars[[col]] <- c$calendar
@@ -455,7 +525,7 @@
   original <- df
   # The site's own verdict on its observed levels applies at assignment too:
   # a column this site refuses is never relevelled, whatever evidence is sent.
-  report <- .conceptLevelReport(df)
+  report <- .conceptLevelReport(df, fingerprint = isTRUE(spec$fingerprint))
   .conceptSiteVerdict(report)
   .conceptCheckEvidence(report, spec, !is.null(attr(df, "omop_presentation_handle")))
   # Legacy factor-only calls leave numeric values and semantics untouched.
@@ -472,6 +542,7 @@
   for (col in names(contracts)) {
     c <- contracts[[col]]
     shared <- spec$columns[[col]]
+    if (!is.null(shared$list)) shared <- .conceptExpandShared(c, shared)
     if (identical(c$kind, "date") && !identical(.jcsCanonical(shared$calendar), .jcsCanonical(c$calendar))) .dateReject("Changed shared calendar identity.")
     if(identical(c$kind,"category")&&!identical(.jcsCanonical(shared$category),.jcsCanonical(c$category))) .categoryReject("Changed category contract.","category_domain_incompatible")
     a <- .conceptAssess(df, col, c, discover = FALSE)
@@ -627,14 +698,16 @@
 }
 
 .conceptEvidence <- function(report) {
-  keys<-c("concepts","generated","keys","reference_names","numbers","schema","categories")
+  keys<-c("concepts","generated","keys","reference_names","numbers","schema","categories","lists")
   evidence<-setNames(lapply(keys,function(k)report[[k]]),keys)
   as.character(openssl::sha256(charToRaw(.conceptEncode(evidence))))
 }
 
 .conceptCheckEvidence <- function(report, spec, required = FALSE) {
   if (required || length(spec$evidence)) {
-    if (!.conceptEvidence(report) %in% as.character(unlist(spec$evidence, use.names = FALSE))) {
+    # A report already carries its digest; encoding it again doubles the cost.
+    evidence <- report$evidence %||% .conceptEvidence(report)
+    if (!evidence %in% as.character(unlist(spec$evidence, use.names = FALSE))) {
       stop('Concept presentation evidence changed; reconcile again.', call. = FALSE)
     }
   }

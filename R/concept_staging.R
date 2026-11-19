@@ -48,7 +48,7 @@
   .ds_arg(descriptor$metadata$concept_presentation)
 }
 
-.conceptStageReport <- function(descriptor, discover = TRUE) {
+.conceptStageReport <- function(descriptor, discover = TRUE, fingerprint = FALSE) {
   meta <- .conceptStageData(descriptor)
   refreshed <- .conceptRefresh(meta$contracts, meta$generated, meta$handle)
   meta$contracts <- refreshed$contracts; meta$generated <- refreshed$generated
@@ -66,6 +66,11 @@
       next
     }
     ids <- union(a$levels, as.character(unlist(c$declared, use.names = FALSE)))
+    listed <- if (isTRUE(fingerprint)) .conceptListPart(c) else character()
+    if (length(listed)) {
+      out$lists[[col]] <- list(n = length(listed), digest = .conceptListDigest(c$records, listed))
+      ids <- setdiff(ids, listed)
+    }
     out$levels[[col]] <- ids
     out$concepts[[col]] <- unname(c$records[ids])
     if (identical(c$kind, "date")) out$calendars[[col]] <- c$calendar
@@ -108,7 +113,7 @@
   if (!identical(as.integer(spec$concept_protocol), 1L)) {
     stop("A complete concept presentation protocol is required for this staged output.", call. = FALSE)
   }
-  report <- .conceptStageReport(descriptor)
+  report <- .conceptStageReport(descriptor, fingerprint = isTRUE(spec$fingerprint))
   .conceptSiteVerdict(report)
   meta <- .conceptStageData(descriptor)
   .conceptCheckEvidence(report, spec, !is.null(meta$handle))
@@ -121,9 +126,10 @@
   mappings <- list()
   for (col in names(meta$contracts)) {
     shared <- spec$columns[[col]]
+    if (!is.null(shared$list)) shared <- .conceptExpandShared(meta$contracts[[col]], shared)
     if (identical(meta$contracts[[col]]$kind, "date") && !identical(.jcsCanonical(shared$calendar), .jcsCanonical(meta$contracts[[col]]$calendar))) .dateReject("Changed staged calendar identity.")
     if(identical(meta$contracts[[col]]$kind,"category")&&!identical(.jcsCanonical(shared$category),.jcsCanonical(meta$contracts[[col]]$category))) .categoryReject("Changed staged category contract.","category_domain_incompatible")
-    .conceptValidateResolution(shared, meta$contracts[[col]]$records[report$levels[[col]]])
+    .conceptValidateResolution(shared, meta$contracts[[col]]$records[union(report$levels[[col]], .conceptListPart(meta$contracts[[col]]))])
     ids <- as.character(unlist(shared$ids, use.names = FALSE))
     labels <- unname(.categoryNullableStrings(shared$labels))
     levels <- as.character(unlist(shared$levels, use.names = FALSE))

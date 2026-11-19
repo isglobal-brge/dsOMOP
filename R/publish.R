@@ -443,6 +443,10 @@
       attr(value, "omop_concept_reference") <- if (identical(pc$grain, "none")) TRUE else NULL
       columns <- attr(value, "omop_column_contract")
       if (is.null(columns) && !.dsomopDpIsV2(ctx$ir)) columns <- .conceptLegacyColumns(ctx, value, pc$output, pc$component)
+      # A verb's result keeps the shared factors of its published sources:
+      # presenting them again would read their labels as concept IDs. Rows
+      # kept, removed or stacked add no level, so nothing new is released.
+      if (isTRUE(attr(value, "omop_republished", exact = TRUE))) columns <- NULL
       if (!is.null(columns)) value <- .conceptPresent(ctx, value, columns)
     }
     if (inherits(value, "FlowerDatasetDescriptor") && !.dsomopDpIsV2(ctx$ir)) {
