@@ -77,7 +77,7 @@
     if (identical(c$kind, "date")) out$calendars[[col]] <- c$calendar
     if (identical(c$kind, "category")) out$categories[[col]] <- c$category
     if (length(c$reference_keys)) out$reference_names[[col]] <- unique(as.character(unlist(c$reference_keys,use.names=FALSE)))
-    if (identical(c$resolved$label_style, "safe")) out$styles[[col]] <- "safe"
+    if (isTRUE(c$resolved$safe_labels)) out$safe_columns <- c(out$safe_columns, col)
   }
   refused_keys <- character()
   for (key in names(meta$generated)) {
@@ -96,7 +96,7 @@
   out$numbers <- meta$numbers %||% list()
   if(!is.null(meta$schema))out$schema<-meta$schema
   # Capability: this server applies dsBase-safe labels when the client asks.
-  out$label_styles <- "safe"
+  out$safe_labels <- TRUE
   out$evidence <- .conceptEvidence(out)
   out
 }
@@ -142,7 +142,7 @@
     if (identical(meta$contracts[[col]]$kind, "date") && !identical(.jcsCanonical(shared$calendar), .jcsCanonical(meta$contracts[[col]]$calendar))) .dateReject("Changed staged calendar identity.")
     if(identical(meta$contracts[[col]]$kind,"category")&&!identical(.jcsCanonical(shared$category),.jcsCanonical(meta$contracts[[col]]$category))) .categoryReject("Changed staged category contract.","category_domain_incompatible")
     .conceptValidateResolution(shared, meta$contracts[[col]]$records[union(report$levels[[col]], .conceptListPart(meta$contracts[[col]]))])
-    if (identical(spec$label_style, "safe")) {
+    if (isTRUE(spec$safe_labels)) {
       shared <- .conceptSafeShared(shared)
       spec$columns[[col]] <- shared
     }

@@ -498,7 +498,7 @@
     if (identical(c$kind, "date")) out$calendars[[col]] <- c$calendar
     if (identical(c$kind, "category")) out$categories[[col]] <- c$category
     if (length(c$reference_keys)) out$reference_names[[col]] <- unique(unname(c$reference_keys))
-    if (identical(c$resolved$label_style, "safe")) out$styles[[col]] <- "safe"
+    if (isTRUE(c$resolved$safe_labels)) out$safe_columns <- c(out$safe_columns, col)
   }
   generated <- refreshed$generated
   out$generated <- list()
@@ -519,7 +519,7 @@
   out$keys <- setdiff(names(attr(df, "omop_column_names")) %||% names(df), refused_keys)
   if(!is.null(attr(df,"omop_codebook_schema")))out$schema<-attr(df,"omop_codebook_schema")
   # Capability: this server applies dsBase-safe labels when the client asks.
-  out$label_styles <- "safe"
+  out$safe_labels <- TRUE
   out$evidence <- .conceptEvidence(out)
   out
 }
@@ -566,7 +566,7 @@
     a <- .conceptAssess(df, col, c, discover = FALSE)
     .conceptValidateResolution(shared, c$records[union(a$levels,c$declared)])
     # Labels every dsBase function carries, when the client asks for them.
-    if (identical(spec$label_style, "safe") && is.null(table_column)) shared <- .conceptSafeShared(shared)
+    if (isTRUE(spec$safe_labels) && is.null(table_column)) shared <- .conceptSafeShared(shared)
     ids <- as.character(unlist(shared$ids, use.names = FALSE))
     labels <- unname(.categoryNullableStrings(shared$labels))
     levels <- as.character(unlist(shared$levels, use.names = FALSE))

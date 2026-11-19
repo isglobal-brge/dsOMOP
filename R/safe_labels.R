@@ -50,7 +50,7 @@
   labels <- unname(.categoryNullableStrings(shared$labels))
   first <- if (length(ids) == length(labels)) ids[match(levels, labels)] else NULL
   safe <- .safeLabels(levels, first)
-  shared$label_style <- "safe"
+  shared$safe_labels <- TRUE
   if (identical(safe, levels)) return(shared)
   map <- stats::setNames(safe, levels)
   relabel <- function(x) {
