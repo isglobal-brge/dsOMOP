@@ -15,7 +15,8 @@
   domain<-if(is.list(spec$domain)&&!is.null(names(spec$domain)))as.character(.resolveConceptSetNode(handle,spec$domain)$ids) else sub("^concept:","",.categoryKeys(spec$domain,FALSE,TRUE))
   if(!length(domain)) .categoryReject("Public rollup domain expands to no concepts.","category_domain_incompatible")
   concept<-function(ids) {
-    rows<-unique(read("concept",c("concept_id","vocabulary_id","concept_class_id","invalid_reason"),paste0("concept_id IN (",.sqlIdList(ids),")")))
+    rows<-unique(do.call(rbind,lapply(.sqlIdChunks(ids),function(list)
+      read("concept",c("concept_id","vocabulary_id","concept_class_id","invalid_reason"),paste0("concept_id IN (",list,")")))))
     valid<-rows[is.na(rows$invalid_reason),,drop=FALSE]
     if(anyNA(valid[c("concept_id","vocabulary_id","concept_class_id")]) || anyDuplicated(valid$concept_id) || any(!nzchar(valid$vocabulary_id)|!nzchar(valid$concept_class_id))) .categoryReject("Malformed required public concept/class adapter records.","category_domain_incompatible")
     rows
@@ -28,7 +29,8 @@
     fields<-c("ancestor_concept_id","descendant_concept_id","min_levels_of_separation","max_levels_of_separation")
     frontier<-domain;seen<-character();parts<-list()
     while(length(frontier)) {
-      rows<-read("concept_ancestor",fields,paste0("descendant_concept_id IN (",.sqlIdList(frontier),")"))
+      rows<-do.call(rbind,lapply(.sqlIdChunks(frontier),function(list)
+        read("concept_ancestor",fields,paste0("descendant_concept_id IN (",list,")"))))
       parts[[length(parts)+1L]]<-rows;seen<-union(seen,frontier)
       frontier<-setdiff(as.character(rows$ancestor_concept_id),seen)
     }
@@ -61,13 +63,15 @@
     }
   } else {
     fields<-c("concept_id_1","concept_id_2","relationship_id","invalid_reason")
-    maps<-read("concept_relationship",fields,paste0("relationship_id = 'Maps to' AND concept_id_2 IN (",.sqlIdList(domain),") AND invalid_reason IS NULL"))
+    maps<-do.call(rbind,lapply(.sqlIdChunks(domain),function(list)
+      read("concept_relationship",fields,paste0("relationship_id = 'Maps to' AND concept_id_2 IN (",list,") AND invalid_reason IS NULL"))))
     starts<-unique(c(domain,as.character(maps$concept_id_1)))
     nodes<-concept(starts);nodes<-nodes[is.na(nodes$invalid_reason)&nodes$vocabulary_id=="ICD10",,drop=FALSE]
     frontier<-as.character(nodes$concept_id);edges<-list();seen<-character()
     while(length(frontier)) {
       seen<-union(seen,frontier)
-      rel<-read("concept_relationship",fields,paste0("invalid_reason IS NULL AND ((relationship_id = 'Is a' AND concept_id_1 IN (",.sqlIdList(frontier),")) OR (relationship_id = 'Subsumes' AND concept_id_2 IN (",.sqlIdList(frontier),")))"))
+      rel<-do.call(rbind,lapply(.sqlIdChunks(frontier),function(list)
+        read("concept_relationship",fields,paste0("invalid_reason IS NULL AND ((relationship_id = 'Is a' AND concept_id_1 IN (",list,")) OR (relationship_id = 'Subsumes' AND concept_id_2 IN (",list,")))"))))
       child<-ifelse(rel$relationship_id=="Is a",as.character(rel$concept_id_1),as.character(rel$concept_id_2))
       parent<-ifelse(rel$relationship_id=="Is a",as.character(rel$concept_id_2),as.character(rel$concept_id_1))
       new<-setdiff(unique(parent),as.character(nodes$concept_id))

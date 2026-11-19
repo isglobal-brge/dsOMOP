@@ -36,7 +36,9 @@
   the same level rule and without counts, and `omopAsFactorColumnsDS()` with a
   `drop_levels` spec returns a copy for models whose columns keep only the
   given levels. Both refuse an output that has not been reconciled (its levels
-  are still this site's own observed values), and the copy checks this site's
+  are still this site's own observed values; any new presentation of a table
+  clears that mark), the report returns nothing about a column whose levels in
+  use fail the rule, and the copy checks this site's
   levels in use against the rule before anything else, so a refusal never
   answers, level by level, whether one is in use. The copy carries no DP
   lineage. Both are existing methods: there is no new method to publish.
@@ -45,11 +47,14 @@
   own (declared concepts aside). Before, it named them whatever the column's
   verdict, including when the source column was refused, so a client could
   receive them before the refusal revoked the outputs.
-- Vocabulary lookups split long concept lists (at most 500 per query), so
+- Vocabulary lookups for labels, codes, synonyms, hierarchy rollups and
+  automatic lists split long concept lists (at most 500 per query), so
   declared lists longer than 1000 work on every SQL dialect.
-- Faster long level lists: concept and category resolution group their records
-  once instead of scanning them per level, so presentation time grows linearly
-  with the number of declared levels (it grew quadratically).
+- Faster long level lists: concept, category and calendar resolution group
+  their records once instead of scanning them per level, so presentation time
+  grows linearly with the number of declared levels (it grew quadratically:
+  14,000 levels took about 15 minutes on Opal, now about 25 s). Encoded
+  arguments longer than a million characters decode whole on older R.
 
 # dsOMOP 2.10.6 (2026-11-18)
 

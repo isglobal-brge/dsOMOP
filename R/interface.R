@@ -2970,16 +2970,17 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
 .factorOccurrenceReport <- function(df, columns) {
   out <- list(levels = list(), occurring = list(), reference = list(), unsafe = character(), unsafe_rules = list())
   for (col in .factorModelColumns(df, columns)) {
+    a <- .factorLevelsInUse(df, col)
+    if (!isTRUE(a$safe)) {
+      # Nothing about a refused column, not even its level set.
+      out$unsafe <- c(out$unsafe, col)
+      out$unsafe_rules[[col]] <- a$rules
+      next
+    }
     out$levels[[col]] <- levels(df[[col]])
     r <- attr(df[[col]], "omop_category_contract")
     if (!is.null(r$reference)) {
       out$reference[[col]] <- unlist(r$levels, use.names = FALSE)[match(r$reference, unlist(r$keys, use.names = FALSE))]
-    }
-    a <- .factorLevelsInUse(df, col)
-    if (!isTRUE(a$safe)) {
-      out$unsafe <- c(out$unsafe, col)
-      out$unsafe_rules[[col]] <- a$rules
-      next
     }
     out$occurring[[col]] <- a$used
   }

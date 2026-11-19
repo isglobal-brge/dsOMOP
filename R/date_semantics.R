@@ -369,11 +369,15 @@
   if(!all(vapply(records,function(x)identical(x$kind,"date"),logical(1)))) .dateReject("Mixed calendar and concept metadata.")
   specs<-c(if(!is.null(calendar))list(calendar),lapply(records,function(x)x$calendar))
   if(!length(specs)) .dateReject("Missing public calendar identity.")
-  canonical<-vapply(specs,.jcsCanonical,"")
+  # Records repeat one calendar: canonicalise each distinct spec once.
+  canonical<-vapply(unique(specs),.jcsCanonical,"")
   if(length(unique(canonical))>1L) .dateReject("Calendar/policy mismatch across retained sites.")
-  keys<-unique(vapply(records,function(x)x$id,""))
-  labels<-vapply(keys,function(k) {ls<-unique(vapply(Filter(function(x)x$id==k,records),function(x)x$label,""));if(length(ls)!=1L).dateReject("Inconsistent date labels.");ls},"")
-  order<-vapply(keys,function(k) min(vapply(Filter(function(x)x$id==k,records),function(x)as.numeric(x$order),0)),0)
+  record_keys<-vapply(records,function(x)x$id,"")
+  keys<-unique(record_keys)
+  # One pass groups each period's records (linear in the list), by position.
+  groups<-split(records,factor(match(record_keys,keys),levels=seq_along(keys)))
+  labels<-vapply(seq_along(keys),function(i) {ls<-unique(vapply(groups[[i]],function(x)x$label,""));if(length(ls)!=1L).dateReject("Inconsistent date labels.");ls},"")
+  order<-vapply(seq_along(keys),function(i) min(vapply(groups[[i]],function(x)as.numeric(x$order),0)),0)
   p<-specs[[1L]]$precision
   ix<-if(!is.null(p)&&p!="custom") order(keys,method="radix") else order(order,keys,method="radix");keys<-keys[ix];labels<-labels[ix]
   if(anyDuplicated(labels)) .dateReject("Date labels cannot merge periods.")

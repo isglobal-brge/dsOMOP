@@ -108,10 +108,12 @@
   record_ids <- vapply(records, function(x) x$id, "")
   ids <- unique(record_ids)
   ids <- ids[.conceptIdOrder(ids)]
-  # One pass groups each identity's candidate records (linear in the list).
-  by_id <- split(records, factor(record_ids, levels = ids))
-  result <- lapply(ids, function(id) {
-    rows <- by_id[[id]]
+  # One pass groups each identity's candidate records (linear in the list);
+  # positions, not names, so even a missing identity keeps its records.
+  by_id <- split(records, factor(match(record_ids, ids), levels = seq_along(ids)))
+  result <- lapply(seq_along(ids), function(i) {
+    id <- ids[[i]]
+    rows <- by_id[[i]]
     user <- Filter(function(x) x$origin %in% c("variable", "recipe"), rows)
     if (length(user)) {
       priority <- vapply(user, function(x) if (x$origin == "variable") 1L else 2L, 0L)
@@ -134,9 +136,9 @@
   }
   list(ids = ids, labels = vapply(result, function(x) x$label, ""),
        levels = unique(vapply(result, function(x) x$label, "")),
-       vocabulary = vapply(ids, function(id) {
-         .conceptChooseName(by_id[[id]])$name %||% paste0("concept_", id)
-       }, ""), decisions = result)
+       vocabulary = setNames(vapply(seq_along(ids), function(i) {
+         .conceptChooseName(by_id[[i]])$name %||% paste0("concept_", ids[[i]])
+       }, ""), ids), decisions = result)
 }
 
 .conceptFinalNames <- function(keys, automatic, explicit, ids) {

@@ -92,7 +92,8 @@
     contracts <- capsule$contracts %||% list()
     for(col in names(contracts)) {
       observed <- names(capsule$support[[col]])
-      if(releasable(contracts[[col]],observed,capsule$total %||% length(observed)))
+      # Covariate references count persons, as their own release and memory do.
+      if(releasable(contracts[[col]],observed,capsule$reference_support$total %||% capsule$total %||% length(observed)))
         append_ids(.dictionaryContractIds(contracts[[col]],observed))
     }
     physical <- as.character(unlist(capsule$names[names(contracts)],use.names=FALSE))

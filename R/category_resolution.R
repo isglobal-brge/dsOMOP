@@ -3,16 +3,17 @@
 .categoryResolveRecords <- function(records,complete=TRUE,identity=NULL) {
   if (!length(records)&&is.null(identity)) .categoryReject("Missing category contract.", "category_domain_incompatible")
   contracts <- if(length(records))lapply(records, function(r) r$category) else list(identity)
-  if (length(unique(vapply(contracts,.jcsCanonical,""))) != 1L)
+  if (length(unique(vapply(unique(contracts),.jcsCanonical,""))) != 1L)
     .categoryReject("Category semantics differ across retained sites.","category_domain_incompatible")
   contract <- contracts[[1L]]; s <- contract$spec
   ids <- unique(vapply(records,function(r)r$id,"")); ids <- ids[.categoryKeyOrder(ids)]
-  # One pass groups each key's records (linear in the list).
-  by_id <- split(records,factor(vapply(records,function(r)r$id,""),levels=ids))
+  # One pass groups each key's records (linear in the list), by position.
+  by_id <- split(records,factor(match(vapply(records,function(r)r$id,""),ids),levels=seq_along(ids)))
+  names(by_id) <- ids
   # Resolve vocabulary names before presentation. Language candidates win over
   # English fallback; automatic equal names never form an equivalence group.
-  rows <- lapply(ids,function(id) {
-    rr <- by_id[[id]]
+  rows <- lapply(seq_along(ids),function(i) {
+    id <- ids[[i]]; rr <- by_id[[i]]
     user <- Filter(function(r)r$origin %in% c("variable","recipe","producer","recode","sentinel"),rr)
     recoded <- Filter(function(r)identical(r$origin,"recode"),user)
     if(length(recoded))user<-recoded

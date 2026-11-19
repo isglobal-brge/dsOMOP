@@ -143,15 +143,11 @@
 
   schema <- .resolveTableSchema(handle, "concept", "Vocabulary")
   concept_table <- .qualifyTable(handle, "concept", schema)
-  ids <- paste(as.integer(concept_ids), collapse = ", ")
-
-  sql <- paste0(
-    "SELECT concept_id, concept_name, domain_id, vocabulary_id, standard_concept",
-    " FROM ", concept_table,
-    " WHERE concept_id IN (", ids, ")"
-  )
-
-  res <- .executeQuery(handle, sql)
+  res <- do.call(rbind, lapply(.sqlIdChunks(as.integer(concept_ids)), function(ids)
+    .executeQuery(handle, paste0(
+      "SELECT concept_id, concept_name, domain_id, vocabulary_id, standard_concept",
+      " FROM ", concept_table,
+      " WHERE concept_id IN (", ids, ")"))))
   # OMOP reserves concept_id 0 for "No matching concept"; some CDM concept
   # tables omit that row, so backfill it instead of falling back to "concept_0".
   if (0 %in% as.integer(concept_ids) &&
@@ -467,15 +463,11 @@
     c("concept_id", "concept_synonym_name", "language_concept_id"),
     avail_cols
   )
-  ids <- .sqlIdList(concept_ids)
-
-  sql <- paste0(
-    "SELECT ", paste(select_cols, collapse = ", "),
-    " FROM ", cs_table,
-    " WHERE concept_id IN (", ids, ")"
-  )
-
-  .executeQuery(handle, sql)
+  do.call(rbind, lapply(.sqlIdChunks(concept_ids), function(ids)
+    .executeQuery(handle, paste0(
+      "SELECT ", paste(select_cols, collapse = ", "),
+      " FROM ", cs_table,
+      " WHERE concept_id IN (", ids, ")"))))
 }
 
 #' Get concept relationships for a set of concepts

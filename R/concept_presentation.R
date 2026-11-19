@@ -101,16 +101,21 @@
   if (!all(fields %in% bp$columns$concept$column_name)) return(character())
   table <- .qualifyTable(handle, "concept", .resolveTableSchema(handle, "concept", "Vocabulary"))
   valid <- "(invalid_reason IS NULL OR invalid_reason = '')"
-  kinds <- do.call(rbind, lapply(split(ids, ceiling(seq_along(ids) / 500L)), function(chunk)
-    .executeQuery(handle, paste0("SELECT DISTINCT vocabulary_id, domain_id, concept_class_id, standard_concept FROM ",
-      table, " WHERE ", valid, " AND concept_id IN (", .sqlIdList(chunk), ")"))))
-  if (is.null(kinds) || !nrow(kinds)) return(character())
-  kinds <- unique(as.data.frame(lapply(kinds, as.character), stringsAsFactors = FALSE))
+  found <- do.call(rbind, lapply(.sqlIdChunks(ids), function(chunk)
+    .executeQuery(handle, paste0("SELECT concept_id, vocabulary_id, domain_id, concept_class_id, standard_concept FROM ",
+      table, " WHERE ", valid, " AND concept_id IN (", chunk, ")"))))
+  if (is.null(found) || !nrow(found)) return(character())
+  # Observed values that are not valid concepts stay observed after the list.
+  leftover <- setdiff(ids, .conceptIdText(found$concept_id))
+  kinds <- unique(as.data.frame(lapply(found[c("vocabulary_id", "domain_id", "concept_class_id", "standard_concept")],
+                                       as.character), stringsAsFactors = FALSE))
   if (anyNA(kinds[c("vocabulary_id", "domain_id", "concept_class_id")])) return(character())
   # The kinds are data-derived: they are counted with the column's remaining
   # observed values in one application of the rule (see .conceptAssessIds).
   kind_keys <- paste0("kind:", do.call(paste, c(unname(kinds), sep = "|")))
-  if (!.omopConceptDiscovery(kind_keys, n)$safe) return(character())
+  # Kinds and leftover values must fit the rule together; otherwise no list of
+  # any length helps, and none is declared or reported as too long.
+  if (!.omopConceptDiscovery(c(kind_keys, leftover), n)$safe) return(character())
   same <- vapply(seq_len(nrow(kinds)), function(i) {
     standard <- kinds$standard_concept[[i]]
     paste0("(vocabulary_id = ", .quoteLiteral(kinds$vocabulary_id[[i]], handle),
@@ -174,6 +179,8 @@
 }
 
 .conceptPresentOnce <- function(ctx, frame, columns) {
+  # A presentation builds this site's own levels: no longer the shared union.
+  attr(frame, "dsomop_levels_shared") <- NULL
   for(n in intersect(names(frame),names(columns))) {
     mask<-attr(frame[[n]],"category_defined")
     if(!is.null(mask))attr(columns[[n]],"category_defined")<-mask

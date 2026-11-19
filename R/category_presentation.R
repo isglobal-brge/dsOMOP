@@ -9,11 +9,13 @@
   if(!length(ids))return(records)
   table<-.qualifyTable(handle,"concept",.resolveTableSchema(handle,"concept","Vocabulary"))
   fields<-intersect(c("concept_id","concept_code","vocabulary_id"),bp$columns$concept$column_name)
-  data<-.executeQuery(handle,paste0("SELECT ",paste(fields,collapse=", ")," FROM ",table," WHERE concept_id IN (",.sqlIdList(ids),")"))
+  data<-do.call(rbind,lapply(.sqlIdChunks(ids),function(list)
+    .executeQuery(handle,paste0("SELECT ",paste(fields,collapse=", ")," FROM ",table," WHERE concept_id IN (",list,")"))))
   synonyms<-NULL
   if(is.list(s$language) && "concept_synonym" %in% tables) {
     table<-.qualifyTable(handle,"concept_synonym",.resolveTableSchema(handle,"concept_synonym","Vocabulary"))
-    synonyms<-.executeQuery(handle,paste0("SELECT concept_id, concept_synonym_name FROM ",table," WHERE language_concept_id = ",s$language$language_concept_id," AND concept_id IN (",.sqlIdList(ids),")"))
+    synonyms<-do.call(rbind,lapply(.sqlIdChunks(ids),function(list)
+      .executeQuery(handle,paste0("SELECT concept_id, concept_synonym_name FROM ",table," WHERE language_concept_id = ",s$language$language_concept_id," AND concept_id IN (",list,")"))))
   }
   for(k in names(records)) {
     r<-records[[k]];if(r$origin %in% c("variable","recipe","recode","producer","sentinel"))next
