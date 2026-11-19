@@ -284,9 +284,11 @@
   contracts <- attr(out, "omop_concepts") %||% list()
   extended <- FALSE
   too_long <- character()
+  counts <- list()
   for (col in intersect(intersect(names(contracts), names(columns)), names(frame))) {
     c <- contracts[[col]]
     n <- counted[[col]] %||% total %||% .densityObservations(frame, c$ids)
+    counts[[col]] <- n
     if (isTRUE(.conceptAssessIds(c, c$ids, n)$safe)) next
     if (identical(c$kind, "date")) {
       dated <- tryCatch(.dateAutoDeclared(frame[[col]], n), error = function(e) NULL)
@@ -312,11 +314,11 @@
   }
   # A presentation the declared list does not fit stays refused, as before.
   if (extended) out <- tryCatch(.conceptPresentOnce(ctx, frame, columns), error = function(e) out)
-  if (length(too_long)) {
-    contracts <- attr(out, "omop_concepts")
-    for (col in intersect(too_long, names(contracts))) contracts[[col]]$auto_levels <- "too_long"
-    attr(out, "omop_concepts") <- contracts
-  }
+  contracts <- attr(out, "omop_concepts")
+  for (col in intersect(too_long, names(contracts))) contracts[[col]]$auto_levels <- "too_long"
+  # Reports and relevels reuse each column's count instead of counting again.
+  for (col in intersect(names(counts), names(contracts))) contracts[[col]]$observations <- counts[[col]]
+  if (length(contracts)) attr(out, "omop_concepts") <- contracts
   out
 }
 
@@ -465,9 +467,17 @@
   invisible(TRUE)
 }
 
+# A contract's observations, counted once at publication (verbs that change
+# rows drop the stored count, and ids then no longer match a changed frame).
+.contractObservations <- function(df, contract) {
+  n <- contract[["observations"]]
+  if (length(n) == 1L && is.numeric(n) && !is.na(n)) return(n)
+  .densityObservations(df, contract$ids)
+}
+
 .conceptAssess <- function(df, col, contract, discover = TRUE) {
   if (length(contract$ids) != nrow(df)) stop("Incomplete concept identity metadata.", call. = FALSE)
-  .conceptAssessIds(contract, contract$ids, .densityObservations(df, contract$ids),
+  .conceptAssessIds(contract, contract$ids, .contractObservations(df, contract),
     if(isTRUE(attr(df,"omop_concept_reference")))attr(df,"omop_reference_support"), discover)
 }
 

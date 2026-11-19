@@ -309,11 +309,15 @@ test_that("asFactorColumns does not treat values with missing persons as empty",
 
 test_that("legacy discovery permits rare levels under DataSHIELD's rule", {
   withr::with_options(list(nfilter.levels.max = 40, nfilter.levels.density = 0.5, nfilter.tab = 5), {
-    df <- factor_test_frame(person_id = rep("same", 6), gender_concept_id = c("A", "A", "B", NA, NA, NA))
+    # Six people: rare levels pass (no per-level minimum). One person's six
+    # rows would be three observations (A, B and missing), refused by density.
+    df <- factor_test_frame(person_id = paste0("p", 1:6), gender_concept_id = c("A", "A", "B", NA, NA, NA))
     report <- omopFactorLevelsDS(df)
     expect_setequal(report$levels$gender_concept_id, c("A", "B"))
     expect_length(report$unsafe, 0)
     expect_error(omopAsFactorColumnsDS(df, list(gender_concept_id = "A")), "Incomplete shared concept coverage")
+    one <- factor_test_frame(person_id = rep("same", 6), gender_concept_id = c("A", "A", "B", NA, NA, NA))
+    expect_identical(omopFactorLevelsDS(one)$unsafe, "gender_concept_id")
   })
 })
 

@@ -24,7 +24,12 @@
   person) counts its rows, as before. This applies at publication, to concept
   level reports, to the levels-in-use report of `ds.omop.drop_empty_levels()`,
   to staged outputs, to concept dictionaries and to the legacy factor
-  transport.
+  transport. A long or episode output whose observed levels passed only
+  because people repeat their values is now published with its automatic
+  vocabulary list (its observed levels then stay hidden, and the level set is
+  the public list) or, without such a list, refused with the rule named. A
+  copy that lost its person key (a column subset by another package) releases
+  no level through the legacy factor transport.
 - Faster reconciliation: the relevel reuses its report's evidence digest.
 - Corrected: verbs over a published recipe output keep its shared factors.
   Before, publication presented them again, which failed on every v2 output

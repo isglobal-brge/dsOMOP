@@ -37,3 +37,34 @@ test_that("level reports weigh a repeated person value once", {
   events <- data.frame(person_id = rep(1:10, each = 20L), concept_id = as.character(100 + rep(1:10, 20L)))
   expect_true(.omopConceptLevelAssessment(events, "concept_id")$safe)
 })
+
+test_that("a copy without its person key releases no level", {
+  withr::local_options(list(nfilter.levels.max = 40, nfilter.levels.density = 0.33))
+  # Thirty people, each repeated on four rows: refused with or without its key.
+  frame <- data.frame(person_id = rep(1:30, 4L), cause_concept_id = as.character(rep(1:30, 4L)), n = 1L)
+  keyed <- structure(frame, class = c("omop.table", "data.frame"))
+  expect_identical(omopFactorLevelsDS(keyed)$unsafe, "cause_concept_id")
+  # Another package's column subset keeps the class, not the key or the attributes.
+  keyless <- keyed[, c("cause_concept_id", "n"), drop = FALSE]
+  expect_true(inherits(keyless, "omop.table"))
+  report <- omopFactorLevelsDS(keyless)
+  expect_identical(report$unsafe, "cause_concept_id")
+  expect_identical(report$unsafe_rules$cause_concept_id, "person key")
+  expect_length(report$levels, 0L)
+  expect_error(omopAsFactorColumnsDS(keyless, list(cause_concept_id = as.character(1:30))), "person key")
+})
+
+test_that("reports reuse the count stored at publication; row verbs drop it", {
+  frame <- data.frame(person_id = c(1L, 1L, 2L))
+  expect_identical(.contractObservations(frame, list(ids = c("1", "1", "2"), observations = 7)), 7)
+  expect_identical(.contractObservations(frame, list(ids = c("1", "1", "2"))), 2)
+  x <- structure(data.frame(person_id = 1:3, v = c("a", "b", "c")),
+                 omop_concepts = list(v = list(ids = c("1", "2", "3"), records = list(), observations = 3)))
+  kept <- .conceptRowsContracts(x[1:2, , drop = FALSE], x, c(TRUE, TRUE, FALSE))
+  expect_identical(attr(kept, "omop_concepts")$v$ids, c("1", "2"))
+  expect_null(attr(kept, "omop_concepts")$v$observations)
+  stacked <- .conceptBindContracts(rbind(x, kept), x, kept)
+  expect_identical(attr(stacked, "omop_concepts")$v$ids, c("1", "2", "3", "1", "2"))
+  expect_null(attr(stacked, "omop_concepts")$v$observations)
+})
+

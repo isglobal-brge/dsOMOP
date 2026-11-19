@@ -28,7 +28,7 @@
   schema <- attr(df,"omop_codebook_schema")
   if (!length(contracts) && !length(generated) && !length(numbers) && is.null(schema)) return(descriptor)
   totals <- nrow(df)
-  observations <- lapply(contracts, function(c) .densityObservations(df, c$ids))
+  observations <- lapply(contracts, function(c) .contractObservations(df, c))
   support <- lapply(contracts, function(c) {
     ids <- unique(c$ids[!is.na(c$ids)])
     setNames(rep(1L, length(ids)), ids)

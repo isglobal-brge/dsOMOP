@@ -3184,6 +3184,13 @@ omopFactorLevelsDS <- function(df, occurring = NULL, fingerprint = NULL, list_re
   if (length(cols) == 0L) {
     return(empty)
   }
+  # Observations are counted per person. A copy without its person key (a
+  # column subset by another package keeps the class, not the key) cannot be
+  # weighed, so none of its levels is released.
+  if (!length(.omopPersonKeys(df))) {
+    return(list(levels = list(), unsafe = cols, nfilter_levels_max = cap,
+                unsafe_rules = setNames(rep(list("person key"), length(cols)), cols)))
+  }
   safe <- list()
   unsafe <- character(0)
   unsafe_rules <- list()
@@ -3297,6 +3304,10 @@ omopAsFactorColumnsDS <- function(df, spec, table_column = NULL) {
   # The site's own verdict on its observed values comes first. A coverage
   # answer is given only for columns whose observed levels this site could
   # release anyway, so success or failure cannot probe which values occur.
+  # Without its person key a copy cannot be weighed: no answer at all.
+  if (length(allowed_cols) && !length(.omopPersonKeys(source))) {
+    stop("Concept factor assignment refused by this site's factor-level rule (person key).", call. = FALSE)
+  }
   for (col in allowed_cols) {
     ids <- .conceptIdText(source[[col]])
     verdict <- .omopConceptDiscovery(ids, .densityObservations(source, ids))

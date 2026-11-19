@@ -172,6 +172,7 @@
   for (col in names(contracts)) {
     if (length(contracts[[col]]$ids) != nrow(source)) return(.conceptDropContracts(result))
     contracts[[col]]$ids <- contracts[[col]]$ids[rows]
+    contracts[[col]]$observations <- NULL
   }
   attr(result, "omop_concepts") <- contracts
   result
@@ -183,9 +184,11 @@
   if (!setequal(names(cx), names(cy))) return(.conceptDropContracts(result))
   for (col in names(cx)) {
     a <- cx[[col]]; b <- cy[[col]]
-    same <- identical(a[setdiff(names(a), "ids")], b[setdiff(names(b), "ids")])
+    rowwise <- c("ids", "observations")
+    same <- identical(a[setdiff(names(a), rowwise)], b[setdiff(names(b), rowwise)])
     if (!same || length(a$ids) != nrow(x) || length(b$ids) != nrow(y)) return(.conceptDropContracts(result))
     cx[[col]]$ids <- c(a$ids, b$ids)
+    cx[[col]]$observations <- NULL
   }
   attr(result, "omop_concepts") <- cx
   if (!isTRUE(attr(x, "dsomop_levels_shared", exact = TRUE)) || !isTRUE(attr(y, "dsomop_levels_shared", exact = TRUE)))
