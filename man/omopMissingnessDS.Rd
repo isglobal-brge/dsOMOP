@@ -25,7 +25,10 @@ or NULL. Takes precedence over \code{cohort_table}.}
 \item{cohort_table}{Character; legacy cohort temp table for filtering (NULL)}
 }
 \value{
-Data frame with missingness rates
+Data frame with \code{column_name}, \code{missing_rate} and, from
+  dsOMOP 2.10.9, the banded counts behind the rate: \code{n_total} (the
+  scoped persons, or rows for tables without persons) and \code{n_missing}
+  (released only when \code{missing_rate} is).
 }
 \description{
 Computes the proportion of NULL values for each specified column (or all
