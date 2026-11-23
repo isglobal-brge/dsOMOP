@@ -1,3 +1,9 @@
+# dsOMOP 2.10.10 (2026-11-23)
+
+- Version aligned with dsOMOPClient 2.10.10, which fixes pooled summary shapes,
+  optional count columns and data-frame conversion. Server releases and
+  disclosure checks are unchanged.
+
 # dsOMOP 2.10.9 (2026-11-19)
 
 - Copies for tables: `omopAsFactorColumnsDS(kind = "suppress_small")` makes the
